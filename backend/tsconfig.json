@@ -12,16 +12,19 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "moduleResolution": "node",
-    "baseUrl": "./src",
+    "ignoreDeprecations": "6.0",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["*"],
+      "@/*": ["src/*"],
       "@config/*": ["config/*"],
       "@middleware/*": ["middleware/*"],
       "@modules/*": ["modules/*"],
       "@utils/*": ["utils/*"],
       "@types/*": ["types/*"]
+      
     }
+    
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "prisma/seed.ts"]
