@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import type { NextAuthConfig } from 'next-auth';
+import type { UserRole } from '@/types/api';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
 
@@ -136,13 +137,15 @@ export const authConfig: NextAuthConfig = {
       }
 
       // Token still valid (with 30s buffer)
-      if (token.accessTokenExpires && Date.now() < token.accessTokenExpires - 30000) {
+      const expires = token.accessTokenExpires as number | undefined;
+      if (typeof expires === 'number' && Date.now() < expires - 30000) {
         return token;
       }
 
       // Try refresh
-      if (token.refreshToken) {
-        const refreshed = await refreshAccessToken(token.refreshToken);
+      const refreshTokenStr = token.refreshToken as string | undefined;
+      if (refreshTokenStr) {
+        const refreshed = await refreshAccessToken(refreshTokenStr);
         if (refreshed) {
           return {
             ...token,
@@ -158,10 +161,10 @@ export const authConfig: NextAuthConfig = {
     },
 
     async session({ session, token }) {
-      session.user.id = token.id;
-      session.user.role = token.role;
-      session.accessToken = token.accessToken;
-      if (token.error) session.error = token.error;
+      session.user.id = token.id as string;
+      session.user.role = token.role as UserRole;
+      session.accessToken = token.accessToken as string;
+      if (token.error) session.error = token.error as 'RefreshAccessTokenError';
       return session;
     },
 
