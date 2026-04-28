@@ -7,6 +7,7 @@ import saleOrdersRoutes from './modules/sale-orders/sale-orders.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import notificationsRoutes from './modules/notifications/notifications.routes';
 import uploadsRoutes from './modules/uploads/uploads.routes';
+import companyRoutes from './modules/company/company.routes';  // ← เพิ่ม
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/sale-orders', saleOrdersRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/uploads', uploadsRoutes);
+router.use('/company', companyRoutes);  // ← เพิ่ม
 
 export default router;

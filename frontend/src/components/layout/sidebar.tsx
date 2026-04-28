@@ -11,6 +11,7 @@ import {
   Package,
   Inbox,
   History,
+  Building2,
   ChevronLeft,
   ChevronRight,
   type LucideIcon,
@@ -32,14 +33,15 @@ const SALES_ITEMS: NavItem[] = [
   { href: '/sale-orders', labelKey: 'nav.saleOrders', icon: ClipboardList },
   { href: '/customers', labelKey: 'nav.customers', icon: Users },
   { href: '/products', labelKey: 'nav.products', icon: Package },
+  { href: '/company', labelKey: 'nav.company', icon: Building2 },  // ← เพิ่ม
 ];
 
 const APPROVER_ITEMS: NavItem[] = [
   { href: '/approver/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard },
   { href: '/approver/approval-queue', labelKey: 'nav.approvalQueue', icon: Inbox },
   { href: '/approver/history', labelKey: 'nav.history', icon: History },
+  { href: '/approver/company', labelKey: 'nav.company', icon: Building2 },  // ← เพิ่ม
 ];
-
 interface SidebarProps {
   role: UserRole;
 }

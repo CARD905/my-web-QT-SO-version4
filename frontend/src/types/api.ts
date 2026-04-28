@@ -200,7 +200,27 @@ export interface Notification {
   createdAt: string;
   readAt?: string | null;
 }
-
+export interface CompanySettings {
+  id: string;
+  companyName: string;
+  companyNameTh?: string | null;
+  taxId?: string | null;
+  address?: string | null;
+  addressTh?: string | null;
+  phone?: string | null;
+  fax?: string | null;
+  email?: string | null;
+  website?: string | null;
+  logoUrl?: string | null;
+  defaultVatRate: string | number;
+  defaultPaymentTerms?: string | null;
+  defaultCurrency: Currency;
+  quotationPrefix: string;
+  saleOrderPrefix: string;
+  bankName?: string | null;
+  bankAccount?: string | null;
+  bankBranch?: string | null;
+}
 // Dashboard
 export interface SalesDashboard {
   totals: { quotations: number; saleOrders: number; approvedValue: number };

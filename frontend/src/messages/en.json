@@ -127,5 +127,31 @@
     "description": "Description",
     "unitPrice": "Unit Price",
     "unit": "Unit"
+  },
+  "company": {
+    "title": "My Company",
+    "subtitle": "Information shown on quotations, sale orders, and PDFs",
+    "basicInfo": "Basic Information",
+    "companyName": "Company Name (English)",
+    "companyNameTh": "Company Name (Thai)",
+    "taxId": "Tax ID",
+    "addressInfo": "Address",
+    "address": "Address (English)",
+    "addressTh": "Address (Thai)",
+    "contactInfo": "Contact",
+    "phone": "Phone",
+    "fax": "Fax",
+    "email": "Email",
+    "website": "Website",
+    "defaults": "Defaults",
+    "defaultVatRate": "VAT (%)",
+    "defaultPaymentTerms": "Payment Terms",
+    "defaultCurrency": "Currency",
+    "bankInfo": "Bank Information",
+    "bankName": "Bank Name",
+    "bankAccount": "Account Number",
+    "bankBranch": "Branch",
+    "saved": "Company settings saved",
+    "adminOnly": "Only admins can edit"
   }
 }

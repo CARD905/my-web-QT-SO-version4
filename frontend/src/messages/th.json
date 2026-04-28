@@ -127,5 +127,31 @@
     "description": "คำอธิบาย",
     "unitPrice": "ราคาต่อหน่วย",
     "unit": "หน่วย"
+  },
+  "company": {
+    "title": "ข้อมูลบริษัท",
+    "subtitle": "ข้อมูลที่จะแสดงในใบเสนอราคา/ใบสั่งขาย และ PDF",
+    "basicInfo": "ข้อมูลพื้นฐาน",
+    "companyName": "ชื่อบริษัท (อังกฤษ)",
+    "companyNameTh": "ชื่อบริษัท (ไทย)",
+    "taxId": "เลขประจำตัวผู้เสียภาษี",
+    "addressInfo": "ที่อยู่",
+    "address": "ที่อยู่ (อังกฤษ)",
+    "addressTh": "ที่อยู่ (ไทย)",
+    "contactInfo": "ช่องทางติดต่อ",
+    "phone": "โทรศัพท์",
+    "fax": "แฟกซ์",
+    "email": "อีเมล",
+    "website": "เว็บไซต์",
+    "defaults": "ค่าเริ่มต้น",
+    "defaultVatRate": "VAT (%)",
+    "defaultPaymentTerms": "เงื่อนไขชำระเงิน",
+    "defaultCurrency": "สกุลเงิน",
+    "bankInfo": "ข้อมูลธนาคาร",
+    "bankName": "ชื่อธนาคาร",
+    "bankAccount": "เลขบัญชี",
+    "bankBranch": "สาขา",
+    "saved": "บันทึกข้อมูลบริษัทแล้ว",
+    "adminOnly": "เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถแก้ไขได้"
   }
 }
