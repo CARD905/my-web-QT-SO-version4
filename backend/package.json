@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@sparticuz/chromium": "^131.0.1",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -29,7 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "puppeteer": "^23.7.0",
+    "puppeteer-core": "^23.11.1",
     "tsconfig-paths": "^4.2.0",
     "zod": "^3.23.8"
   },
