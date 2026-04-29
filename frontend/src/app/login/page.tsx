@@ -1,169 +1,188 @@
 'use client';
 
-import { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2, FileText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LangSwitcher } from '@/components/layout/lang-switcher';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
-import { useT } from '@/lib/i18n';
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
-type LoginForm = z.infer<typeof loginSchema>;
-
-function LoginPageInner() {
-  const t = useT();
+export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const form = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
-  });
-
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
-
-  const onSubmit = async (data: LoginForm) => {
-    setSubmitting(true);
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error('Please enter email and password');
+      return;
+    }
+    setLoading(true);
     try {
-      const result = await signIn('credentials', {
-        email: data.email,
-        password: data.password,
-        redirect: false,
-      });
-
+      const result = await signIn('credentials', { email, password, redirect: false });
       if (result?.error) {
-        toast.error(t('login.invalidCredentials'));
+        toast.error('Invalid email or password');
+        setLoading(false);
         return;
       }
-
-      toast.success(t('login.welcomeBack'));
-      router.push(callbackUrl);
-      router.refresh();
+      const { fireSparkle } = await import('@/lib/confetti');
+      fireSparkle();
+      toast.success('Welcome back! 👋');
+      setTimeout(() => router.push('/'), 400);
     } catch (err) {
-      toast.error(t('common.error'));
       console.error(err);
-    } finally {
-      setSubmitting(false);
+      toast.error('Login failed');
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen relative flex flex-col">
-      {/* Top-right toggles */}
-      <div className="absolute top-4 right-4 flex gap-1 z-10">
-        <LangSwitcher />
-        <ThemeToggle />
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4">
+      {/* Animated background blobs */}
+      <div className="absolute inset-0 -z-10">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/30 rounded-full blur-3xl animate-pulse" />
+        <div
+          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/30 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: '1s' }}
+        />
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-pink-500/20 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: '2s' }}
+        />
       </div>
 
-      {/* Background gradient */}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-primary/10 via-background to-secondary/20" />
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-primary/15 via-transparent to-transparent" />
+      {/* Gradient mesh */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
 
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md animate-fade-in">
-          <Card className="shadow-2xl border-border/40 backdrop-blur">
-            <CardHeader className="space-y-3 text-center pt-8">
-              <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-primary-foreground text-2xl font-bold shadow-lg">
-                Q
+      {/* Floating sparkles */}
+      <div className="absolute inset-0 -z-10 pointer-events-none">
+        {[...Array(8)].map((_, i) => (
+          <Sparkles
+            key={i}
+            className="absolute h-3 w-3 text-purple-500/40 animate-sparkle"
+            style={{
+              top: `${Math.random() * 100}%`,
+              left: `${Math.random() * 100}%`,
+              animationDelay: `${i * 0.3}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Glass card */}
+        <div className="rounded-3xl border border-white/20 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl p-8">
+          {/* Logo */}
+          <div className="text-center mb-8">
+            <div className="inline-flex h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 items-center justify-center text-white shadow-2xl shadow-purple-500/30 mb-4 animate-float">
+              <FileText className="h-8 w-8" />
+            </div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+              Quotation System
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2">เข้าสู่ระบบเพื่อดำเนินการต่อ</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider">
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="mt-1.5 bg-white/50 dark:bg-slate-800/50 backdrop-blur"
+                disabled={loading}
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider">
+                Password
+              </Label>
+              <div className="relative mt-1.5">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-white/50 dark:bg-slate-800/50 backdrop-blur pr-10"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-              <div>
-                <CardTitle className="text-2xl">{t('login.title')}</CardTitle>
-                <CardDescription className="mt-1.5">{t('login.subtitle')}</CardDescription>
-              </div>
-            </CardHeader>
+            </div>
 
-            <CardContent className="px-8 pb-8">
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email">{t('login.email')}</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    autoFocus
-                    placeholder={t('login.emailPlaceholder')}
-                    disabled={submitting}
-                    {...form.register('email')}
-                  />
-                  {form.formState.errors.email && (
-                    <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-                  )}
-                </div>
+            <Button
+              type="submit"
+              className="w-full h-11 mt-6 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white font-semibold shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/50 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Sign In
+                </>
+              )}
+            </Button>
+          </form>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">{t('login.password')}</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      placeholder={t('login.passwordPlaceholder')}
-                      disabled={submitting}
-                      {...form.register('password')}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
-                      tabIndex={-1}
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  {form.formState.errors.password && (
-                    <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
-                  )}
-                </div>
-
-                <Button type="submit" className="w-full mt-6" size="lg" disabled={submitting}>
-                  {submitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {t('login.submitting')}
-                    </>
-                  ) : (
-                    <>
-                      <LogIn className="h-4 w-4" />
-                      {t('login.submit')}
-                    </>
-                  )}
-                </Button>
-              </form>
-
-              <div className="mt-6 pt-6 border-t border-border/60">
-                <p className="text-xs text-center text-muted-foreground mb-2">Test accounts:</p>
-                <div className="text-xs text-muted-foreground space-y-0.5 font-mono">
-                  <p> accountmodel sales@example.com / Password@123</p>
-                  <p> accountmodel approver@example.com / Password@123</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Test accounts hint */}
+          <div className="mt-6 pt-6 border-t border-white/20">
+            <p className="text-[10px] text-muted-foreground text-center mb-2 uppercase tracking-wider">
+              Test Accounts (password: Password@123)
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+              {[
+                { role: 'Sales', email: 'sales@example.com', color: 'from-blue-500 to-cyan-500' },
+                { role: 'Approver', email: 'approver@example.com', color: 'from-purple-500 to-fuchsia-500' },
+                { role: 'Manager', email: 'manager@example.com', color: 'from-amber-500 to-orange-500' },
+                { role: 'Admin', email: 'admin@example.com', color: 'from-rose-500 to-red-500' },
+              ].map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => {
+                    setEmail(acc.email);
+                    setPassword('Password@123');
+                  }}
+                  className={`p-2 rounded-lg bg-gradient-to-r ${acc.color} text-white font-medium opacity-90 hover:opacity-100 transition-opacity text-left`}
+                >
+                  <div className="font-bold">{acc.role}</div>
+                  <div className="text-[10px] opacity-90 truncate">{acc.email}</div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-      </main>
-    </div>
-  );
-}
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <LoginPageInner />
-    </Suspense>
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          v1.0.0 · QT/SO Management System
+        </p>
+      </div>
+    </div>
   );
 }
