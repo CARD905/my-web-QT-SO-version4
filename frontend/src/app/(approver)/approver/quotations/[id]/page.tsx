@@ -359,9 +359,15 @@ export default function ApproverQuotationDetailPage() {
           onConfirm={async (comment) => {
             setActing('approve');
             try {
+              const { fireConfetti } = await import('@/lib/confetti');
               await api.post(`/quotations/${id}/approve`, { comment });
-              toast.success('Approved! Sale Order created.');
-              router.push('/approver/approval-queue');
+              fireConfetti();
+              toast.success('🎉 Approved! Sale Order created.');
+              setTimeout(() => {
+                const isManager =
+                  typeof window !== 'undefined' && window.location.pathname.includes('/manager/');
+                router.push(isManager ? '/manager/approval-queue' : '/approver/approval-queue');
+              }, 800);
             } catch (err) {
               toast.error(getApiErrorMessage(err));
               setShowApproveModal(false);

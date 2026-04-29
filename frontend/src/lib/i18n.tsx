@@ -1,81 +1,89 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import thMessages from '@/messages/th.json';
 import enMessages from '@/messages/en.json';
 
 export type Locale = 'th' | 'en';
 
-const messages: Record<Locale, Record<string, Record<string, string>>> = {
-  th: thMessages,
-  en: enMessages,
+// Allow nested message objects (any depth)
+type MessageValue = string | { [key: string]: MessageValue };
+type MessageTree = Record<string, MessageValue>;
+
+const messages: Record<Locale, MessageTree> = {
+  th: thMessages as MessageTree,
+  en: enMessages as MessageTree,
 };
 
 interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  t: (key: string, fallback?: string) => string;
+  t: (key: string) => string;
 }
 
-const I18nContext = createContext<I18nContextValue | undefined>(undefined);
+const I18nContext = createContext<I18nContextValue | null>(null);
 
-const COOKIE_NAME = 'app-locale';
+const COOKIE_NAME = 'preferred-lang';
 
-function readCookieLocale(): Locale {
-  if (typeof document === 'undefined') return 'th';
-  const match = document.cookie.match(new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`));
-  const value = match?.[1];
-  return value === 'en' || value === 'th' ? value : 'th';
+function getCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[2]) : undefined;
 }
 
-function writeCookieLocale(locale: Locale) {
+function setCookie(name: string, value: string, days = 365) {
   if (typeof document === 'undefined') return;
-  // 1 year
-  document.cookie = `${COOKIE_NAME}=${locale}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+  const expires = new Date(Date.now() + days * 86400000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; samesite=lax`;
 }
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>('th');
+interface I18nProviderProps {
+  children: ReactNode;
+  initialLocale?: Locale;
+}
 
-  // Hydrate from cookie on mount
+export function I18nProvider({ children, initialLocale = 'th' }: I18nProviderProps) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+
   useEffect(() => {
-    setLocaleState(readCookieLocale());
+    const saved = getCookie(COOKIE_NAME) as Locale | undefined;
+    if (saved && (saved === 'th' || saved === 'en')) setLocaleState(saved);
   }, []);
 
   const setLocale = useCallback((next: Locale) => {
-    writeCookieLocale(next);
     setLocaleState(next);
+    setCookie(COOKIE_NAME, next);
   }, []);
 
   const t = useCallback(
-    (key: string, fallback?: string): string => {
-      // key format: "nav.dashboard"
-      const parts = key.split('.');
-      if (parts.length !== 2) return fallback ?? key;
-      const [section, name] = parts;
-      const sectionMap = messages[locale]?.[section];
-      const value = sectionMap?.[name];
-      if (value) return value;
-      // Fallback to other locale
-      const otherLocale: Locale = locale === 'th' ? 'en' : 'th';
-      const otherValue = messages[otherLocale]?.[section]?.[name];
-      return otherValue ?? fallback ?? key;
+    (key: string): string => {
+      // Walk nested keys: "permissions.groups.quotation"
+      const segs = key.split('.');
+      let cur: MessageValue | undefined = messages[locale];
+      for (const seg of segs) {
+        if (cur && typeof cur === 'object') {
+          cur = cur[seg];
+        } else {
+          cur = undefined;
+          break;
+        }
+      }
+      return typeof cur === 'string' ? cur : key;
     },
     [locale],
   );
 
-  return (
-    <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>
-  );
+  return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>;
+}
+
+export function useT(): (key: string) => string {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error('useT must be used within I18nProvider');
+  return ctx.t;
 }
 
 export function useI18n() {
   const ctx = useContext(I18nContext);
   if (!ctx) throw new Error('useI18n must be used within I18nProvider');
   return ctx;
-}
-
-/** Shorthand for translation only */
-export function useT() {
-  return useI18n().t;
 }
