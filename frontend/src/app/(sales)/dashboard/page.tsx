@@ -47,7 +47,7 @@ export default function SalesDashboardPage() {
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">
-          {t('dashboard.welcome')}, {session?.user?.name?.split(' ')[0] || ''} 👋
+          {t('dashboard.Dashboard Quotations')}, {session?.user?.name?.split(' ')[0] || ''} 
         </h1>
         <p className="text-muted-foreground mt-1">{t('dashboard.title')}</p>
       </div>

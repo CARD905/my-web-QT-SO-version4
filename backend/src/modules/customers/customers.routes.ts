@@ -12,31 +12,31 @@ import {
 
 const router = Router();
 
-// All endpoints require authentication
 router.use(authenticate);
 
-// Sales, Approver, Admin can read
 router.get('/', validate(listCustomersSchema, 'query'), asyncHandler(customersController.list));
 router.get('/:id', asyncHandler(customersController.getById));
 
-// Sales & Admin can create/update
+// CREATE — Manager/Admin only
 router.post(
   '/',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('MANAGER', 'ADMIN'),
   validate(createCustomerSchema),
   asyncHandler(customersController.create),
 );
 
+// UPDATE — Sales can edit (to reduce manager workload)
 router.patch(
   '/:id',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('SALES', 'MANAGER', 'ADMIN'),
   validate(updateCustomerSchema),
   asyncHandler(customersController.update),
 );
 
+// DELETE — Manager/Admin only
 router.delete(
   '/:id',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('MANAGER', 'ADMIN'),
   asyncHandler(customersController.remove),
 );
 

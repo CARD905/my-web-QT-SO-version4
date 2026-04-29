@@ -175,17 +175,17 @@ export const authConfig: NextAuthConfig = {
       const isPublic = isOnLogin || isOnRoot;
 
       // Logged in users on login page → redirect to their dashboard
-      if (isLoggedIn && isOnLogin) {
-        const role = auth?.user?.role;
-        const dest = role === 'APPROVER' ? '/approver/dashboard' : '/dashboard';
-        return Response.redirect(new URL(dest, nextUrl));
-      }
+      const roleDest = (role: string | undefined): string => {
+        if (role === 'MANAGER' || role === 'ADMIN') return '/manager/dashboard';
+        if (role === 'APPROVER') return '/approver/dashboard';
+        return '/dashboard';
+      };
 
-      // Root → redirect based on role
+      if (isLoggedIn && isOnLogin) {
+        return Response.redirect(new URL(roleDest(auth?.user?.role), nextUrl));
+      }
       if (isLoggedIn && isOnRoot) {
-        const role = auth?.user?.role;
-        const dest = role === 'APPROVER' ? '/approver/dashboard' : '/dashboard';
-        return Response.redirect(new URL(dest, nextUrl));
+        return Response.redirect(new URL(roleDest(auth?.user?.role), nextUrl));
       }
 
       // Not logged in: only allow public pages

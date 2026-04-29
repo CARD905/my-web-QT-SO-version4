@@ -16,6 +16,10 @@ export const updateCompanySchema = z.object({
   defaultPaymentTerms: z.string().max(100).optional().nullable(),
   defaultCurrency: z.enum(['THB', 'USD']).default('THB'),
 
+  // NEW: approval limits
+  approverLimit: z.coerce.number().nonnegative().default(100000),
+  managerLimit: z.coerce.number().nonnegative().default(0),
+
   bankName: z.string().max(255).optional().nullable(),
   bankAccount: z.string().max(100).optional().nullable(),
   bankBranch: z.string().max(255).optional().nullable(),

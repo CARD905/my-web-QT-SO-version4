@@ -17,12 +17,14 @@ datasource db {
 enum UserRole {
   SALES
   APPROVER
+  MANAGER
   ADMIN
 }
 
 enum QuotationStatus {
   DRAFT
   PENDING
+  PENDING_MANAGER
   APPROVED
   REJECTED
   CANCELLED
@@ -48,6 +50,7 @@ enum Currency {
 
 enum NotificationType {
   QUOTATION_SUBMITTED
+  QUOTATION_ESCALATED
   QUOTATION_APPROVED
   QUOTATION_REJECTED
   QUOTATION_CANCELLED
@@ -417,6 +420,8 @@ model CompanySettings {
   defaultVatRate      Decimal  @default(7) @map("default_vat_rate") @db.Decimal(5, 2)
   defaultPaymentTerms String?  @map("default_payment_terms")
   defaultCurrency     Currency @default(THB) @map("default_currency")
+  approverLimit       Decimal  @default(100000) @map("approver_limit") @db.Decimal(15, 2)
+  managerLimit        Decimal  @default(0) @map("manager_limit") @db.Decimal(15, 2)
   quotationPrefix     String   @default("QT") @map("quotation_prefix")
   saleOrderPrefix     String   @default("SO") @map("sale_order_prefix")
   bankName            String?  @map("bank_name")

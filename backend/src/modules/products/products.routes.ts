@@ -17,23 +17,24 @@ router.use(authenticate);
 router.get('/', validate(listProductsSchema, 'query'), asyncHandler(productsController.list));
 router.get('/:id', asyncHandler(productsController.getById));
 
+// All product mutations — Manager/Admin only
 router.post(
   '/',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('MANAGER', 'ADMIN'),
   validate(createProductSchema),
   asyncHandler(productsController.create),
 );
 
 router.patch(
   '/:id',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('MANAGER', 'ADMIN'),
   validate(updateProductSchema),
   asyncHandler(productsController.update),
 );
 
 router.delete(
   '/:id',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('MANAGER', 'ADMIN'),
   asyncHandler(productsController.remove),
 );
 

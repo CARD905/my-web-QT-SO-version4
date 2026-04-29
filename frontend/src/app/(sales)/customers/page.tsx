@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Search, Users, X, Loader2 } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { Plus, Search, Users, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,10 +15,17 @@ import type { ApiResponse, Customer } from '@/types/api';
 
 export default function CustomersPage() {
   const t = useT();
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const canCreate = role === 'MANAGER' || role === 'ADMIN';
+  const canEdit = role === 'SALES' || role === 'MANAGER' || role === 'ADMIN';
+  const canDelete = role === 'MANAGER' || role === 'ADMIN';
+
   const [list, setList] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = async (q: string) => {
     setLoading(true);
@@ -39,6 +47,17 @@ export default function CustomersPage() {
     return () => clearTimeout(handler);
   }, [search]);
 
+  const remove = async (id: string, company: string) => {
+    if (!confirm(`ลบลูกค้า "${company}" ใช่หรือไม่?`)) return;
+    try {
+      await api.delete(`/customers/${id}`);
+      toast.success('ลบลูกค้าแล้ว');
+      load(search);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -46,10 +65,12 @@ export default function CustomersPage() {
           <h1 className="text-2xl font-bold">{t('customer.title')}</h1>
           <p className="text-sm text-muted-foreground mt-1">{list.length} customers</p>
         </div>
-        <Button onClick={() => setShowModal(true)}>
-          <Plus className="h-4 w-4" />
-          {t('customer.newCustomer')}
-        </Button>
+        {canCreate && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4" />
+            {t('customer.newCustomer')}
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -82,10 +103,10 @@ export default function CustomersPage() {
       ) : (
         <div className="grid gap-3">
           {list.map((c) => (
-            <Card key={c.id}>
+            <Card key={c.id} className="group transition-all hover:border-primary/40">
               <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0 flex-1">
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 font-semibold">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white flex items-center justify-center shrink-0 font-semibold shadow-md">
                     {c.company.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0">
@@ -95,22 +116,58 @@ export default function CustomersPage() {
                     </div>
                   </div>
                 </div>
-                {c._count && (
-                  <div className="text-xs text-muted-foreground shrink-0">
-                    {c._count.quotations} quotations · {c._count.saleOrders} sale orders
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {c._count && (
+                    <div className="text-xs text-muted-foreground hidden md:block">
+                      {c._count.quotations} QT · {c._count.saleOrders} SO
+                    </div>
+                  )}
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditingId(c.id)}
+                      title="Edit"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => remove(c.id, c.company)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {showModal && (
-        <NewCustomerModal
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
+      {showCreate && (
+        <CustomerModal
+          mode="create"
+          onClose={() => setShowCreate(false)}
+          onSaved={() => {
+            setShowCreate(false);
+            load(search);
+          }}
+        />
+      )}
+
+      {editingId && (
+        <CustomerModal
+          mode="edit"
+          id={editingId}
+          onClose={() => setEditingId(null)}
+          onSaved={() => {
+            setEditingId(null);
             load(search);
           }}
         />
@@ -119,12 +176,16 @@ export default function CustomersPage() {
   );
 }
 
-function NewCustomerModal({
+function CustomerModal({
+  mode,
+  id,
   onClose,
-  onCreated,
+  onSaved,
 }: {
+  mode: 'create' | 'edit';
+  id?: string;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
   const t = useT();
   const [form, setForm] = useState({
@@ -136,7 +197,35 @@ function NewCustomerModal({
     billingAddress: '',
     shippingAddress: '',
   });
+  const [loading, setLoading] = useState(mode === 'edit');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (mode === 'edit' && id) {
+      (async () => {
+        try {
+          const res = await api.get<ApiResponse<Customer>>(`/customers/${id}`);
+          const c = res.data.data;
+          if (c) {
+            setForm({
+              contactName: c.contactName,
+              company: c.company,
+              taxId: c.taxId || '',
+              email: c.email || '',
+              phone: c.phone || '',
+              billingAddress: c.billingAddress || '',
+              shippingAddress: c.shippingAddress || '',
+            });
+          }
+        } catch (err) {
+          toast.error(getApiErrorMessage(err));
+          onClose();
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+  }, [mode, id, onClose]);
 
   const update = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -147,9 +236,14 @@ function NewCustomerModal({
     }
     setSubmitting(true);
     try {
-      await api.post('/customers', form);
-      toast.success('Customer created');
-      onCreated();
+      if (mode === 'create') {
+        await api.post('/customers', form);
+        toast.success('Customer created');
+      } else if (id) {
+        await api.patch(`/customers/${id}`, form);
+        toast.success('Customer updated');
+      }
+      onSaved();
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -161,82 +255,92 @@ function NewCustomerModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
       <Card className="w-full max-w-2xl shadow-2xl animate-slide-up">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-bold">{t('customer.newCustomer')}</h2>
+          <h2 className="text-xl font-bold">
+            {mode === 'create' ? t('customer.newCustomer') : 'แก้ไขลูกค้า'}
+          </h2>
           <button onClick={onClose} className="p-1 hover:bg-muted rounded-md">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <CardContent className="pt-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {loading ? (
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </CardContent>
+        ) : (
+          <CardContent className="pt-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-xs">
+                  {t('customer.contactName')} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.contactName}
+                  onChange={(e) => update('contactName', e.target.value)}
+                  className="mt-1.5"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <Label className="text-xs">
+                  {t('customer.company')} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.company}
+                  onChange={(e) => update('company', e.target.value)}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">{t('customer.taxId')}</Label>
+                <Input
+                  value={form.taxId}
+                  onChange={(e) => update('taxId', e.target.value)}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">{t('customer.email')}</Label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => update('email', e.target.value)}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">{t('customer.phone')}</Label>
+                <Input
+                  value={form.phone}
+                  onChange={(e) => update('phone', e.target.value)}
+                  className="mt-1.5"
+                />
+              </div>
+            </div>
             <div>
-              <Label className="text-xs">
-                {t('customer.contactName')} <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-xs">{t('customer.billingAddress')}</Label>
               <Input
-                value={form.contactName}
-                onChange={(e) => update('contactName', e.target.value)}
+                value={form.billingAddress}
+                onChange={(e) => update('billingAddress', e.target.value)}
                 className="mt-1.5"
-                autoFocus
               />
             </div>
             <div>
-              <Label className="text-xs">
-                {t('customer.company')} <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-xs">{t('customer.shippingAddress')}</Label>
               <Input
-                value={form.company}
-                onChange={(e) => update('company', e.target.value)}
+                value={form.shippingAddress}
+                onChange={(e) => update('shippingAddress', e.target.value)}
                 className="mt-1.5"
               />
             </div>
-            <div>
-              <Label className="text-xs">{t('customer.taxId')}</Label>
-              <Input
-                value={form.taxId}
-                onChange={(e) => update('taxId', e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">{t('customer.email')}</Label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => update('email', e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">{t('customer.phone')}</Label>
-              <Input
-                value={form.phone}
-                onChange={(e) => update('phone', e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">{t('customer.billingAddress')}</Label>
-            <Input
-              value={form.billingAddress}
-              onChange={(e) => update('billingAddress', e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
-          <div>
-            <Label className="text-xs">{t('customer.shippingAddress')}</Label>
-            <Input
-              value={form.shippingAddress}
-              onChange={(e) => update('shippingAddress', e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
-        </CardContent>
+          </CardContent>
+        )}
         <div className="flex justify-end gap-2 p-6 border-t">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={submit} disabled={submitting}>
+          <Button onClick={submit} disabled={submitting || loading}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('common.save')}
           </Button>

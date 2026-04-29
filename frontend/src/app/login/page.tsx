@@ -148,8 +148,8 @@ function LoginPageInner() {
               <div className="mt-6 pt-6 border-t border-border/60">
                 <p className="text-xs text-center text-muted-foreground mb-2">Test accounts:</p>
                 <div className="text-xs text-muted-foreground space-y-0.5 font-mono">
-                  <p>👨‍💼 sales@example.com / Password@123</p>
-                  <p>👔 approver@example.com / Password@123</p>
+                  <p> accountmodel sales@example.com / Password@123</p>
+                  <p> accountmodel approver@example.com / Password@123</p>
                 </div>
               </div>
             </CardContent>

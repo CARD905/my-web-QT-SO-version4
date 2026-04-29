@@ -54,6 +54,20 @@ async function main() {
     },
   });
   console.log(`   ✅ Approver: ${approver.email}  (password: Password@123)`);
+  const manager = await prisma.user.upsert({
+    where: { email: 'manager@example.com' },
+    update: {},
+    create: {
+      email: 'manager@example.com',
+      password: passwordHash,
+      name: 'ผู้จัดการ ทดสอบ',
+      role: 'MANAGER',
+      phone: '081-234-5681',
+      preferredLang: 'th',
+      preferredTheme: 'light',
+    },
+  });
+  console.log(`   ✅ Manager:  ${manager.email}  (password: Password@123)`);
 
   const admin = await prisma.user.upsert({
     where: { email: 'admin@example.com' },
@@ -241,6 +255,7 @@ async function main() {
   console.log('\n📝 Test accounts:');
   console.log('   Sales:    sales@example.com    / Password@123');
   console.log('   Approver: approver@example.com / Password@123');
+  console.log('   Manager:  manager@example.com  / Password@123');
   console.log('   Admin:    admin@example.com    / Password@123');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 }

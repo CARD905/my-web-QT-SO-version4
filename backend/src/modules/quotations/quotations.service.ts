@@ -44,10 +44,11 @@ export const quotationsService = {
 
     const where: Prisma.QuotationWhereInput = { deletedAt: null };
 
-    // Sales users see only their own quotations
+    // Role-based filtering
     if (currentUser.role === 'SALES') {
       where.createdById = currentUser.id;
     } else if (query.createdById) {
+      // Manager/Admin can drill-down by user
       where.createdById = query.createdById;
     }
 
@@ -357,6 +358,9 @@ export const quotationsService = {
   // ============================================================
   // SUBMIT FOR APPROVAL (DRAFT → PENDING)
   // ============================================================
+  // ============================================================
+  // SUBMIT FOR APPROVAL (DRAFT → PENDING or PENDING_MANAGER)
+  // ============================================================
   async submit(id: string, input: SubmitQuotationInput, userId: string, req?: Request) {
     const existing = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
@@ -379,12 +383,19 @@ export const quotationsService = {
       throw new AppError(409, 'EXPIRED', 'Quotation has expired. Please update expiry date first.');
     }
 
+    // Determine target status based on grand total vs approver limit
+    const company = await prisma.companySettings.findFirst();
+    const approverLimit = Number(company?.approverLimit ?? 100000);
+    const grandTotal = Number(existing.grandTotal);
+    const exceedsLimit = grandTotal > approverLimit;
+    const targetStatus = exceedsLimit ? 'PENDING_MANAGER' : 'PENDING';
+
     const action = existing.status === 'REJECTED' ? 'RESUBMIT' : 'SUBMIT';
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
-        data: { status: 'PENDING', submittedAt: new Date() },
+        data: { status: targetStatus, submittedAt: new Date() },
         include: quotationDetailInclude,
       });
 
@@ -394,14 +405,24 @@ export const quotationsService = {
         });
       }
 
-      // Notify all approvers
-      await notifyByRole(tx, 'APPROVER', {
-        type: action === 'RESUBMIT' ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
-        title: action === 'RESUBMIT' ? 'Quotation resubmitted' : 'New quotation pending approval',
-        message: `${q.quotationNo} from ${q.customerCompany} (${q.grandTotal.toString()} ${q.currency})`,
-        link: `/approver/quotations/${q.id}`,
-        metadata: { quotationId: q.id, quotationNo: q.quotationNo },
-      });
+      // Notify the right role
+      if (exceedsLimit) {
+        await notifyByRole(tx, 'MANAGER', {
+          type: action === 'RESUBMIT' ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
+          title: `🔥 High-value quotation needs approval (>${approverLimit.toLocaleString()})`,
+          message: `${q.quotationNo} from ${q.customerCompany} (${q.grandTotal.toString()} ${q.currency})`,
+          link: `/manager/quotations/${q.id}`,
+          metadata: { quotationId: q.id, exceedsLimit: true },
+        });
+      } else {
+        await notifyByRole(tx, 'APPROVER', {
+          type: action === 'RESUBMIT' ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
+          title: action === 'RESUBMIT' ? 'Quotation resubmitted' : 'New quotation pending approval',
+          message: `${q.quotationNo} from ${q.customerCompany} (${q.grandTotal.toString()} ${q.currency})`,
+          link: `/approver/quotations/${q.id}`,
+          metadata: { quotationId: q.id },
+        });
+      }
 
       return q;
     });
@@ -411,7 +432,9 @@ export const quotationsService = {
       action,
       entityType: 'Quotation',
       entityId: updated.id,
-      description: `${action === 'RESUBMIT' ? 'Resubmitted' : 'Submitted'} quotation ${updated.quotationNo}`,
+      description: `${action === 'RESUBMIT' ? 'Resubmitted' : 'Submitted'} quotation ${updated.quotationNo}${
+        exceedsLimit ? ' (exceeds approver limit, sent to manager)' : ''
+      }`,
       req,
     });
 
@@ -428,12 +451,45 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (existing.status !== 'PENDING') {
+    // Get approver role from current user
+    const approverUser = await prisma.user.findUnique({
+      where: { id: approverId },
+      select: { role: true },
+    });
+    if (!approverUser) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
+    }
+
+    // Validate status based on approver role
+    const isManager = approverUser.role === 'MANAGER' || approverUser.role === 'ADMIN';
+
+    if (existing.status === 'PENDING_MANAGER' && !isManager) {
+      throw new AppError(
+        403,
+        'INSUFFICIENT_AUTHORITY',
+        'This quotation exceeds approver limit and requires Manager approval',
+      );
+    }
+
+    if (existing.status !== 'PENDING' && existing.status !== 'PENDING_MANAGER') {
       throw new AppError(
         409,
         'INVALID_STATUS',
         `Only PENDING quotations can be approved (current: ${existing.status})`,
       );
+    }
+
+    // If APPROVER tries to approve over-limit (defensive check)
+    if (approverUser.role === 'APPROVER') {
+      const company = await prisma.companySettings.findFirst();
+      const approverLimit = Number(company?.approverLimit ?? 100000);
+      if (Number(existing.grandTotal) > approverLimit) {
+        throw new AppError(
+          403,
+          'EXCEEDS_LIMIT',
+          `Quotation amount exceeds your approval limit (${approverLimit.toLocaleString()})`,
+        );
+      }
     }
 
     if (new Date(existing.expiryDate) < new Date()) {
@@ -557,7 +613,7 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (existing.status !== 'PENDING') {
+    if (existing.status !== 'PENDING' && existing.status !== 'PENDING_MANAGER') {
       throw new AppError(
         409,
         'INVALID_STATUS',

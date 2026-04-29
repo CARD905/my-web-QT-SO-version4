@@ -25,10 +25,11 @@ export interface PaginationMeta {
 // Domain types
 // =====================================================
 
-export type UserRole = 'SALES' | 'APPROVER' | 'ADMIN';
+export type UserRole = 'SALES' | 'APPROVER' | 'MANAGER' | 'ADMIN';
 export type QuotationStatus =
   | 'DRAFT'
   | 'PENDING'
+  | 'PENDING_MANAGER'
   | 'APPROVED'
   | 'REJECTED'
   | 'CANCELLED'
@@ -215,6 +216,8 @@ export interface CompanySettings {
   defaultVatRate: string | number;
   defaultPaymentTerms?: string | null;
   defaultCurrency: Currency;
+  approverLimit: string | number;
+  managerLimit: string | number;
   quotationPrefix: string;
   saleOrderPrefix: string;
   bankName?: string | null;
@@ -275,5 +278,114 @@ export interface ApproverDashboard {
     submittedAt: string | null;
     expiryDate: string;
     createdBy: { id: string; name: string };
+  }>;
+  // ============================================================
+// PERMISSIONS
+// ============================================================
+export interface PermissionLabel {
+  th: string;
+  en: string;
+  group: string;
+}
+
+export interface MyPermissionsResponse {
+  role: UserRole;
+  permissions: string[];
+  labels: Record<string, PermissionLabel>;
+}
+
+export interface PermissionsMatrixResponse {
+  roles: UserRole[];
+  permissions: Record<string, UserRole[]>;
+  labels: Record<string, PermissionLabel>;
+  limits: {
+    approverLimit: number;
+    managerLimit: number;
+  };
+}
+
+// ============================================================
+// MANAGER DASHBOARD
+// ============================================================
+export interface ManagerOverview {
+  totals: {
+    quotations: number;
+    pendingApprover: number;
+    pendingManager: number;
+    pendingApproverValue: number;
+    pendingManagerValue: number;
+  };
+  todayActivity: {
+    approved: number;
+    rejected: number;
+  };
+  topSales: Array<{
+    userId: string;
+    user?: { id: string; name: string; role: UserRole; avatarUrl: string | null };
+    approvedValue: number;
+    quotationCount: number;
+  }>;
+  topApprovers: Array<{
+    userId: string;
+    user?: { id: string; name: string; role: UserRole; avatarUrl: string | null };
+    approvedCount: number;
+  }>;
+  recentEscalated: Array<{
+    id: string;
+    quotationNo: string;
+    customerCompany: string;
+    grandTotal: number;
+    currency: Currency;
+    submittedAt: string | Date | null;
+    createdBy: { id: string; name: string };
+  }>;
+}
+
+export interface UserStats {
+  total: number;
+  approved: number;
+  approvedValue: number;
+}
+
+export interface UserListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatarUrl: string | null;
+  isActive: boolean;
+  lastLoginAt: string | Date | null;
+  stats: UserStats;
+}
+
+export interface UserDetailResponse {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+    avatarUrl: string | null;
+    createdAt: string | Date;
+    lastLoginAt: string | Date | null;
+  };
+  totals: {
+    quotations: number;
+    approvedValue: number;
+    thisMonth: number;
+  };
+  byStatus: Array<{
+    status: QuotationStatus;
+    count: number;
+    totalValue: number;
+  }>;
+  recent: Array<{
+    id: string;
+    quotationNo: string;
+    customerCompany: string;
+    grandTotal: number;
+    currency: Currency;
+    status: QuotationStatus;
+    createdAt: string | Date;
+    updatedAt: string | Date;
   }>;
 }

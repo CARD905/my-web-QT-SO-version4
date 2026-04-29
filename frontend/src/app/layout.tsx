@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
-  title: 'Quotation System | ระบบใบเสนอราคา',
+  title: 'Wisdomcoach | Wisdomcoach',
   description: 'Quotation & Sale Order Management System',
 };
 

@@ -19,11 +19,9 @@ const router = Router();
 
 router.use(authenticate);
 
-// LIST + GET
 router.get('/', validate(listQuotationsSchema, 'query'), asyncHandler(quotationsController.list));
 router.get('/:id', asyncHandler(quotationsController.getById));
 
-// CREATE / UPDATE / DELETE -- Sales & Admin
 router.post(
   '/',
   requireRole('SALES', 'ADMIN'),
@@ -38,7 +36,6 @@ router.patch(
   asyncHandler(quotationsController.update),
 );
 
-// WORKFLOW
 router.post(
   '/:id/submit',
   requireRole('SALES', 'ADMIN'),
@@ -53,21 +50,21 @@ router.post(
   asyncHandler(quotationsController.cancel),
 );
 
+// MANAGER + ADMIN can also approve (in addition to APPROVER)
 router.post(
   '/:id/approve',
-  requireRole('APPROVER', 'ADMIN'),
+  requireRole('APPROVER', 'MANAGER', 'ADMIN'),
   validate(approveQuotationSchema),
   asyncHandler(quotationsController.approve),
 );
 
 router.post(
   '/:id/reject',
-  requireRole('APPROVER', 'ADMIN'),
+  requireRole('APPROVER', 'MANAGER', 'ADMIN'),
   validate(rejectQuotationSchema),
   asyncHandler(quotationsController.reject),
 );
 
-// VERSIONS & COMMENTS
 router.get('/:id/versions', asyncHandler(quotationsController.getVersions));
 router.get('/:id/comments', asyncHandler(quotationsController.getComments));
 router.post(

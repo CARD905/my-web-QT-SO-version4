@@ -41,6 +41,8 @@ export const companyService = {
         defaultVatRate: input.defaultVatRate,
         defaultPaymentTerms: input.defaultPaymentTerms || null,
         defaultCurrency: input.defaultCurrency,
+        approverLimit: input.approverLimit,
+        managerLimit: input.managerLimit,
         bankName: input.bankName || null,
         bankAccount: input.bankAccount || null,
         bankBranch: input.bankBranch || null,

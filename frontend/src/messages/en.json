@@ -49,7 +49,12 @@
     "theme": "Theme",
     "lightMode": "Light",
     "darkMode": "Dark",
-    "systemMode": "System"
+    "systemMode": "System",
+    "company": "My Company",
+    "permissions": "My Permissions",
+    "managePermissions": "Manage Permissions",
+    "teamOverview": "Team Overview",
+    "userDrillDown": "Drill-down Users"
   },
   "login": {
     "title": "Sign In",
@@ -153,5 +158,42 @@
     "bankBranch": "Branch",
     "saved": "Company settings saved",
     "adminOnly": "Only admins can edit"
+    } ,
+  "permissions": {
+    "title": "Permissions",
+    "myRole": "My Role",
+    "myPermissions": "Granted Permissions",
+    "subtitle": "Your access rights and capabilities in the system",
+    "matrix": "Permission Matrix",
+    "limits": "Approval Limits",
+    "approverLimit": "Approver Approval Limit",
+    "managerLimit": "Manager Approval Limit",
+    "managerLimitHelp": "Set to 0 = unlimited",
+    "limitsUpdated": "Limits updated successfully",
+    "exceedsLimit": "Exceeds approval limit",
+    "groups": {
+      "quotation": "Quotation",
+      "saleOrder": "Sale Order",
+      "customer": "Customer",
+      "product": "Product",
+      "company": "Company",
+      "permissions": "Permissions",
+      "dashboard": "Dashboard"
+    }
+  },
+  "manager": {
+    "dashboard": "Manager Dashboard",
+    "overview": "Team Overview",
+    "topSales": "Top Sales",
+    "topApprovers": "Top Approvers",
+    "recentEscalated": "Recent Escalated Quotations",
+    "drillDown": "Drill-down per User",
+    "selectUser": "Select User",
+    "userStats": "User Statistics",
+    "thisMonth": "This Month",
+    "lastLogin": "Last Login",
+    "neverLoggedIn": "Never logged in",
+    "pendingApprover": "Pending Approver",
+    "pendingManager": "Pending Manager (over limit)"
   }
 }

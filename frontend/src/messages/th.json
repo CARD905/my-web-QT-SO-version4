@@ -34,7 +34,7 @@
     "expired": "หมดอายุ"
   },
   "nav": {
-    "dashboard": "แดชบอร์ด",
+    "dashboard": "หน้าแรก",
     "quotations": "ใบเสนอราคา",
     "saleOrders": "ใบสั่งขาย",
     "customers": "ลูกค้า",
@@ -49,7 +49,12 @@
     "theme": "ธีม",
     "lightMode": "โหมดสว่าง",
     "darkMode": "โหมดมืด",
-    "systemMode": "ตามระบบ"
+    "systemMode": "ตามระบบ",
+    "company": "ข้อมูลบริษัท",
+    "permissions": "สิทธิ์ของฉัน",
+    "managePermissions": "จัดการสิทธิ์",
+    "teamOverview": "ภาพรวมทีม",
+    "userDrillDown": "ดูข้อมูลรายบุคคล"
   },
   "login": {
     "title": "เข้าสู่ระบบ",
@@ -153,5 +158,42 @@
     "bankBranch": "สาขา",
     "saved": "บันทึกข้อมูลบริษัทแล้ว",
     "adminOnly": "เฉพาะผู้ดูแลระบบเท่านั้นที่สามารถแก้ไขได้"
+  },
+  "permissions": {
+    "title": "สิทธิ์การใช้งาน",
+    "myRole": "บทบาทของฉัน",
+    "myPermissions": "สิทธิ์ที่มี",
+    "subtitle": "สิทธิ์ในการเข้าถึงและทำรายการต่างๆ ในระบบ",
+    "matrix": "ตารางสิทธิ์ทุกบทบาท",
+    "limits": "วงเงินอนุมัติ",
+    "approverLimit": "วงเงินที่ Approver อนุมัติได้",
+    "managerLimit": "วงเงินที่ Manager อนุมัติได้",
+    "managerLimitHelp": "ตั้ง 0 = ไม่จำกัด",
+    "limitsUpdated": "อัปเดตวงเงินเรียบร้อย",
+    "exceedsLimit": "เกินวงเงินที่อนุมัติได้",
+    "groups": {
+      "quotation": "ใบเสนอราคา",
+      "saleOrder": "ใบสั่งขาย",
+      "customer": "ลูกค้า",
+      "product": "สินค้า",
+      "company": "บริษัท",
+      "permissions": "สิทธิ์",
+      "dashboard": "Dashboard"
+    }
+  },
+  "manager": {
+    "dashboard": "Manager Dashboard",
+    "overview": "ภาพรวมทีม",
+    "topSales": "Sales อันดับสูงสุด",
+    "topApprovers": "Approver อันดับสูงสุด",
+    "recentEscalated": "ใบเสนอราคาที่ส่งขึ้นมา (เกินวงเงิน)",
+    "drillDown": "ดูข้อมูลรายบุคคล",
+    "selectUser": "เลือกพนักงาน",
+    "userStats": "สถิติของพนักงาน",
+    "thisMonth": "เดือนนี้",
+    "lastLogin": "เข้าระบบล่าสุด",
+    "neverLoggedIn": "ยังไม่เคยเข้าระบบ",
+    "pendingApprover": "รอ Approver",
+    "pendingManager": "รอ Manager (สูงเกินวงเงิน)"
   }
 }
