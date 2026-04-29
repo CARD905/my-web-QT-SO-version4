@@ -279,6 +279,7 @@ export interface ApproverDashboard {
     expiryDate: string;
     createdBy: { id: string; name: string };
   }>;
+}
   // ============================================================
 // PERMISSIONS
 // ============================================================
@@ -303,6 +304,7 @@ export interface PermissionsMatrixResponse {
     managerLimit: number;
   };
 }
+
 
 // ============================================================
 // MANAGER DASHBOARD

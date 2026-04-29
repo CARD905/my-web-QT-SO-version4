@@ -1,31 +1,10 @@
-import { Router } from 'express';
-import { permissionsController } from './permissions.controller';
-import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/role';
-import { asyncHandler } from '../../middleware/error';
-
-const router = Router();
-
-router.use(authenticate);
-
-router.get('/me', asyncHandler(permissionsController.myPermissions));
-router.get('/matrix', asyncHandler(permissionsController.matrix));
-
-// Only Manager/Admin can update limits
-router.patch(
-  '/limits',
-  requireRole('MANAGER', 'ADMIN'),
-  asyncHandler(permissionsController.updateLimits),
-);
-
-export default router;import { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError, success } from '../../utils/response';
 import { getRolePermissions, PERMISSIONS, PERMISSION_LABELS } from '../../utils/permissions';
 
 export const permissionsController = {
-  /** Get current user's permissions */
   async myPermissions(req: Request, res: Response) {
     if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
     const perms = getRolePermissions(req.user.role);
@@ -36,7 +15,6 @@ export const permissionsController = {
     });
   },
 
-  /** Get full permissions matrix (for Manage Permissions page) */
   async matrix(_req: Request, res: Response) {
     const company = await prisma.companySettings.findFirst();
     return success(res, {
@@ -50,14 +28,10 @@ export const permissionsController = {
     });
   },
 
-  /** Update approval limits — Manager only */
   async updateLimits(req: Request, res: Response) {
     if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
 
-    const { approverLimit, managerLimit } = req.body as {
-      approverLimit: number;
-      managerLimit: number;
-    };
+    const { approverLimit, managerLimit } = req.body;
 
     if (typeof approverLimit !== 'number' || approverLimit < 0) {
       throw new AppError(400, 'INVALID_INPUT', 'approverLimit must be >= 0');
@@ -67,6 +41,7 @@ export const permissionsController = {
     }
 
     let company = await prisma.companySettings.findFirst();
+
     if (!company) {
       company = await prisma.companySettings.create({
         data: { companyName: 'Your Company', approverLimit, managerLimit },
@@ -78,13 +53,9 @@ export const permissionsController = {
       });
     }
 
-    return success(
-      res,
-      {
-        approverLimit: Number(company.approverLimit),
-        managerLimit: Number(company.managerLimit),
-      },
-      'Limits updated',
-    );
+    return success(res, {
+      approverLimit: Number(company.approverLimit),
+      managerLimit: Number(company.managerLimit),
+    }, 'Limits updated');
   },
 };

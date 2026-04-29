@@ -11,7 +11,6 @@ router.use(authenticate);
 router.get('/me', asyncHandler(permissionsController.myPermissions));
 router.get('/matrix', asyncHandler(permissionsController.matrix));
 
-// Only Manager/Admin can update limits
 router.patch(
   '/limits',
   requireRole('MANAGER', 'ADMIN'),
