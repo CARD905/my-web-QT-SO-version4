@@ -1,4 +1,4 @@
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { Request } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
@@ -10,21 +10,25 @@ import { ListSaleOrdersQuery } from './sale-orders.schema';
 import { buildSaleOrderHtml } from './sale-order.template';
 import { generatePdfFromHtml } from './pdf-generator';
 
+interface CurrentUser {
+  id: string;
+  roleCode: string;
+}
+
 const saleOrderInclude = {
   items: { orderBy: { sortOrder: 'asc' as const } },
   customer: { select: { id: true, company: true, contactName: true } },
-  createdBy: { select: { id: true, name: true } },
   quotation: { select: { id: true, quotationNo: true, expiryDate: true } },
 } satisfies Prisma.SaleOrderInclude;
 
 export const saleOrdersService = {
-  async list(query: ListSaleOrdersQuery, currentUser: { id: string; role: UserRole }) {
+  async list(query: ListSaleOrdersQuery, currentUser: CurrentUser) {
     const { skip, take, page, limit } = getPaginationParams(query);
 
     const where: Prisma.SaleOrderWhereInput = { deletedAt: null };
 
-    // Sales sees only sale orders from their own quotations
-    if (currentUser.role === 'SALES') {
+    // Officer (legacy: SALES) sees only sale orders from their own quotations
+    if (currentUser.roleCode === 'OFFICER' || currentUser.roleCode === 'SALES') {
       where.quotation = { createdById: currentUser.id };
     }
 
@@ -50,7 +54,6 @@ export const saleOrdersService = {
         skip,
         take,
         include: {
-          createdBy: { select: { id: true, name: true } },
           customer: { select: { id: true, company: true } },
           quotation: { select: { id: true, quotationNo: true } },
           _count: { select: { items: true } },
@@ -62,7 +65,7 @@ export const saleOrdersService = {
     return { data, meta: buildPaginationMeta(total, page, limit) };
   },
 
-  async getById(id: string, currentUser: { id: string; role: UserRole }) {
+  async getById(id: string, currentUser: CurrentUser) {
     const so = await prisma.saleOrder.findFirst({
       where: { id, deletedAt: null },
       include: saleOrderInclude,
@@ -70,8 +73,8 @@ export const saleOrdersService = {
 
     if (!so) throw new AppError(404, 'NOT_FOUND', 'Sale Order not found');
 
-    if (currentUser.role === 'SALES') {
-      // Need to verify quotation owner
+    if (currentUser.roleCode === 'OFFICER' || currentUser.roleCode === 'SALES') {
+      // Verify quotation owner
       const q = await prisma.quotation.findFirst({
         where: { id: so.quotationId },
         select: { createdById: true },
@@ -85,9 +88,10 @@ export const saleOrdersService = {
   },
 
   /**
-   * Generate (or regenerate) PDF for the sale order
+   * Generate (or regenerate) PDF for the sale order.
+   * Note: PDF is generated on-demand, not cached in DB (Phase 1 simplification).
    */
-  async generatePdf(id: string, currentUser: { id: string; role: UserRole }, req?: Request) {
+  async generatePdf(id: string, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
     const company = await prisma.companySettings.findFirst();
 
@@ -104,18 +108,10 @@ export const saleOrdersService = {
     const filePath = await generatePdfFromHtml(html, fileName);
 
     const fileUrl = `/uploads/pdfs/${fileName}`;
-    await prisma.saleOrder.update({
-      where: { id },
-      data: {
-        pdfGenerated: true,
-        pdfUrl: fileUrl,
-        pdfGeneratedAt: new Date(),
-      },
-    });
 
     await logActivity(prisma, {
       userId: currentUser.id,
-      action: 'EXPORT_PDF',
+      action: 'saleOrder.exportPdf',
       entityType: 'SaleOrder',
       entityId: id,
       description: `Generated PDF for ${so.saleOrderNo}`,
@@ -126,20 +122,18 @@ export const saleOrdersService = {
   },
 
   /**
-   * Get PDF file path - generates if not yet exists
+   * Get PDF file path - generates if not yet exists on disk
    */
-  async getPdfFile(id: string, currentUser: { id: string; role: UserRole }, req?: Request) {
+  async getPdfFile(id: string, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
 
     const fileName = `${so.saleOrderNo}.pdf`;
     const expectedPath = path.resolve(`./uploads/pdfs/${fileName}`);
 
-    // Check if file exists on disk
     try {
       await fs.access(expectedPath);
       return { filePath: expectedPath, fileName };
     } catch {
-      // Generate fresh
       const result = await this.generatePdf(id, currentUser, req);
       return { filePath: path.resolve(result.filePath), fileName: result.fileName };
     }

@@ -14,9 +14,9 @@ export async function generateDocumentNumber(
   const targetYear = year ?? new Date().getFullYear();
 
   const counter = await tx.documentCounter.upsert({
-    where: { prefix_year: { prefix, year: targetYear } },
+    where: { type_year: { type: prefix, year: targetYear } },
+    create: { type: prefix, year: targetYear, counter: 1 },
     update: { counter: { increment: 1 } },
-    create: { prefix, year: targetYear, counter: 1 },
   });
 
   const padded = counter.counter.toString().padStart(4, '0');

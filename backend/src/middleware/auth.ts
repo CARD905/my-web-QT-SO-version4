@@ -1,15 +1,16 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { UserRole } from '@prisma/client';
 import { env } from '../config/env';
 import { AppError } from '../utils/response';
 import { prisma } from '../config/prisma';
 
 export interface JwtPayload {
-  sub: string; // user id
+  sub: string;
   email: string;
-  role: UserRole;
   name: string;
+  roleId: string;
+  roleCode: string;
+  role?: string; // legacy compat
 }
 
 export async function authenticate(
@@ -36,10 +37,10 @@ export async function authenticate(
       throw new AppError(401, 'INVALID_TOKEN', 'Invalid token');
     }
 
-    // Verify user still exists and is active
+    // Verify user still exists and is active — include role relation
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, name: true, isActive: true, deletedAt: true },
+      include: { role: true },
     });
 
     if (!user || !user.isActive || user.deletedAt) {
@@ -49,9 +50,12 @@ export async function authenticate(
     req.user = {
       id: user.id,
       email: user.email,
-      role: user.role,
       name: user.name,
-    };
+      role: user.role.code,         // legacy compat
+      roleCode: user.role.code,
+      roleId: user.roleId,
+      teamId: user.teamId,
+    } as Express.Request['user'];
 
     next();
   } catch (err) {
@@ -74,9 +78,11 @@ export async function optionalAuthenticate(
     req.user = {
       id: payload.sub,
       email: payload.email,
-      role: payload.role,
       name: payload.name,
-    };
+      role: payload.roleCode || payload.role || 'OFFICER',
+      roleCode: payload.roleCode || payload.role || 'OFFICER',
+      roleId: payload.roleId,
+    } as Express.Request['user'];
   } catch {
     // ignore invalid token
   }

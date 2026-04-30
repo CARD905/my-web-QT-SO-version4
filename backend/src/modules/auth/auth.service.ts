@@ -14,12 +14,21 @@ import { JwtPayload } from '../../middleware/auth';
 
 const ACCESS_OPTS: SignOptions = { expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn'] };
 
-function signAccessToken(user: { id: string; email: string; role: string; name: string }) {
+function signAccessToken(user: {
+  id: string;
+  email: string;
+  name: string;
+  roleId: string;
+  roleCode: string;
+}) {
   const payload: JwtPayload = {
     sub: user.id,
     email: user.email,
-    role: user.role as JwtPayload['role'],
     name: user.name,
+    roleId: user.roleId,
+    roleCode: user.roleCode,
+    // Legacy compat — some old code reads `role`
+    role: user.roleCode as JwtPayload['role'],
   };
   return jwt.sign(payload, env.JWT_SECRET, ACCESS_OPTS);
 }
@@ -29,7 +38,6 @@ function generateRefreshTokenString(): string {
 }
 
 function refreshTokenExpiry(): Date {
-  // Parse value like "7d", "30d"
   const match = env.REFRESH_TOKEN_EXPIRES_IN.match(/^(\d+)([smhd])$/);
   if (!match) {
     return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -46,11 +54,16 @@ function refreshTokenExpiry(): Date {
 
 export const authService = {
   async login(input: LoginInput, ipAddress?: string, userAgent?: string) {
-    const user = await prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() },
+    // findFirst because email is now @@unique([email, deletedAt])
+    const user = await prisma.user.findFirst({
+      where: {
+        email: input.email.toLowerCase(),
+        deletedAt: null,
+      },
+      include: { role: true },
     });
 
-    if (!user || user.deletedAt) {
+    if (!user) {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
@@ -63,7 +76,13 @@ export const authService = {
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
-    const accessToken = signAccessToken(user);
+    const accessToken = signAccessToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      roleId: user.roleId,
+      roleCode: user.role.code,
+    });
     const refreshTokenStr = generateRefreshTokenString();
     const expiresAt = refreshTokenExpiry();
 
@@ -78,11 +97,11 @@ export const authService = {
 
     await logActivity(prisma, {
       userId: user.id,
-      action: 'LOGIN',
+      action: 'auth.login',
       entityType: 'User',
       entityId: user.id,
       description: `User ${user.email} logged in`,
-      metadata: { ipAddress, userAgent },
+      context: { ipAddress, userAgent },
     });
 
     return {
@@ -92,10 +111,12 @@ export const authService = {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: user.role.code,
+        roleId: user.roleId,
         avatarUrl: user.avatarUrl,
         preferredLang: user.preferredLang,
         preferredTheme: user.preferredTheme,
+        teamId: user.teamId,
       },
     };
   },
@@ -103,7 +124,7 @@ export const authService = {
   async refresh(refreshTokenStr: string) {
     const stored = await prisma.refreshToken.findUnique({
       where: { token: refreshTokenStr },
-      include: { user: true },
+      include: { user: { include: { role: true } } },
     });
 
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
@@ -114,7 +135,7 @@ export const authService = {
       throw new AppError(401, 'USER_INACTIVE', 'User is inactive');
     }
 
-    // Rotate refresh token (revoke old, create new)
+    // Rotate refresh token
     await prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
@@ -129,7 +150,13 @@ export const authService = {
       },
     });
 
-    const accessToken = signAccessToken(stored.user);
+    const accessToken = signAccessToken({
+      id: stored.user.id,
+      email: stored.user.email,
+      name: stored.user.name,
+      roleId: stored.user.roleId,
+      roleCode: stored.user.role.code,
+    });
 
     return { accessToken, refreshToken: newRefresh };
   },
@@ -142,7 +169,7 @@ export const authService = {
 
     await logActivity(prisma, {
       userId,
-      action: 'LOGOUT',
+      action: 'auth.logout',
       entityType: 'User',
       entityId: userId,
       description: 'User logged out',
@@ -152,42 +179,47 @@ export const authService = {
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        avatarUrl: true,
-        phone: true,
-        preferredLang: true,
-        preferredTheme: true,
-        lastLoginAt: true,
-        createdAt: true,
-      },
+      include: { role: true, team: true },
     });
 
     if (!user) {
       throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
     }
-    return user;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role.code,
+      roleId: user.roleId,
+      roleName: user.role.nameTh,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      preferredLang: user.preferredLang,
+      preferredTheme: user.preferredTheme,
+      lastLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt,
+      teamId: user.teamId,
+      teamName: user.team?.name ?? null,
+    };
   },
 
   async updateProfile(userId: string, input: UpdateProfileInput) {
     const user = await prisma.user.update({
       where: { id: userId },
       data: input,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        avatarUrl: true,
-        phone: true,
-        preferredLang: true,
-        preferredTheme: true,
-      },
+      include: { role: true },
     });
-    return user;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role.code,
+      roleId: user.roleId,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      preferredLang: user.preferredLang,
+      preferredTheme: user.preferredTheme,
+    };
   },
 
   async changePassword(userId: string, input: ChangePasswordInput) {
@@ -205,7 +237,7 @@ export const authService = {
       data: { password: hashed },
     });
 
-    // Revoke all refresh tokens for security
+    // Revoke all refresh tokens
     await prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },

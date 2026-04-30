@@ -28,7 +28,7 @@ interface SaleOrderForPdf {
   items: Array<{
     productSku: string | null;
     productName: string;
-    description: string | null;
+    productDescription: string | null;
     quantity: Decimal | number;
     unit: string;
     unitPrice: Decimal | number;
@@ -114,7 +114,7 @@ export function buildSaleOrderHtml(so: SaleOrderForPdf, company: CompanyInfo): s
           <td class="center sku">${escapeHtml(item.productSku || '-')}</td>
           <td>
             <div class="item-name">${escapeHtml(item.productName)}</div>
-            ${item.description ? `<div class="item-desc">${escapeHtml(item.description)}</div>` : ''}
+            ${item.productDescription ? `<div class="item-desc">${escapeHtml(item.productDescription)}</div>` : ''}
           </td>
           <td class="right">${fmt(item.quantity)}</td>
           <td class="center">${escapeHtml(item.unit)}</td>

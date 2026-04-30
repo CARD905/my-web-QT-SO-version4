@@ -1,4 +1,4 @@
-import { NotificationType, Prisma, PrismaClient, UserRole } from '@prisma/client';
+import { NotificationType, Prisma, PrismaClient } from '@prisma/client';
 import { logger } from './logger';
 
 interface CreateNotificationParams {
@@ -35,16 +35,20 @@ export async function createNotification(
 }
 
 /**
- * Notify all users with a specific role (e.g. all approvers).
+ * Notify all users with a specific role code (e.g. 'MANAGER', 'ADMIN').
  */
 export async function notifyByRole(
   client: Prisma.TransactionClient | PrismaClient,
-  role: UserRole,
+  roleCode: string,
   params: Omit<CreateNotificationParams, 'userId'>,
 ): Promise<void> {
   try {
     const users = await client.user.findMany({
-      where: { role, isActive: true, deletedAt: null },
+      where: {
+        role: { code: roleCode },
+        isActive: true,
+        deletedAt: null,
+      },
       select: { id: true },
     });
 
