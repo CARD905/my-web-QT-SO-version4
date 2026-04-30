@@ -1,25 +1,35 @@
 import { PermissionScope } from '@prisma/client';
 import { prisma } from '../config/prisma';
 
+interface PermissionInfo {
+  code: string;
+  resource: string;
+  action: string;
+  scope: PermissionScope;
+  nameTh: string;
+  nameEn: string;
+  groupKey: string;
+}
+
+const SCOPE_RANK: Record<PermissionScope, number> = {
+  OWN: 1,
+  TEAM: 2,
+  DEPARTMENT: 3,
+  ALL: 4,
+};
+
 /**
- * Check if a role has a specific permission (queries DB).
+ * Get all permissions for a role (queries DB).
  * Cache-friendly — call once per request and reuse.
  */
-export async function getRolePermissions(roleId: string): Promise
-  Array<{
-    code: string;
-    resource: string;
-    action: string;
-    scope: PermissionScope;
-    nameTh: string;
-    nameEn: string;
-    groupKey: string;
-  }>
-> {
+export async function getRolePermissions(
+  roleId: string,
+): Promise<PermissionInfo[]> {
   const rolePerms = await prisma.rolePermission.findMany({
-    where: { roleId },
+    where: { roleId: roleId },
     include: { permission: true },
   });
+
   return rolePerms.map((rp) => ({
     code: rp.permission.code,
     resource: rp.permission.resource,
@@ -35,13 +45,6 @@ export async function getRolePermissions(roleId: string): Promise
  * Check if user has permission with a specific scope or higher.
  * SCOPE ordering: OWN < TEAM < DEPARTMENT < ALL
  */
-const SCOPE_RANK: Record<PermissionScope, number> = {
-  OWN: 1,
-  TEAM: 2,
-  DEPARTMENT: 3,
-  ALL: 4,
-};
-
 export async function hasPermission(
   roleId: string,
   resource: string,
@@ -71,5 +74,9 @@ export async function getMaxScope(
     (p) => p.resource === resource && p.action === action,
   );
   if (matching.length === 0) return null;
-  return matching.reduce((max, p) => (SCOPE_RANK[p.scope] > SCOPE_RANK[max] ? p.scope : max), matching[0].scope);
+
+  return matching.reduce(
+    (max, p) => (SCOPE_RANK[p.scope] > SCOPE_RANK[max] ? p.scope : max),
+    matching[0].scope,
+  );
 }
