@@ -1,7 +1,5 @@
-// =====================================================
 // Quotation & Sale Order Management System
-// Prisma Schema
-// =====================================================
+// Schema v2 — Soft-coded roles + permissions + hierarchy + audit trail
 
 generator client {
   provider = "prisma-client-js"
@@ -12,21 +10,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============== ENUMS ==============
+// ============================================================
+// ENUMS
+// ============================================================
 
-enum UserRole {
-  SALES
-  APPROVER
-  MANAGER
-  ADMIN
+enum PermissionScope {
+  OWN
+  TEAM
+  DEPARTMENT
+  ALL
 }
 
 enum QuotationStatus {
   DRAFT
   PENDING
-  PENDING_MANAGER
+  PENDING_BACKUP
+  PENDING_ESCALATED
   APPROVED
   REJECTED
+  SENT
+  SIGNED
   CANCELLED
   EXPIRED
 }
@@ -36,6 +39,36 @@ enum SaleOrderStatus {
   CONFIRMED
   COMPLETED
   CANCELLED
+}
+
+enum ApprovalAction {
+  PENDING
+  APPROVED
+  REJECTED
+  ESCALATED
+  DELEGATED
+  SKIPPED
+  WITHDRAWN
+}
+
+enum ApproverType {
+  PRIMARY
+  BACKUP
+  ESCALATION
+  DELEGATE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum InvitationChannel {
+  MANUAL
+  EMAIL
+  BOTH
 }
 
 enum DiscountType {
@@ -55,71 +88,325 @@ enum NotificationType {
   QUOTATION_REJECTED
   QUOTATION_CANCELLED
   QUOTATION_RESUBMITTED
-  SALE_ORDER_CREATED
   QUOTATION_EXPIRING_SOON
+  SALE_ORDER_CREATED
+  USER_INVITED
+  TEAM_REASSIGNED
+  MANAGER_RESIGNED
+  ROLE_CHANGED
+  SYSTEM_ALERT
 }
 
-enum ActivityAction {
-  CREATE
-  UPDATE
-  DELETE
-  SUBMIT
-  APPROVE
-  REJECT
-  CANCEL
-  RESUBMIT
-  LOGIN
-  LOGOUT
-  EXPORT_PDF
+enum Lang {
+  th
+  en
 }
 
-// ============== USER ==============
+enum Theme {
+  light
+  dark
+  system
+}
+
+// ============================================================
+// IDENTITY & ACCESS — Role-based + Soft-coded
+// ============================================================
+
+model Role {
+  id                    String           @id @default(uuid())
+  code                  String           @unique
+  nameTh                String
+  nameEn                String
+  description           String?
+
+  level                 Int              @default(1)
+  isSystem              Boolean          @default(false)
+  isActive              Boolean          @default(true)
+
+  defaultApprovalLimit  Decimal?         @db.Decimal(15, 2) @map("default_approval_limit")
+  themeColor            String?          @map("theme_color")
+
+  version               Int              @default(1)
+
+  permissions           RolePermission[]
+  users                 User[]
+  invitations           Invitation[]
+  approvalSnapshots     QuotationApproval[]
+
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+
+  @@index([level])
+  @@index([isActive])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  code        String           @unique
+  resource    String
+  action      String
+  scope       PermissionScope
+  nameTh      String
+  nameEn      String
+  groupKey    String           @map("group_key")
+  description String?
+  isSystem    Boolean          @default(true)
+
+  roles       RolePermission[]
+
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@unique([resource, action, scope])
+  @@index([groupKey])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId          String           @map("role_id")
+  permissionId    String           @map("permission_id")
+  scopeOverride   PermissionScope? @map("scope_override")
+
+  grantedById     String?          @map("granted_by_id")
+  grantedBy       User?            @relation("PermissionGranter", fields: [grantedById], references: [id])
+  grantedAt       DateTime         @default(now()) @map("granted_at")
+
+  role            Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission      Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================
+// ORG STRUCTURE
+// ============================================================
+
+model Department {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+
+  teams       Team[]
+
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([deletedAt])
+  @@map("departments")
+}
+
+model Team {
+  id              String      @id @default(uuid())
+  code            String?     @unique
+  name            String
+  description     String?
+
+  departmentId    String      @map("department_id")
+  department      Department  @relation(fields: [departmentId], references: [id])
+
+  managerId       String?     @map("manager_id")
+  manager         User?       @relation("TeamManager", fields: [managerId], references: [id])
+
+  members         User[]      @relation("TeamMembers")
+  invitations     Invitation[]
+
+  isActive        Boolean     @default(true)
+  version         Int         @default(1)
+
+  deletedAt       DateTime?   @map("deleted_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  @@index([departmentId])
+  @@index([managerId])
+  @@index([deletedAt])
+  @@map("teams")
+}
+
+// ============================================================
+// USERS
+// ============================================================
 
 model User {
-  id             String    @id @default(uuid())
-  email          String    @unique
-  password       String
-  name           String
-  role           UserRole
-  avatarUrl      String?   @map("avatar_url")
-  phone          String?
-  isActive       Boolean   @default(true) @map("is_active")
-  lastLoginAt    DateTime? @map("last_login_at")
-  preferredLang  String    @default("th") @map("preferred_lang")
-  preferredTheme String    @default("light") @map("preferred_theme")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  deletedAt      DateTime? @map("deleted_at")
+  id              String    @id @default(uuid())
+  email           String
+  password        String
+  name            String
+  phone           String?
+  avatarUrl       String?   @map("avatar_url")
 
-  quotationsCreated  Quotation[]        @relation("QuotationCreator")
-  quotationsApproved Quotation[]        @relation("QuotationApprover")
-  saleOrdersCreated  SaleOrder[]        @relation("SaleOrderCreator")
-  customersCreated   Customer[]
-  productsCreated    Product[]
-  comments           QuotationComment[]
-  activityLogs       ActivityLog[]
-  notifications      Notification[]
-  refreshTokens      RefreshToken[]
+  // Role (FK — soft-coded)
+  roleId          String    @map("role_id")
+  role            Role      @relation(fields: [roleId], references: [id])
 
+  // Hierarchy
+  reportsToId     String?   @map("reports_to_id")
+  reportsTo       User?     @relation("Hierarchy", fields: [reportsToId], references: [id])
+  reports         User[]    @relation("Hierarchy")
+
+  // Team
+  teamId          String?   @map("team_id")
+  team            Team?     @relation("TeamMembers", fields: [teamId], references: [id])
+  managedTeams    Team[]    @relation("TeamManager")
+
+  // Approval
+  approvalLimit   Decimal?  @db.Decimal(15, 2) @map("approval_limit")
+
+  // Delegate
+  delegateToId    String?   @map("delegate_to_id")
+  delegateTo      User?     @relation("Delegate", fields: [delegateToId], references: [id])
+  delegatedFrom   User[]    @relation("Delegate")
+
+  // Backup auth
+  authorizedAsBackup BackupApproverAuth[] @relation("BackupApprover")
+  myBackups          BackupApproverAuth[] @relation("Officer")
+  authorizedBy       BackupApproverAuth[] @relation("AuthorizedBy")
+
+  // Preferences
+  preferredLang   Lang      @default(th) @map("preferred_lang")
+  preferredTheme  Theme     @default(light) @map("preferred_theme")
+
+  // State
+  isActive        Boolean   @default(true) @map("is_active")
+  lastLoginAt     DateTime? @map("last_login_at")
+
+  // Optimistic lock
+  version         Int       @default(1)
+
+  // Relations
+  refreshTokens         RefreshToken[]
+  createdQuotations     Quotation[]            @relation("QuotationCreator")
+  approvedQuotations    Quotation[]            @relation("QuotationApprover")
+  rejectedQuotations    Quotation[]            @relation("QuotationRejecter")
+  primaryApproverFor    Quotation[]            @relation("PrimaryApprover")
+  backupApproverFor     Quotation[]            @relation("BackupApprover")
+  approvalActions       QuotationApproval[]    @relation("ApprovalActor")
+  escalatedToActions    QuotationApproval[]    @relation("EscalatedTo")
+  comments              QuotationComment[]
+  uploads               QuotationAttachment[]
+  activityLogs          ActivityLog[]
+  notifications         Notification[]
+  sentInvitations       Invitation[]           @relation("Inviter")
+  acceptedInvitation    Invitation?            @relation("Acceptor")
+  grantedPermissions    RolePermission[]       @relation("PermissionGranter")
+
+  // Soft delete
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([email, deletedAt])
   @@index([email])
-  @@index([role])
+  @@index([roleId])
+  @@index([teamId])
+  @@index([reportsToId])
+  @@index([deletedAt])
+  @@index([isActive])
   @@map("users")
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  token     String    @unique
-  userId    String    @map("user_id")
-  expiresAt DateTime  @map("expires_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at")
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  replacedBy  String?  @map("replaced_by")
 
-  @@index([token])
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
   @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
   @@map("refresh_tokens")
 }
+
+model BackupApproverAuth {
+  id              String    @id @default(uuid())
+
+  officerId       String    @map("officer_id")
+  officer         User      @relation("Officer", fields: [officerId], references: [id])
+
+  backupApproverId String   @map("backup_approver_id")
+  backupApprover   User     @relation("BackupApprover", fields: [backupApproverId], references: [id])
+
+  authorizedById  String    @map("authorized_by_id")
+  authorizedBy    User      @relation("AuthorizedBy", fields: [authorizedById], references: [id])
+
+  reason          String?
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Boolean   @default(true) @map("is_active")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([officerId, backupApproverId])
+  @@index([officerId])
+  @@index([backupApproverId])
+  @@index([isActive])
+  @@map("backup_approver_authorizations")
+}
+
+// ============================================================
+// INVITATION
+// ============================================================
+
+model Invitation {
+  id              String              @id @default(uuid())
+
+  email           String
+  name            String?
+  phone           String?
+
+  roleId          String              @map("role_id")
+  role            Role                @relation(fields: [roleId], references: [id])
+
+  teamId          String?             @map("team_id")
+  team            Team?               @relation(fields: [teamId], references: [id])
+
+  reportsToId     String?             @map("reports_to_id")
+
+  invitedById     String              @map("invited_by_id")
+  invitedBy       User                @relation("Inviter", fields: [invitedById], references: [id])
+
+  token           String              @unique
+  expiresAt       DateTime            @map("expires_at")
+
+  status          InvitationStatus    @default(PENDING)
+  channel         InvitationChannel   @default(MANUAL)
+
+  emailSentAt     DateTime?           @map("email_sent_at")
+  emailError      String?             @map("email_error")
+
+  acceptedAt      DateTime?           @map("accepted_at")
+  acceptedById    String?             @unique @map("accepted_by_id")
+  acceptedBy      User?               @relation("Acceptor", fields: [acceptedById], references: [id])
+
+  revokedAt       DateTime?           @map("revoked_at")
+  revokedReason   String?             @map("revoked_reason")
+
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@index([token])
+  @@index([email])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+// ============================================================
+// BUSINESS — Customer / Product
+// ============================================================
 
 model Customer {
   id              String    @id @default(uuid())
@@ -131,315 +418,456 @@ model Customer {
   billingAddress  String?   @map("billing_address")
   shippingAddress String?   @map("shipping_address")
   notes           String?
-  createdById     String    @map("created_by_id")
+
+  isActive        Boolean   @default(true) @map("is_active")
+
+  quotations      Quotation[]
+  saleOrders      SaleOrder[]
+
+  deletedAt       DateTime? @map("deleted_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
-
-  createdBy  User        @relation(fields: [createdById], references: [id])
-  quotations Quotation[]
-  saleOrders SaleOrder[]
 
   @@index([company])
-  @@index([contactName])
-  @@index([taxId])
+  @@index([deletedAt])
   @@map("customers")
 }
 
 model Product {
-  id          String    @id @default(uuid())
-  sku         String    @unique
-  name        String
-  description String?
-  unitPrice   Decimal   @map("unit_price") @db.Decimal(15, 2)
-  unit        String    @default("pcs")
-  isActive    Boolean   @default(true) @map("is_active")
-  createdById String    @map("created_by_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  id              String    @id @default(uuid())
+  sku             String    @unique
+  name            String
+  description     String?
+  unitPrice       Decimal   @db.Decimal(15, 2) @map("unit_price")
+  unit            String    @default("pcs")
 
-  createdBy      User            @relation(fields: [createdById], references: [id])
-  quotationItems QuotationItem[]
-  saleOrderItems SaleOrderItem[]
+  isActive        Boolean   @default(true) @map("is_active")
+
+  quotationItems  QuotationItem[]
+  saleOrderItems  SaleOrderItem[]
+
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@index([sku])
-  @@index([name])
+  @@index([deletedAt])
   @@map("products")
 }
 
+// ============================================================
+// QUOTATION
+// ============================================================
+
 model Quotation {
-  id          String          @id @default(uuid())
-  quotationNo String          @unique @map("quotation_no")
-  version     Int             @default(1)
-  status      QuotationStatus @default(DRAFT)
+  id              String          @id @default(uuid())
+  quotationNo     String          @unique @map("quotation_no")
+  version         Int             @default(1)
 
-  issueDate  DateTime @map("issue_date") @db.Date
-  expiryDate DateTime @map("expiry_date") @db.Date
-  currency   Currency @default(THB)
+  // Customer (with snapshot)
+  customerId      String          @map("customer_id")
+  customer        Customer        @relation(fields: [customerId], references: [id])
 
-  customerId              String  @map("customer_id")
-  customerContactName     String  @map("customer_contact_name")
   customerCompany         String  @map("customer_company")
+  customerContactName     String  @map("customer_contact_name")
   customerTaxId           String? @map("customer_tax_id")
   customerEmail           String? @map("customer_email")
   customerPhone           String? @map("customer_phone")
   customerBillingAddress  String? @map("customer_billing_address")
   customerShippingAddress String? @map("customer_shipping_address")
 
-  subtotal      Decimal @default(0) @db.Decimal(15, 2)
-  discountTotal Decimal @default(0) @map("discount_total") @db.Decimal(15, 2)
-  vatEnabled    Boolean @default(true) @map("vat_enabled")
-  vatRate       Decimal @default(7) @map("vat_rate") @db.Decimal(5, 2)
-  vatAmount     Decimal @default(0) @map("vat_amount") @db.Decimal(15, 2)
-  grandTotal    Decimal @default(0) @map("grand_total") @db.Decimal(15, 2)
+  // Document
+  issueDate       DateTime        @map("issue_date")
+  expiryDate      DateTime        @map("expiry_date")
+  currency        Currency        @default(THB)
 
-  paymentTerms String? @map("payment_terms")
-  conditions   String?
+  // Money
+  subtotal        Decimal         @db.Decimal(15, 2)
+  discountTotal   Decimal         @db.Decimal(15, 2) @default(0) @map("discount_total")
+  vatRate         Decimal         @db.Decimal(5, 2) @default(7) @map("vat_rate")
+  vatEnabled      Boolean         @default(true) @map("vat_enabled")
+  vatAmount       Decimal         @db.Decimal(15, 2) @default(0) @map("vat_amount")
+  grandTotal      Decimal         @db.Decimal(15, 2) @map("grand_total")
 
-  submittedAt        DateTime? @map("submitted_at")
-  approvedAt         DateTime? @map("approved_at")
-  approvedById       String?   @map("approved_by_id")
-  rejectedAt         DateTime? @map("rejected_at")
-  rejectionReason    String?   @map("rejection_reason")
-  cancelledAt        DateTime? @map("cancelled_at")
-  cancellationReason String?   @map("cancellation_reason")
+  // Terms
+  paymentTerms    String?         @map("payment_terms")
+  conditions      String?
 
-  createdById String    @map("created_by_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  // Status
+  status          QuotationStatus @default(DRAFT)
 
-  customer    Customer              @relation(fields: [customerId], references: [id])
-  createdBy   User                  @relation("QuotationCreator", fields: [createdById], references: [id])
-  approvedBy  User?                 @relation("QuotationApprover", fields: [approvedById], references: [id])
-  items       QuotationItem[]
-  versions    QuotationVersion[]
-  comments    QuotationComment[]
-  saleOrder   SaleOrder?
-  attachments QuotationAttachment[]
+  // Approval routing
+  primaryApproverId   String?     @map("primary_approver_id")
+  primaryApprover     User?       @relation("PrimaryApprover", fields: [primaryApproverId], references: [id])
+
+  backupApproverId    String?     @map("backup_approver_id")
+  backupApprover      User?       @relation("BackupApprover", fields: [backupApproverId], references: [id])
+
+  // Approval state (denormalized)
+  currentStep         Int         @default(0) @map("current_step")
+  totalSteps          Int         @default(1) @map("total_steps")
+
+  approvedById    String?         @map("approved_by_id")
+  approvedBy      User?           @relation("QuotationApprover", fields: [approvedById], references: [id])
+  approvedAt      DateTime?       @map("approved_at")
+
+  rejectedById    String?         @map("rejected_by_id")
+  rejectedBy      User?           @relation("QuotationRejecter", fields: [rejectedById], references: [id])
+  rejectedAt      DateTime?       @map("rejected_at")
+  rejectionReason String?         @map("rejection_reason")
+
+  submittedAt     DateTime?       @map("submitted_at")
+  cancelledAt     DateTime?       @map("cancelled_at")
+  cancelledReason String?         @map("cancelled_reason")
+
+  // Creator
+  createdById     String          @map("created_by_id")
+  createdBy       User            @relation("QuotationCreator", fields: [createdById], references: [id])
+
+  // Relations
+  items           QuotationItem[]
+  versions        QuotationVersion[]
+  comments        QuotationComment[]
+  attachments     QuotationAttachment[]
+  approvals       QuotationApproval[]
+  saleOrder       SaleOrder?
+
+  // Soft delete
+  deletedAt       DateTime?       @map("deleted_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   @@index([quotationNo])
-  @@index([status])
   @@index([customerId])
   @@index([createdById])
+  @@index([primaryApproverId])
+  @@index([backupApproverId])
+  @@index([status])
+  @@index([status, expiryDate])
+  @@index([createdById, createdAt(sort: Desc)])
+  @@index([primaryApproverId, status])
+  @@index([deletedAt])
   @@index([issueDate])
+  @@index([expiryDate])
   @@map("quotations")
 }
 
 model QuotationItem {
-  id           String       @id @default(uuid())
-  quotationId  String       @map("quotation_id")
-  productId    String?      @map("product_id")
-  productSku   String?      @map("product_sku")
-  productName  String       @map("product_name")
-  description  String?
-  quantity     Decimal      @db.Decimal(15, 2)
-  unit         String       @default("pcs")
-  unitPrice    Decimal      @map("unit_price") @db.Decimal(15, 2)
-  discount     Decimal      @default(0) @db.Decimal(15, 2)
-  discountType DiscountType @default(PERCENTAGE) @map("discount_type")
-  lineTotal    Decimal      @map("line_total") @db.Decimal(15, 2)
-  sortOrder    Int          @default(0) @map("sort_order")
-  createdAt    DateTime     @default(now()) @map("created_at")
+  id              String        @id @default(uuid())
+  quotationId     String        @map("quotation_id")
+  quotation       Quotation     @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  product   Product?  @relation(fields: [productId], references: [id])
+  // Product (with snapshot)
+  productId           String?   @map("product_id")
+  product             Product?  @relation(fields: [productId], references: [id])
+  productSku          String?   @map("product_sku")
+  productName         String    @map("product_name")
+  productDescription  String?   @map("product_description")
+  unit                String    @default("pcs")
+  unitPrice           Decimal   @db.Decimal(15, 2) @map("unit_price")
+
+  // Calculated
+  quantity        Decimal       @db.Decimal(15, 2)
+  discount        Decimal       @db.Decimal(15, 2) @default(0)
+  discountType    DiscountType  @default(PERCENTAGE) @map("discount_type")
+  lineTotal       Decimal       @db.Decimal(15, 2) @map("line_total")
+
+  sortOrder       Int           @default(0) @map("sort_order")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   @@index([quotationId])
   @@map("quotation_items")
 }
 
 model QuotationVersion {
-  id           String   @id @default(uuid())
-  quotationId  String   @map("quotation_id")
-  version      Int
-  snapshot     Json
-  changedById  String   @map("changed_by_id")
-  changeReason String?  @map("change_reason")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id            String    @id @default(uuid())
+  quotationId   String    @map("quotation_id")
+  quotation     Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  versionNumber Int       @map("version_number")
+  snapshot      Json
+  changedById   String    @map("changed_by_id")
+  changeReason  String?   @map("change_reason")
 
-  @@index([quotationId, version])
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([quotationId, versionNumber])
+  @@index([quotationId])
   @@map("quotation_versions")
 }
 
 model QuotationComment {
-  id          String   @id @default(uuid())
-  quotationId String   @map("quotation_id")
-  userId      String   @map("user_id")
-  message     String
-  isInternal  Boolean  @default(false) @map("is_internal")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id            String    @id @default(uuid())
+  quotationId   String    @map("quotation_id")
+  quotation     Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id])
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id])
+
+  message       String    @db.Text
+  isInternal    Boolean   @default(false) @map("is_internal")
+
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   @@index([quotationId])
   @@map("quotation_comments")
 }
 
 model QuotationAttachment {
-  id           String   @id @default(uuid())
-  quotationId  String   @map("quotation_id")
-  fileName     String   @map("file_name")
-  fileUrl      String   @map("file_url")
-  fileSize     Int      @map("file_size")
-  mimeType     String   @map("mime_type")
-  uploadedById String   @map("uploaded_by_id")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  quotationId     String    @map("quotation_id")
+  quotation       Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 
-  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  uploadedById    String    @map("uploaded_by_id")
+  uploadedBy      User      @relation(fields: [uploadedById], references: [id])
+
+  filename        String
+  originalName    String    @map("original_name")
+  mimeType        String    @map("mime_type")
+  fileSize        Int       @map("file_size")
+  filePath        String    @map("file_path")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   @@index([quotationId])
   @@map("quotation_attachments")
 }
 
+// ============================================================
+// QUOTATION APPROVAL CHAIN — Multi-level approval audit trail
+// ============================================================
+
+model QuotationApproval {
+  id              String          @id @default(uuid())
+
+  quotationId     String          @map("quotation_id")
+  quotation       Quotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  // Approver (with snapshot — กัน user ลบ/เปลี่ยน role)
+  approverId      String          @map("approver_id")
+  approver        User            @relation("ApprovalActor", fields: [approverId], references: [id])
+
+  approverName    String          @map("approver_name")
+  approverEmail   String          @map("approver_email")
+  approverRoleId  String          @map("approver_role_id")
+  approverRoleSnapshot Role       @relation(fields: [approverRoleId], references: [id])
+  approverRoleCode  String        @map("approver_role_code")
+  approverRoleName  String        @map("approver_role_name")
+
+  // Step in approval chain
+  step            Int
+  totalSteps      Int             @map("total_steps")
+  approverType    ApproverType    @default(PRIMARY) @map("approver_type")
+
+  // Action
+  status          ApprovalAction
+  comment         String?         @db.Text
+
+  // State snapshot (กัน quotation ถูกแก้หลัง action)
+  grandTotalAtAction      Decimal  @db.Decimal(15, 2) @map("grand_total_at_action")
+  approverLimitAtAction   Decimal? @db.Decimal(15, 2) @map("approver_limit_at_action")
+  exceedsLimit            Boolean  @default(false) @map("exceeds_limit")
+  quotationVersion        Int      @map("quotation_version")
+
+  // Escalation
+  escalatedToId   String?         @map("escalated_to_id")
+  escalatedTo     User?           @relation("EscalatedTo", fields: [escalatedToId], references: [id])
+
+  // Audit
+  ipAddress       String?         @map("ip_address")
+  userAgent       String?         @map("user_agent")
+
+  actedAt         DateTime        @default(now()) @map("acted_at")
+
+  @@unique([quotationId, step, approverId, quotationVersion])
+  @@index([quotationId, step])
+  @@index([approverId])
+  @@index([approverId, status])
+  @@index([status])
+  @@map("quotation_approvals")
+}
+
+// ============================================================
+// SALE ORDER
+// ============================================================
+
 model SaleOrder {
-  id          String          @id @default(uuid())
-  saleOrderNo String          @unique @map("sale_order_no")
-  quotationId String          @unique @map("quotation_id")
-  status      SaleOrderStatus @default(PENDING)
+  id              String          @id @default(uuid())
+  saleOrderNo     String          @unique @map("sale_order_no")
+  version         Int             @default(1)
 
-  issueDate DateTime @map("issue_date") @db.Date
-  currency  Currency @default(THB)
+  quotationId     String          @unique @map("quotation_id")
+  quotation       Quotation       @relation(fields: [quotationId], references: [id])
 
-  customerId              String  @map("customer_id")
-  customerContactName     String  @map("customer_contact_name")
+  customerId      String          @map("customer_id")
+  customer        Customer        @relation(fields: [customerId], references: [id])
+
+  // Customer snapshot
   customerCompany         String  @map("customer_company")
+  customerContactName     String  @map("customer_contact_name")
   customerTaxId           String? @map("customer_tax_id")
   customerEmail           String? @map("customer_email")
   customerPhone           String? @map("customer_phone")
   customerBillingAddress  String? @map("customer_billing_address")
   customerShippingAddress String? @map("customer_shipping_address")
 
-  subtotal      Decimal @default(0) @db.Decimal(15, 2)
-  discountTotal Decimal @default(0) @map("discount_total") @db.Decimal(15, 2)
-  vatEnabled    Boolean @default(true) @map("vat_enabled")
-  vatRate       Decimal @default(7) @map("vat_rate") @db.Decimal(5, 2)
-  vatAmount     Decimal @default(0) @map("vat_amount") @db.Decimal(15, 2)
-  grandTotal    Decimal @default(0) @map("grand_total") @db.Decimal(15, 2)
+  // Document
+  issueDate       DateTime        @map("issue_date")
+  currency        Currency        @default(THB)
 
-  paymentTerms String? @map("payment_terms")
-  conditions   String?
+  // Money snapshot
+  subtotal        Decimal         @db.Decimal(15, 2)
+  discountTotal   Decimal         @db.Decimal(15, 2) @default(0) @map("discount_total")
+  vatRate         Decimal         @db.Decimal(5, 2) @default(7) @map("vat_rate")
+  vatEnabled      Boolean         @default(true) @map("vat_enabled")
+  vatAmount       Decimal         @db.Decimal(15, 2) @default(0) @map("vat_amount")
+  grandTotal      Decimal         @db.Decimal(15, 2) @map("grand_total")
 
-  pdfGenerated   Boolean   @default(false) @map("pdf_generated")
-  pdfUrl         String?   @map("pdf_url")
-  pdfGeneratedAt DateTime? @map("pdf_generated_at")
+  paymentTerms    String?         @map("payment_terms")
+  conditions      String?
 
-  createdById String    @map("created_by_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  status          SaleOrderStatus @default(PENDING)
 
-  quotation Quotation       @relation(fields: [quotationId], references: [id])
-  customer  Customer        @relation(fields: [customerId], references: [id])
-  createdBy User            @relation("SaleOrderCreator", fields: [createdById], references: [id])
-  items     SaleOrderItem[]
+  items           SaleOrderItem[]
+
+  deletedAt       DateTime?       @map("deleted_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   @@index([saleOrderNo])
-  @@index([status])
   @@index([customerId])
+  @@index([status])
+  @@index([deletedAt])
   @@map("sale_orders")
 }
 
 model SaleOrderItem {
-  id           String       @id @default(uuid())
-  saleOrderId  String       @map("sale_order_id")
-  productId    String?      @map("product_id")
-  productSku   String?      @map("product_sku")
-  productName  String       @map("product_name")
-  description  String?
-  quantity     Decimal      @db.Decimal(15, 2)
-  unit         String       @default("pcs")
-  unitPrice    Decimal      @map("unit_price") @db.Decimal(15, 2)
-  discount     Decimal      @default(0) @db.Decimal(15, 2)
-  discountType DiscountType @default(PERCENTAGE) @map("discount_type")
-  lineTotal    Decimal      @map("line_total") @db.Decimal(15, 2)
-  sortOrder    Int          @default(0) @map("sort_order")
+  id              String        @id @default(uuid())
+  saleOrderId     String        @map("sale_order_id")
+  saleOrder       SaleOrder     @relation(fields: [saleOrderId], references: [id], onDelete: Cascade)
 
-  saleOrder SaleOrder @relation(fields: [saleOrderId], references: [id], onDelete: Cascade)
-  product   Product?  @relation(fields: [productId], references: [id])
+  productId           String?   @map("product_id")
+  product             Product?  @relation(fields: [productId], references: [id])
+  productSku          String?   @map("product_sku")
+  productName         String    @map("product_name")
+  productDescription  String?   @map("product_description")
+  unit                String    @default("pcs")
+  unitPrice           Decimal   @db.Decimal(15, 2) @map("unit_price")
+
+  quantity        Decimal       @db.Decimal(15, 2)
+  discount        Decimal       @db.Decimal(15, 2) @default(0)
+  discountType    DiscountType  @default(PERCENTAGE) @map("discount_type")
+  lineTotal       Decimal       @db.Decimal(15, 2) @map("line_total")
+
+  sortOrder       Int           @default(0) @map("sort_order")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   @@index([saleOrderId])
   @@map("sale_order_items")
 }
 
+// ============================================================
+// SUPPORTING
+// ============================================================
+
 model ActivityLog {
-  id          String         @id @default(uuid())
-  userId      String         @map("user_id")
-  action      ActivityAction
-  entityType  String         @map("entity_type")
-  entityId    String?        @map("entity_id")
-  description String
-  metadata    Json?
-  ipAddress   String?        @map("ip_address")
-  userAgent   String?        @map("user_agent")
-  createdAt   DateTime       @default(now()) @map("created_at")
+  id              String   @id @default(uuid())
 
-  user User @relation(fields: [userId], references: [id])
+  // Who (with snapshot)
+  userId          String?  @map("user_id")
+  user            User?    @relation(fields: [userId], references: [id])
+  userEmail       String   @map("user_email")
+  userName        String   @map("user_name")
+  userRoleCode    String   @map("user_role_code")
 
-  @@index([userId])
+  // What
+  action          String
+  entityType      String   @map("entity_type")
+  entityId        String?  @map("entity_id")
+  description     String
+
+  metadata        Json?
+
+  // How
+  ipAddress       String?  @map("ip_address")
+  userAgent       String?  @map("user_agent")
+  requestId       String?  @map("request_id")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
   @@index([entityType, entityId])
+  @@index([action])
   @@index([createdAt])
   @@map("activity_logs")
 }
 
 model Notification {
-  id        String           @id @default(uuid())
-  userId    String           @map("user_id")
-  type      NotificationType
-  title     String
-  message   String
-  link      String?
-  isRead    Boolean          @default(false) @map("is_read")
-  metadata  Json?
-  createdAt DateTime         @default(now()) @map("created_at")
-  readAt    DateTime?        @map("read_at")
+  id              String              @id @default(uuid())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String              @map("user_id")
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type            NotificationType
+  title           String
+  message         String              @db.Text
+  link            String?
+
+  metadata        Json?
+
+  isRead          Boolean             @default(false) @map("is_read")
+  readAt          DateTime?           @map("read_at")
+
+  createdAt       DateTime            @default(now()) @map("created_at")
 
   @@index([userId, isRead])
-  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([type])
   @@map("notifications")
 }
 
 model CompanySettings {
-  id                  String   @id @default(uuid())
-  companyName         String   @map("company_name")
-  companyNameTh       String?  @map("company_name_th")
-  taxId               String?  @map("tax_id")
+  id                  String    @id @default(uuid())
+  companyName         String    @map("company_name")
+  companyNameTh       String?   @map("company_name_th")
+  taxId               String?   @map("tax_id")
   address             String?
-  addressTh           String?  @map("address_th")
+  addressTh           String?   @map("address_th")
   phone               String?
   fax                 String?
   email               String?
   website             String?
-  logoUrl             String?  @map("logo_url")
-  defaultVatRate      Decimal  @default(7) @map("default_vat_rate") @db.Decimal(5, 2)
-  defaultPaymentTerms String?  @map("default_payment_terms")
-  defaultCurrency     Currency @default(THB) @map("default_currency")
-  approverLimit       Decimal  @default(100000) @map("approver_limit") @db.Decimal(15, 2)
-  managerLimit        Decimal  @default(0) @map("manager_limit") @db.Decimal(15, 2)
-  quotationPrefix     String   @default("QT") @map("quotation_prefix")
-  saleOrderPrefix     String   @default("SO") @map("sale_order_prefix")
-  bankName            String?  @map("bank_name")
-  bankAccount         String?  @map("bank_account")
-  bankBranch          String?  @map("bank_branch")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  logoUrl             String?   @map("logo_url")
+
+  defaultVatRate      Decimal   @db.Decimal(5, 2) @default(7) @map("default_vat_rate")
+  defaultPaymentTerms String?   @map("default_payment_terms")
+  defaultCurrency     Currency  @default(THB) @map("default_currency")
+
+  quotationPrefix     String    @default("QT") @map("quotation_prefix")
+  saleOrderPrefix     String    @default("SO") @map("sale_order_prefix")
+
+  bankName            String?   @map("bank_name")
+  bankAccount         String?   @map("bank_account")
+  bankBranch          String?   @map("bank_branch")
+
+  version             Int       @default(1)
+
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("company_settings")
 }
 
 model DocumentCounter {
-  id        String   @id @default(uuid())
-  prefix    String
-  year      Int
-  counter   Int      @default(0)
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  type        String
+  year        Int
+  counter     Int      @default(0)
 
-  @@unique([prefix, year])
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([type, year])
   @@map("document_counters")
 }
