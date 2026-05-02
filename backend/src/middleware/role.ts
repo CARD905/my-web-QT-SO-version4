@@ -1,28 +1,23 @@
-import { NextFunction, Request, Response } from 'express';
-import { UserRole } from '@prisma/client';
+import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/response';
 
 /**
- * Restrict route to certain roles.
- * Must be used AFTER `authenticate`.
- *
- * Usage:
- *   router.post('/', authenticate, requireRole('SALES'), handler)
- *   router.post('/approve', authenticate, requireRole('APPROVER', 'ADMIN'), handler)
+ * Phase 1 stub — accept any authenticated user.
+ * Phase 2 will refactor to permission-based check from DB.
  */
-export function requireRole(...allowedRoles: UserRole[]) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+export function requireRole(..._roleCodes: string[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
-      return next(new AppError(401, 'UNAUTHENTICATED', 'Authentication required'));
+      return next(new AppError(401, 'UNAUTHENTICATED', 'Not authenticated'));
     }
-    if (!allowedRoles.includes(req.user.role)) {
-      return next(
-        new AppError(
-          403,
-          'FORBIDDEN',
-          `Role ${req.user.role} cannot access this resource`,
-        ),
-      );
+    next();
+  };
+}
+
+export function requirePermission(_resource: string, _action: string, _scope?: string) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError(401, 'UNAUTHENTICATED', 'Not authenticated'));
     }
     next();
   };

@@ -38,7 +38,6 @@ export const productsService = {
         orderBy,
         skip,
         take,
-        include: { createdBy: { select: { id: true, name: true } } },
       }),
       prisma.product.count({ where }),
     ]);
@@ -55,7 +54,6 @@ export const productsService = {
   },
 
   async create(input: CreateProductInput, userId: string, req?: Request) {
-    // Check SKU duplicate (including soft-deleted, since SKU is unique constraint)
     const existing = await prisma.product.findUnique({ where: { sku: input.sku } });
     if (existing) {
       throw new AppError(409, 'DUPLICATE_SKU', `SKU "${input.sku}" already exists`);
@@ -69,13 +67,13 @@ export const productsService = {
         unitPrice: input.unitPrice,
         unit: input.unit,
         isActive: input.isActive,
-        createdById: userId,
+        // Note: createdById removed — Product is shared master data in v2
       },
     });
 
     await logActivity(prisma, {
       userId,
-      action: 'CREATE',
+      action: 'product.create',
       entityType: 'Product',
       entityId: product.id,
       description: `Created product: ${product.sku} - ${product.name}`,
@@ -111,7 +109,7 @@ export const productsService = {
 
     await logActivity(prisma, {
       userId,
-      action: 'UPDATE',
+      action: 'product.update',
       entityType: 'Product',
       entityId: updated.id,
       description: `Updated product: ${updated.sku}`,
@@ -131,7 +129,7 @@ export const productsService = {
 
     await logActivity(prisma, {
       userId,
-      action: 'DELETE',
+      action: 'product.delete',
       entityType: 'Product',
       entityId: id,
       description: `Deleted product: ${product.sku}`,

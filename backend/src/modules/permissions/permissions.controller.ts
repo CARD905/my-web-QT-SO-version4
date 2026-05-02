@@ -1,70 +1,52 @@
 import { Request, Response } from 'express';
-import { UserRole } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError, success } from '../../utils/response';
-import { getRolePermissions, PERMISSIONS, PERMISSION_LABELS } from '../../utils/permissions';
+import { getRolePermissions } from '../../utils/permissions';
 
 /** Get current user's permissions */
 async function myPermissions(req: Request, res: Response) {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-  const perms = getRolePermissions(req.user.role);
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    include: { role: true },
+  });
+  if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+
+  const perms = await getRolePermissions(user.roleId);
+
   return success(res, {
-    role: req.user.role,
-    permissions: perms,
-    labels: PERMISSION_LABELS,
+    role: user.role.code,
+    roleName: user.role.nameTh,
+    permissions: perms.map((p) => p.code),
+    detail: perms,
   });
 }
 
-/** Get full permissions matrix (for Manage Permissions page) */
+/** Stub for matrix — Phase 2 implements UI */
 async function matrix(_req: Request, res: Response) {
-  const company = await prisma.companySettings.findFirst();
+  const roles = await prisma.role.findMany({
+    where: { isActive: true },
+    orderBy: { level: 'asc' },
+    include: { permissions: { include: { permission: true } } },
+  });
+
   return success(res, {
-    roles: ['SALES', 'APPROVER', 'MANAGER', 'ADMIN'] as UserRole[],
-    permissions: PERMISSIONS,
-    labels: PERMISSION_LABELS,
-    limits: {
-      approverLimit: Number(company?.approverLimit ?? 100000),
-      managerLimit: Number(company?.managerLimit ?? 0),
-    },
+    roles: roles.map((r) => ({ code: r.code, nameTh: r.nameTh, level: r.level })),
+    permissions: roles.flatMap((r) =>
+      r.permissions.map((rp) => ({
+        roleCode: r.code,
+        permissionCode: rp.permission.code,
+      })),
+    ),
+    labels: {},
+    limits: { approverLimit: 0, managerLimit: 0 },
   });
 }
 
-/** Update approval limits — Manager only */
-async function updateLimits(req: Request, res: Response) {
-  if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-
-  const { approverLimit, managerLimit } = req.body as {
-    approverLimit: number;
-    managerLimit: number;
-  };
-
-  if (typeof approverLimit !== 'number' || approverLimit < 0) {
-    throw new AppError(400, 'INVALID_INPUT', 'approverLimit must be >= 0');
-  }
-  if (typeof managerLimit !== 'number' || managerLimit < 0) {
-    throw new AppError(400, 'INVALID_INPUT', 'managerLimit must be >= 0');
-  }
-
-  let company = await prisma.companySettings.findFirst();
-  if (!company) {
-    company = await prisma.companySettings.create({
-      data: { companyName: 'Your Company', approverLimit, managerLimit },
-    });
-  } else {
-    company = await prisma.companySettings.update({
-      where: { id: company.id },
-      data: { approverLimit, managerLimit },
-    });
-  }
-
-  return success(
-    res,
-    {
-      approverLimit: Number(company.approverLimit),
-      managerLimit: Number(company.managerLimit),
-    },
-    'Limits updated',
-  );
+/** Stub for limits — Phase 2 will move limits to Role.defaultApprovalLimit */
+async function updateLimits(_req: Request, res: Response) {
+  return success(res, { approverLimit: 0, managerLimit: 0 }, 'Phase 2 feature');
 }
 
 export const permissionsController = {

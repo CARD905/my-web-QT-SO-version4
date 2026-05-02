@@ -4,7 +4,11 @@ import { AppError, success } from '../../utils/response';
 
 function requireUser(req: Request) {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-  return req.user;
+  const u = req.user as { id: string; role?: string; roleCode?: string };
+  return {
+    id: u.id,
+    roleCode: u.roleCode || u.role || 'OFFICER',
+  };
 }
 
 export const saleOrdersController = {
@@ -20,18 +24,20 @@ export const saleOrdersController = {
     return success(res, so);
   },
 
-  /** Trigger PDF generation - returns metadata (frontend can then download) */
   async generatePdf(req: Request, res: Response) {
     const user = requireUser(req);
     const result = await saleOrdersService.generatePdf(req.params.id, user, req);
-    return success(res, {
-      url: result.url,
-      fileName: result.fileName,
-      generatedAt: new Date().toISOString(),
-    }, 'PDF generated');
+    return success(
+      res,
+      {
+        url: result.url,
+        fileName: result.fileName,
+        generatedAt: new Date().toISOString(),
+      },
+      'PDF generated',
+    );
   },
 
-  /** Stream PDF directly */
   async downloadPdf(req: Request, res: Response) {
     const user = requireUser(req);
     const { filePath, fileName } = await saleOrdersService.getPdfFile(req.params.id, user, req);
