@@ -10,7 +10,7 @@ router.use(authenticate);
 router.use(requireRole('MANAGER', 'ADMIN'));
 
 router.get('/overview', asyncHandler(managerDashboardController.overview));
-router.get('/users', asyncHandler(managerDashboardController.usersList));
+router.get('/users', asyncHandler(managerDashboardController.users));
 router.get('/users/:userId', asyncHandler(managerDashboardController.userDetail));
 
 export default router;
