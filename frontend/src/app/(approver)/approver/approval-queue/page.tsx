@@ -9,10 +9,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDate, formatMoney, isExpiringSoon } from '@/lib/utils';
+import { formatDate, formatMoney } from '@/lib/utils';
 import type { ApiResponse, Quotation } from '@/types/api';
 
 const HIGH_VALUE = 100000;
+
+/** Check if expiry is within 7 days from now */
+function isExpiringSoon(expiry: string | Date): boolean {
+  const d = typeof expiry === 'string' ? new Date(expiry) : expiry;
+  if (isNaN(d.getTime())) return false;
+  const days = (d.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+  return days <= 7 && days >= 0;
+}
 
 export default function ApprovalQueuePage() {
   const t = useT();
