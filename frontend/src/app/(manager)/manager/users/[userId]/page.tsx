@@ -1,204 +1,128 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, FileText, TrendingUp, Calendar, CheckCircle2, Mail } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { ArrowLeft, Construction, User } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { GlassCard } from '@/components/effects/glass-card';
-import { AnimatedCounter } from '@/components/effects/animated-counter';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatDate, formatMoney, formatRelativeTime, getStatusClass } from '@/lib/utils';
-import { toast } from 'sonner';
-import type { ApiResponse, UserDetailResponse } from '@/types/api';
+import type { ApiResponse } from '@/types/api';
 
-const ROLE_GRADIENT: Record<string, string> = {
-  SALES: 'from-blue-500 to-cyan-500',
-  APPROVER: 'from-purple-500 to-fuchsia-500',
-  MANAGER: 'from-amber-500 to-orange-500',
-  ADMIN: 'from-rose-500 to-red-500',
-};
+interface UserDetailStub {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: string | { code: string; nameTh?: string };
+  } | null;
+  totals?: {
+    quotations: number;
+    approvedValue: number;
+    thisMonth: number;
+  };
+  byStatus?: Array<{ status: string; count: number }>;
+  recent?: Array<{
+    id: string;
+    quotationNo: string;
+    status: string;
+    grandTotal: number;
+    createdAt: string;
+  }>;
+}
 
 export default function UserDetailPage() {
   const params = useParams();
   const userId = params.userId as string;
-
-  const [data, setData] = useState<UserDetailResponse | null>(null);
+  const [data, setData] = useState<UserDetailStub | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        const res = await api.get<ApiResponse<UserDetailResponse>>(
-          `/manager-dashboard/users/${userId}`,
-        );
-        setData(res.data.data ?? null);
+        const res = await api.get<ApiResponse<UserDetailStub>>(`/manager-dashboard/users/${userId}`);
+        if (!cancelled) setData(res.data.data ?? null);
       } catch (err) {
-        toast.error(getApiErrorMessage(err));
+        if (!cancelled) setError(getApiErrorMessage(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
-  if (loading) {
-    return (
-      <div className="space-y-4 max-w-6xl">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-
-  if (!data) return <div>Not found</div>;
-
-  const { user, totals, byStatus, recent } = data;
-  const gradient = ROLE_GRADIENT[user.role] || 'from-slate-500 to-slate-600';
-
   return (
-    <div className="space-y-6 max-w-6xl">
-      <Button asChild variant="ghost" size="sm">
-        <Link href="/manager/users">
-          <ArrowLeft className="h-4 w-4" />
-          กลับ
-        </Link>
-      </Button>
+    <div className="space-y-6 max-w-5xl">
+      <Link
+        href="/manager/dashboard"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Dashboard
+      </Link>
 
-      {/* Hero */}
-      <GlassCard className="p-6 overflow-hidden">
-        <div className="flex items-start gap-5 flex-wrap">
-          <div
-            className={`h-20 w-20 rounded-2xl bg-gradient-to-br ${gradient} text-white flex items-center justify-center font-bold text-2xl shrink-0 shadow-2xl`}
-          >
-            {user.name.slice(0, 2).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold">{user.name}</h1>
-            <Badge variant="outline" className="mt-1">
-              {user.role}
-            </Badge>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Mail className="h-3 w-3" />
-                {user.email}
-              </span>
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                Member since {formatDate(user.createdAt)}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {user.lastLoginAt
-                ? `เข้าระบบล่าสุด ${formatRelativeTime(user.lastLoginAt)}`
-                : 'ยังไม่เคยเข้าระบบ'}
-            </div>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* Totals */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <GlassCard className="p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-muted-foreground">Quotations ทั้งหมด</div>
-              <div className="text-3xl font-bold mt-1 tabular-nums">
-                <AnimatedCounter value={totals.quotations} />
-              </div>
-            </div>
-            <FileText className="h-8 w-8 text-primary opacity-30" />
-          </div>
-        </GlassCard>
-        <GlassCard className="p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-muted-foreground">มูลค่าที่อนุมัติ</div>
-              <div className="text-3xl font-bold mt-1 text-emerald-600 dark:text-emerald-400">
-                <AnimatedCounter
-                  value={totals.approvedValue}
-                  format={(n) => formatMoney(n)}
-                />
-              </div>
-            </div>
-            <CheckCircle2 className="h-8 w-8 text-emerald-500 opacity-30" />
-          </div>
-        </GlassCard>
-        <GlassCard className="p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-muted-foreground">เดือนนี้</div>
-              <div className="text-3xl font-bold mt-1 tabular-nums">
-                <AnimatedCounter value={totals.thisMonth} />
-              </div>
-            </div>
-            <TrendingUp className="h-8 w-8 text-amber-500 opacity-30" />
-          </div>
-        </GlassCard>
+      <div>
+        <h1 className="text-2xl font-bold">User Details</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          User ID: <span className="font-mono">{userId}</span>
+        </p>
       </div>
 
-      {/* Status breakdown */}
-      <GlassCard className="p-5">
-        <h2 className="font-bold mb-4">แยกตามสถานะ</h2>
-        {byStatus.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">ไม่มีข้อมูล</p>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {byStatus.map((s) => (
-              <div
-                key={s.status}
-                className={`px-3 py-3 rounded-lg border ${getStatusClass(s.status)}`}
-              >
-                <div className="text-[10px] uppercase tracking-wider opacity-80">{s.status}</div>
-                <div className="text-2xl font-bold mt-1">
-                  <AnimatedCounter value={s.count} />
-                </div>
-                <div className="text-xs opacity-70 mt-0.5 truncate">
-                  {formatMoney(s.totalValue)}
+      {/* Phase 6 Coming Soon Banner */}
+      <Card className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+        <CardContent className="py-4 flex items-center gap-3">
+          <Construction className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-medium text-amber-900 dark:text-amber-100">
+              Phase 6: Manager Dashboard Rebuild
+            </span>
+            <span className="text-amber-700 dark:text-amber-300 ml-2">
+              — Detailed user analytics with team-scoped queries coming soon.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {loading && (
+        <div className="space-y-3">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      )}
+
+      {error && (
+        <Card>
+          <CardContent className="py-8 text-center text-destructive">
+            <p className="text-sm">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {data && (
+        <Card>
+          <CardContent className="py-6">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <div className="font-semibold">{data.user?.name || '-'}</div>
+                <div className="text-sm text-muted-foreground">{data.user?.email || '-'}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Role:{' '}
+                  {typeof data.user?.role === 'string'
+                    ? data.user.role
+                    : data.user?.role?.nameTh || data.user?.role?.code || '-'}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
-
-      {/* Recent quotations */}
-      <GlassCard className="p-5">
-        <h2 className="font-bold mb-4">Quotations ล่าสุด</h2>
-        {recent.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">ยังไม่มีรายการ</p>
-        ) : (
-          <ul className="divide-y divide-border/50">
-            {recent.map((q) => (
-              <li key={q.id}>
-                <Link
-                  href={`/manager/quotations/${q.id}`}
-                  className="flex items-center justify-between gap-3 py-3 px-2 -mx-2 rounded-lg hover:bg-accent/40 transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{q.quotationNo}</span>
-                      <Badge className={getStatusClass(q.status)} variant="outline">
-                        {q.status}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {q.customerCompany}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold">{formatMoney(q.grandTotal, q.currency)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatRelativeTime(q.updatedAt)}
-                    </div>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </GlassCard>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

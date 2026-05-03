@@ -288,8 +288,8 @@ export default function SaleOrderDetailPage() {
                 </td>
                 <td className="border-r border-gray-300 px-2 py-2 align-top">
                   <div className="font-semibold">{it.productName}</div>
-                  {it.description && (
-                    <div className="text-[10px] text-gray-700 mt-0.5">{it.description}</div>
+                  {it.productDescription && (
+                    <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>
                   )}
                 </td>
                 <td className="border-r border-gray-300 px-2 py-2 align-top text-right">

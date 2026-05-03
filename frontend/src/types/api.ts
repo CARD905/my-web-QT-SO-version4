@@ -337,4 +337,136 @@ export interface Notification {
   link?: string | null;
   isRead: boolean;
   createdAt: string | Date;
+  
+}
+// ============================================================
+// MANAGER DASHBOARD (stub — Phase 6 will rebuild)
+// ============================================================
+export interface ManagerOverview {
+  totals: {
+    quotations: number;
+    pendingApprover: number;
+    pendingManager: number;
+    pendingApproverValue: number;
+    pendingManagerValue: number;
+  };
+  todayActivity: {
+    approved: number;
+    rejected: number;
+  };
+  topSales: Array<{
+    userId: string;
+    userName: string;
+    count: number;
+    value: number;
+  }>;
+  topApprovers: Array<{
+    userId: string;
+    userName: string;
+    count: number;
+  }>;
+  recentEscalated: Array<{
+    id: string;
+    quotationNo: string;
+    grandTotal: number;
+    customerCompany: string;
+    createdByName: string;
+    submittedAt: string;
+  }>;
+}
+
+export interface ManagerUserDetail {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: string | { code: string; nameTh?: string };
+  } | null;
+  totals: {
+    quotations: number;
+    approvedValue: number;
+    thisMonth: number;
+  };
+  byStatus: Array<{ status: string; count: number }>;
+  recent: Array<{
+    id: string;
+    quotationNo: string;
+    status: string;
+    grandTotal: number;
+    createdAt: string;
+  }>;
+}
+// ============================================================
+// USER LIST + DRILL-DOWN (legacy compat — Phase 6 will rebuild)
+// ============================================================
+
+/** User list item with quick stats (for manager drill-down) */
+export interface UserListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: string | { code: string; nameTh?: string }; // accept both legacy + new
+  isActive: boolean;
+  lastLoginAt: string | Date | null;
+  stats: {
+    total: number;
+    approved: number;
+    approvedValue: number;
+  };
+}
+
+/** User detail response — alias for ManagerUserDetail */
+export type UserDetailResponse = ManagerUserDetail;
+
+// ============================================================
+// PERMISSIONS RESPONSE TYPES
+// ============================================================
+
+/** Response of GET /permissions/me */
+export interface MyPermissionsResponse {
+  user: { id: string; email: string; name: string };
+  /** Role can come back as code string OR full Role object — handle both */
+  role: string | {
+    id?: string;
+    code: string;
+    nameTh: string;
+    nameEn?: string;
+    level?: number;
+    themeColor?: string | null;
+    defaultApprovalLimit?: string | number | null;
+  };
+  roleName?: string;
+  team?: {
+    id: string;
+    name: string;
+    department: { id: string; name: string } | null;
+  } | null;
+  permissions: string[];
+  permissionsByResource?: Record<string, Record<string, PermissionScope>>;
+  /** Optional human-readable labels (legacy support) */
+  labels?: Record<string, { th: string; en: string; group: string }>;
+  detail?: Permission[];
+}
+
+/** Response of GET /permissions/matrix (admin/CEO) */
+export interface PermissionsMatrixResponse {
+  roles: Array<{
+    id: string;
+    code: string;
+    nameTh: string;
+    nameEn: string;
+    level: number;
+    themeColor?: string | null;
+    defaultApprovalLimit?: string | number | null;
+    permissionCodes: string[];
+  }>;
+  permissions: Array<{
+    code: string;
+    resource: string;
+    action: string;
+    scope: PermissionScope;
+    nameTh: string;
+    nameEn: string;
+    groupKey: string | null;
+  }>;
 }

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { GlassCard } from '@/components/effects/glass-card';
 import { AnimatedCounter } from '@/components/effects/animated-counter';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatMoney, formatRelativeTime } from '@/lib/utils';
+import { formatRelativeTime, getRoleCode } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse, UserListItem } from '@/types/api';
 
@@ -35,8 +35,15 @@ export default function ManagerUsersPage() {
     [u.name, u.email].some((s) => s.toLowerCase().includes(search.toLowerCase())),
   );
 
-  const sales = filtered.filter((u) => u.role === 'SALES');
-  const approvers = filtered.filter((u) => u.role === 'APPROVER');
+  // Use getRoleCode helper to handle both string and Role object
+  const sales = filtered.filter((u) => {
+    const code = getRoleCode(u.role);
+    return code === 'OFFICER' || code === 'SALES';
+  });
+  const approvers = filtered.filter((u) => {
+    const code = getRoleCode(u.role);
+    return code === 'MANAGER' || code === 'APPROVER';
+  });
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -46,7 +53,7 @@ export default function ManagerUsersPage() {
           User Drill-Down
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          ดูข้อมูลรายบุคคลของ Sales และ Approver แต่ละคน
+          ดูข้อมูลรายบุคคลของ Officer/Sales และ Manager/Approver แต่ละคน
         </p>
       </div>
 
@@ -70,11 +77,10 @@ export default function ManagerUsersPage() {
         </div>
       ) : (
         <>
-          {/* Sales section */}
           <section>
             <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-500" />
-              Sales ({sales.length})
+              Officers / Sales ({sales.length})
             </h2>
             {sales.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">ไม่มีข้อมูล</p>
@@ -87,11 +93,10 @@ export default function ManagerUsersPage() {
             )}
           </section>
 
-          {/* Approvers */}
           <section>
             <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
               <UserCog className="h-5 w-5 text-purple-500" />
-              Approvers ({approvers.length})
+              Managers / Approvers ({approvers.length})
             </h2>
             {approvers.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">ไม่มีข้อมูล</p>
@@ -133,20 +138,20 @@ function UserCard({ user, accent }: { user: UserListItem; accent: string }) {
               <div>
                 <div className="text-muted-foreground">QT ทั้งหมด</div>
                 <div className="font-bold text-base">
-                  <AnimatedCounter value={user.stats.total} />
+                  <AnimatedCounter value={user.stats?.total ?? 0} />
                 </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Approved</div>
                 <div className="font-bold text-base text-emerald-600 dark:text-emerald-400">
-                  <AnimatedCounter value={user.stats.approved} />
+                  <AnimatedCounter value={user.stats?.approved ?? 0} />
                 </div>
               </div>
               <div>
                 <div className="text-muted-foreground">Value</div>
                 <div className="font-bold text-base">
                   <AnimatedCounter
-                    value={user.stats.approvedValue}
+                    value={user.stats?.approvedValue ?? 0}
                     format={(n) => (n >= 1000 ? `${(n / 1000).toFixed(0)}K` : n.toFixed(0))}
                   />
                 </div>

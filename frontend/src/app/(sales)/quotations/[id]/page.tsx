@@ -269,8 +269,8 @@ export default function QuotationDetailPage() {
                     <td className="py-3 text-xs text-muted-foreground">{it.productSku || '-'}</td>
                     <td className="py-3">
                       <div className="font-medium">{it.productName}</div>
-                      {it.description && (
-                        <div className="text-xs text-muted-foreground mt-0.5">{it.description}</div>
+                      {it.productDescription && (
+                        <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>
                       )}
                     </td>
                     <td className="py-3 text-right">

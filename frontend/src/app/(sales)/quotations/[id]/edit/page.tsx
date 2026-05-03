@@ -14,25 +14,25 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDateInput, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
-import type { ApiResponse, Customer, Product, Quotation } from '@/types/api';
+import type { ApiResponse, Customer, DiscountType, Product, Quotation } from '@/types/api';
 
 interface LineItem {
   id: string;
   productId?: string;
   productSku?: string;
   productName: string;
-  description: string;
+  productDescription?: string;
   quantity: number;
   unit: string;
   unitPrice: number;
   discount: number;
-  discountType: 'PERCENTAGE' | 'FIXED';
+  discountType: DiscountType;
 }
 
 const newItem = (): LineItem => ({
   id: Math.random().toString(36).slice(2),
   productName: '',
-  description: '',
+  productDescription: '',
   quantity: 1,
   unit: 'pcs',
   unitPrice: 0,
@@ -96,12 +96,12 @@ export default function EditQuotationPage() {
         setPaymentTerms(q.paymentTerms || 'Net 30');
         setConditions(q.conditions || '');
         setItems(
-          (q.items ?? []).map((it) => ({
-            id: it.id,
+          (q.items ?? []).map((it, idx) => ({
+            id: it.id ?? `temp-${idx}`,
             productId: it.productId || undefined,
             productSku: it.productSku || undefined,
             productName: it.productName,
-            description: it.description || '',
+            productDescription: it.productDescription ?? '',
             quantity: Number(it.quantity),
             unit: it.unit,
             unitPrice: Number(it.unitPrice),
@@ -136,7 +136,7 @@ export default function EditQuotationPage() {
       productId: p.id,
       productSku: p.sku,
       productName: p.name,
-      description: p.description || '',
+      productDescription: p.description || '',
       unitPrice: Number(p.unitPrice),
       unit: p.unit,
     });
@@ -187,7 +187,7 @@ export default function EditQuotationPage() {
           productId: it.productId,
           productSku: it.productSku,
           productName: it.productName,
-          description: it.description,
+          productDescription: it.productDescription,
           quantity: it.quantity,
           unit: it.unit,
           unitPrice: it.unitPrice,
@@ -386,8 +386,8 @@ export default function EditQuotationPage() {
                   )}
                 </div>
                 <Input
-                  value={item.description}
-                  onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                  value={item.productDescription || ''}
+                  onChange={(e) => updateItem(item.id, { productDescription: e.target.value })}
                   placeholder="Description"
                   className="h-9"
                 />

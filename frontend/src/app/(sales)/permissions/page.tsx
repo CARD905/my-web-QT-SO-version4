@@ -9,13 +9,21 @@ import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { toast } from 'sonner';
-import type { ApiResponse, MyPermissionsResponse, UserRole } from '@/types/api';
+import type { ApiResponse, MyPermissionsResponse } from '@/types/api';
 
-const ROLE_META: Record<UserRole, { icon: typeof Shield; gradient: string; bg: string }> = {
+const ROLE_META: Record<string, { icon: typeof Shield; gradient: string; bg: string }> = {
+  OFFICER: { icon: Users, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-500/10' },
   SALES: { icon: Users, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-500/10' },
-  APPROVER: { icon: UserCog, gradient: 'from-purple-500 to-fuchsia-500', bg: 'bg-purple-500/10' },
   MANAGER: { icon: Crown, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-500/10' },
+  APPROVER: { icon: UserCog, gradient: 'from-purple-500 to-fuchsia-500', bg: 'bg-purple-500/10' },
   ADMIN: { icon: Sparkles, gradient: 'from-rose-500 to-red-500', bg: 'bg-rose-500/10' },
+  CEO: { icon: Crown, gradient: 'from-purple-600 to-pink-600', bg: 'bg-purple-500/10' },
+};
+
+const DEFAULT_META = {
+  icon: Shield,
+  gradient: 'from-slate-500 to-gray-500',
+  bg: 'bg-slate-500/10',
 };
 
 export default function MyPermissionsPage() {
@@ -48,18 +56,27 @@ export default function MyPermissionsPage() {
 
   if (!data) return null;
 
-  const meta = ROLE_META[data.role];
+  // Role can be string or object — extract code safely
+  const roleCode =
+    typeof data.role === 'string' ? data.role : (data.role as { code?: string })?.code || 'OFFICER';
+  const roleName = data.roleName || roleCode;
+
+  const meta = ROLE_META[roleCode] || DEFAULT_META;
   const RoleIcon = meta.icon;
 
-  // Group permissions
+  // Group permissions (handles both old `labels` shape and new flat array)
   const grouped = new Map<string, Array<{ key: string; label: string }>>();
   for (const key of data.permissions) {
-    const label = data.labels[key];
-    if (!label) continue;
-    const arr = grouped.get(label.group) ?? [];
-    arr.push({ key, label: label.th });
-    grouped.set(label.group, arr);
+    const label = data.labels?.[key];
+    const groupName = label?.group || 'general';
+    const displayLabel = label?.th || key;
+    const arr = grouped.get(groupName) ?? [];
+    arr.push({ key, label: displayLabel });
+    grouped.set(groupName, arr);
   }
+
+  const userName = (session?.user as { name?: string | null })?.name || '';
+  const userEmail = (session?.user as { email?: string | null })?.email || '';
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -74,9 +91,9 @@ export default function MyPermissionsPage() {
               <div className="text-xs uppercase tracking-widest text-white/80 mb-1">
                 {t('permissions.myRole')}
               </div>
-              <h1 className="text-4xl font-bold tracking-tight">{data.role}</h1>
+              <h1 className="text-4xl font-bold tracking-tight">{roleName}</h1>
               <div className="text-sm text-white/90 mt-1">
-                {session?.user?.name} · {session?.user?.email}
+                {userName} · {userEmail}
               </div>
             </div>
             <div className="text-right hidden md:block">
@@ -96,9 +113,7 @@ export default function MyPermissionsPage() {
           <Card key={group}>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <span
-                  className={`h-2 w-2 rounded-full bg-gradient-to-r ${meta.gradient}`}
-                />
+                <span className={`h-2 w-2 rounded-full bg-gradient-to-r ${meta.gradient}`} />
                 {t(`permissions.groups.${group}`) || group}
                 <Badge variant="outline" className="ml-auto text-xs">
                   {perms.length}
@@ -109,7 +124,7 @@ export default function MyPermissionsPage() {
               <ul className="space-y-2">
                 {perms.map((p) => (
                   <li key={p.key} className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className={`h-4 w-4 shrink-0 text-green-500`} />
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
                     <span className="truncate">{p.label}</span>
                   </li>
                 ))}
