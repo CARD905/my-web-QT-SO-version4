@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { quotationsController } from './quotations.controller';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/role';
+import { requirePermission, requireAnyPermission } from '../../middleware/permission';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
 import {
@@ -19,56 +19,119 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/', validate(listQuotationsSchema, 'query'), asyncHandler(quotationsController.list));
-router.get('/:id', asyncHandler(quotationsController.getById));
+// ============================================================
+// VIEW — anyone with any view scope (OWN/TEAM/ALL)
+// Service-layer scope filter handles actual filtering.
+// ============================================================
+router.get(
+  '/',
+  requireAnyPermission(
+    ['quotation', 'view', 'OWN'],
+    ['quotation', 'view', 'TEAM'],
+    ['quotation', 'view', 'DEPARTMENT'],
+    ['quotation', 'view', 'ALL'],
+  ),
+  validate(listQuotationsSchema, 'query'),
+  asyncHandler(quotationsController.list),
+);
 
+router.get(
+  '/:id',
+  requireAnyPermission(
+    ['quotation', 'view', 'OWN'],
+    ['quotation', 'view', 'TEAM'],
+    ['quotation', 'view', 'DEPARTMENT'],
+    ['quotation', 'view', 'ALL'],
+  ),
+  asyncHandler(quotationsController.getById),
+);
+
+// ============================================================
+// CREATE / UPDATE / SUBMIT / CANCEL — Officer (own)
+// ============================================================
 router.post(
   '/',
-  requireRole('SALES', 'ADMIN'),
+  requirePermission('quotation', 'create', 'OWN'),
   validate(createQuotationSchema),
   asyncHandler(quotationsController.create),
 );
 
 router.patch(
   '/:id',
-  requireRole('SALES', 'ADMIN'),
+  requirePermission('quotation', 'update', 'OWN'),
   validate(updateQuotationSchema),
   asyncHandler(quotationsController.update),
 );
 
 router.post(
   '/:id/submit',
-  requireRole('SALES', 'ADMIN'),
+  requirePermission('quotation', 'submit', 'OWN'),
   validate(submitQuotationSchema),
   asyncHandler(quotationsController.submit),
 );
 
 router.post(
   '/:id/cancel',
-  requireRole('SALES', 'ADMIN'),
+  requirePermission('quotation', 'cancel', 'OWN'),
   validate(cancelQuotationSchema),
   asyncHandler(quotationsController.cancel),
 );
 
-// MANAGER + ADMIN can also approve (in addition to APPROVER)
+// ============================================================
+// APPROVE / REJECT — Manager (TEAM) or Admin/CEO (ALL)
+// ============================================================
 router.post(
   '/:id/approve',
-  requireRole('APPROVER', 'MANAGER', 'ADMIN'),
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'DEPARTMENT'],
+    ['quotation', 'approve', 'ALL'],
+  ),
   validate(approveQuotationSchema),
   asyncHandler(quotationsController.approve),
 );
 
 router.post(
   '/:id/reject',
-  requireRole('APPROVER', 'MANAGER', 'ADMIN'),
+  requireAnyPermission(
+    ['quotation', 'reject', 'TEAM'],
+    ['quotation', 'reject', 'DEPARTMENT'],
+    ['quotation', 'reject', 'ALL'],
+  ),
   validate(rejectQuotationSchema),
   asyncHandler(quotationsController.reject),
 );
 
-router.get('/:id/versions', asyncHandler(quotationsController.getVersions));
-router.get('/:id/comments', asyncHandler(quotationsController.getComments));
+// ============================================================
+// VERSIONS / COMMENTS — anyone with view permission
+// ============================================================
+router.get(
+  '/:id/versions',
+  requireAnyPermission(
+    ['quotation', 'view', 'OWN'],
+    ['quotation', 'view', 'TEAM'],
+    ['quotation', 'view', 'ALL'],
+  ),
+  asyncHandler(quotationsController.getVersions),
+);
+
+router.get(
+  '/:id/comments',
+  requireAnyPermission(
+    ['quotation', 'view', 'OWN'],
+    ['quotation', 'view', 'TEAM'],
+    ['quotation', 'view', 'ALL'],
+  ),
+  asyncHandler(quotationsController.getComments),
+);
+
 router.post(
   '/:id/comments',
+  requireAnyPermission(
+    ['quotation', 'view', 'OWN'],
+    ['quotation', 'view', 'TEAM'],
+    ['quotation', 'view', 'ALL'],
+  ),
   validate(addCommentSchema),
   asyncHandler(quotationsController.addComment),
 );

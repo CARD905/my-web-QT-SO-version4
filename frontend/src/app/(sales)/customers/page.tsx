@@ -12,14 +12,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import type { ApiResponse, Customer } from '@/types/api';
+import { usePermissions } from '@/hooks/use-permissions';
+
 
 export default function CustomersPage() {
   const t = useT();
-  const { data: session } = useSession();
-  const role = session?.user?.role;
-  const canCreate = role === 'MANAGER' || role === 'ADMIN';
-  const canEdit = role === 'SALES' || role === 'MANAGER' || role === 'ADMIN';
-  const canDelete = role === 'MANAGER' || role === 'ADMIN';
+  const { can } = usePermissions();
+  const canCreate = can('customer', 'create', 'ALL');
+  const canEdit = can('customer', 'update', 'ALL');
+  const canDelete = can('customer', 'delete', 'ALL');
 
   const [list, setList] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);

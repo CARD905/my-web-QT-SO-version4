@@ -51,7 +51,7 @@ export async function authenticate(
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role.code,         // legacy compat
+      role: user.role.code,
       roleCode: user.role.code,
       roleId: user.roleId,
       teamId: user.teamId,

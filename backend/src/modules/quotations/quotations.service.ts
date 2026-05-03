@@ -7,6 +7,8 @@ import { logActivity } from '../../utils/activity-log';
 import { createNotification, notifyByRole } from '../../utils/notification';
 import { generateDocumentNumber } from '../../utils/number-generator';
 import { calcQuotation } from '../../utils/calc';
+import { buildScopeFilter, canActOnEntity } from '../../utils/scope-filter';
+
 import {
   AddCommentInput,
   ApproveQuotationInput,
@@ -24,6 +26,7 @@ const EXPIRING_SOON_DAYS = 7;
 interface CurrentUser {
   id: string;
   roleCode: string;
+  roleId: string;
 }
 
 const quotationDetailInclude = {
@@ -79,9 +82,23 @@ export const quotationsService = {
 
     const where: Prisma.QuotationWhereInput = { deletedAt: null };
 
-    if (isOfficer(currentUser.roleCode)) {
-      where.createdById = currentUser.id;
-    } else if (query.createdById) {
+    // Apply scope filter based on user's permissions
+    const scopeFilter = await buildScopeFilter(
+      currentUser,
+      'quotation',
+      'view',
+      'createdById',
+    );
+
+    if (!scopeFilter) {
+      // No permission to view any
+      return { data: [], meta: buildPaginationMeta(0, page, limit) };
+    }
+
+    Object.assign(where, scopeFilter);
+
+    // Drill-down filter (Manager/Admin only — restricted by scope filter above)
+    if (query.createdById) {
       where.createdById = query.createdById;
     }
 
@@ -143,9 +160,15 @@ export const quotationsService = {
 
     if (!quotation) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (isOfficer(currentUser.roleCode) && quotation.createdById !== currentUser.id) {
-      throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
-    }
+  const canView = await canActOnEntity(
+    currentUser,
+    'quotation',
+    'view',
+    quotation.createdById,
+  );
+  if (!canView) {
+    throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
+  }
 
     // Auto-mark as expired if past expiry date
     if (

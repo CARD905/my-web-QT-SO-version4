@@ -3,54 +3,103 @@ import { prisma } from '../../config/prisma';
 import { AppError, success } from '../../utils/response';
 import { getRolePermissions } from '../../utils/permissions';
 
-/** Get current user's permissions */
+/**
+ * GET /permissions/me
+ * Return the current user's permissions list.
+ */
 async function myPermissions(req: Request, res: Response) {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
 
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
-    include: { role: true },
+    include: {
+      role: true,
+      team: { include: { department: true } },
+    },
   });
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
-  const perms = await getRolePermissions(user.roleId);
+  const permissions = await getRolePermissions(user.roleId);
+
+  // Group by resource for easy lookup on frontend
+  const grouped: Record<string, Record<string, string>> = {};
+  for (const p of permissions) {
+    grouped[p.resource] ??= {};
+    grouped[p.resource][p.action] = p.scope; // e.g. { quotation: { view: 'TEAM' } }
+  }
 
   return success(res, {
-    role: user.role.code,
-    roleName: user.role.nameTh,
-    permissions: perms.map((p) => p.code),
-    detail: perms,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    },
+    role: {
+      id: user.role.id,
+      code: user.role.code,
+      nameTh: user.role.nameTh,
+      nameEn: user.role.nameEn,
+      level: user.role.level,
+      themeColor: user.role.themeColor,
+      defaultApprovalLimit: user.role.defaultApprovalLimit,
+    },
+    team: user.team
+      ? {
+          id: user.team.id,
+          name: user.team.name,
+          department: user.team.department
+            ? { id: user.team.department.id, name: user.team.department.name }
+            : null,
+        }
+      : null,
+    permissions: permissions.map((p) => p.code),
+    permissionsByResource: grouped,
+    detail: permissions,
   });
 }
 
-/** Stub for matrix — Phase 2 implements UI */
+/**
+ * GET /permissions/matrix
+ * Return all roles × permissions (for admin UI).
+ */
 async function matrix(_req: Request, res: Response) {
-  const roles = await prisma.role.findMany({
-    where: { isActive: true },
-    orderBy: { level: 'asc' },
-    include: { permissions: { include: { permission: true } } },
-  });
+  const [roles, permissions] = await Promise.all([
+    prisma.role.findMany({
+      where: { isActive: true },
+      orderBy: { level: 'asc' },
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+      },
+    }),
+    prisma.permission.findMany({ orderBy: [{ groupKey: 'asc' }, { code: 'asc' }] }),
+  ]);
 
   return success(res, {
-    roles: roles.map((r) => ({ code: r.code, nameTh: r.nameTh, level: r.level })),
-    permissions: roles.flatMap((r) =>
-      r.permissions.map((rp) => ({
-        roleCode: r.code,
-        permissionCode: rp.permission.code,
-      })),
-    ),
-    labels: {},
-    limits: { approverLimit: 0, managerLimit: 0 },
+    roles: roles.map((r) => ({
+      id: r.id,
+      code: r.code,
+      nameTh: r.nameTh,
+      nameEn: r.nameEn,
+      level: r.level,
+      themeColor: r.themeColor,
+      defaultApprovalLimit: r.defaultApprovalLimit,
+      permissionCodes: r.permissions.map((rp) => rp.permission.code),
+    })),
+    permissions: permissions.map((p) => ({
+      code: p.code,
+      resource: p.resource,
+      action: p.action,
+      scope: p.scope,
+      nameTh: p.nameTh,
+      nameEn: p.nameEn,
+      groupKey: p.groupKey,
+    })),
   });
-}
-
-/** Stub for limits — Phase 2 will move limits to Role.defaultApprovalLimit */
-async function updateLimits(_req: Request, res: Response) {
-  return success(res, { approverLimit: 0, managerLimit: 0 }, 'Phase 2 feature');
 }
 
 export const permissionsController = {
   myPermissions,
   matrix,
-  updateLimits,
 };

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { productsController } from './products.controller';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/role';
+import { requirePermission } from '../../middleware/permission';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
 import {
@@ -14,27 +14,38 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/', validate(listProductsSchema, 'query'), asyncHandler(productsController.list));
-router.get('/:id', asyncHandler(productsController.getById));
+// VIEW — anyone authenticated
+router.get(
+  '/',
+  requirePermission('product', 'view', 'ALL'),
+  validate(listProductsSchema, 'query'),
+  asyncHandler(productsController.list),
+);
 
-// All product mutations — Manager/Admin only
+router.get(
+  '/:id',
+  requirePermission('product', 'view', 'ALL'),
+  asyncHandler(productsController.getById),
+);
+
+// MUTATIONS — Admin/CEO only
 router.post(
   '/',
-  requireRole('MANAGER', 'ADMIN'),
+  requirePermission('product', 'create', 'ALL'),
   validate(createProductSchema),
   asyncHandler(productsController.create),
 );
 
 router.patch(
   '/:id',
-  requireRole('MANAGER', 'ADMIN'),
+  requirePermission('product', 'update', 'ALL'),
   validate(updateProductSchema),
   asyncHandler(productsController.update),
 );
 
 router.delete(
   '/:id',
-  requireRole('MANAGER', 'ADMIN'),
+  requirePermission('product', 'delete', 'ALL'),
   asyncHandler(productsController.remove),
 );
 

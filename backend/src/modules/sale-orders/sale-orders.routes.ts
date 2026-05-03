@@ -1,19 +1,50 @@
 import { Router } from 'express';
 import { saleOrdersController } from './sale-orders.controller';
 import { authenticate } from '../../middleware/auth';
-import { validate } from '../../middleware/validate';
+import { requireAnyPermission } from '../../middleware/permission';
 import { asyncHandler } from '../../middleware/error';
-import { listSaleOrdersSchema } from './sale-orders.schema';
 
 const router = Router();
-
 router.use(authenticate);
 
-router.get('/', validate(listSaleOrdersSchema, 'query'), asyncHandler(saleOrdersController.list));
-router.get('/:id', asyncHandler(saleOrdersController.getById));
+router.get(
+  '/',
+  requireAnyPermission(
+    ['saleOrder', 'view', 'OWN'],
+    ['saleOrder', 'view', 'TEAM'],
+    ['saleOrder', 'view', 'ALL'],
+  ),
+  asyncHandler(saleOrdersController.list),
+);
 
-// PDF
-router.post('/:id/pdf', asyncHandler(saleOrdersController.generatePdf));
-router.get('/:id/pdf/download', asyncHandler(saleOrdersController.downloadPdf));
+router.get(
+  '/:id',
+  requireAnyPermission(
+    ['saleOrder', 'view', 'OWN'],
+    ['saleOrder', 'view', 'TEAM'],
+    ['saleOrder', 'view', 'ALL'],
+  ),
+  asyncHandler(saleOrdersController.getById),
+);
+
+router.post(
+  '/:id/pdf',
+  requireAnyPermission(
+    ['saleOrder', 'view', 'OWN'],
+    ['saleOrder', 'view', 'TEAM'],
+    ['saleOrder', 'view', 'ALL'],
+  ),
+  asyncHandler(saleOrdersController.generatePdf),
+);
+
+router.get(
+  '/:id/pdf/download',
+  requireAnyPermission(
+    ['saleOrder', 'view', 'OWN'],
+    ['saleOrder', 'view', 'TEAM'],
+    ['saleOrder', 'view', 'ALL'],
+  ),
+  asyncHandler(saleOrdersController.downloadPdf),
+);
 
 export default router;

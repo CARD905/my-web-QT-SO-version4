@@ -1,7 +1,6 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import type { NextAuthConfig } from 'next-auth';
-import type { UserRole } from '@/types/api';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
 
@@ -9,8 +8,10 @@ interface BackendUser {
   id: string;
   email: string;
   name: string;
-  role: 'SALES' | 'APPROVER' | 'ADMIN';
+  role: string;        // soft-coded role code: 'OFFICER', 'MANAGER', 'ADMIN', 'CEO', etc.
+  roleId: string;      // FK to Role
   avatarUrl?: string | null;
+  teamId?: string | null;
 }
 
 interface BackendLoginResponse {
@@ -31,13 +32,11 @@ interface BackendRefreshResponse {
 
 /**
  * Decode JWT payload (no verification) to get expiry time.
- * Uses atob() for Edge runtime compatibility (middleware runs on Edge).
  */
 function decodeJwtExpiry(token: string): number {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return Date.now() + 15 * 60 * 1000;
-    // base64url → base64
     const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
     const decoded = typeof atob === 'function' ? atob(padded) : '';
@@ -49,9 +48,6 @@ function decodeJwtExpiry(token: string): number {
   }
 }
 
-/**
- * Refresh access token using refresh token
- */
 async function refreshAccessToken(refreshToken: string) {
   try {
     const res = await fetch(`${BACKEND_URL}/api/v1/auth/refresh`, {
@@ -74,11 +70,23 @@ async function refreshAccessToken(refreshToken: string) {
   }
 }
 
+/**
+ * Map role code to landing dashboard.
+ * Role code is now a string (Phase 1 soft-coded).
+ */
+function roleDest(role: string | undefined): string {
+  if (!role) return '/dashboard';
+  const upper = role.toUpperCase();
+  if (upper === 'MANAGER' || upper === 'ADMIN' || upper === 'CEO') return '/manager/dashboard';
+  if (upper === 'APPROVER') return '/approver/dashboard'; // legacy support
+  return '/dashboard';
+}
+
 export const authConfig: NextAuthConfig = {
   trustHost: true,
   session: {
     strategy: 'jwt',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: 7 * 24 * 60 * 60,
   },
   pages: {
     signIn: '/login',
@@ -113,10 +121,12 @@ export const authConfig: NextAuthConfig = {
             email: user.email,
             name: user.name,
             role: user.role,
+            roleId: user.roleId,
+            teamId: user.teamId ?? null,
             accessToken,
             refreshToken,
             accessTokenExpires: decodeJwtExpiry(accessToken),
-          };
+          } as never;
         } catch (err) {
           console.error('authorize error:', err);
           return null;
@@ -128,11 +138,18 @@ export const authConfig: NextAuthConfig = {
     async jwt({ token, user }) {
       // First sign-in
       if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.accessToken = user.accessToken;
-        token.refreshToken = user.refreshToken;
-        token.accessTokenExpires = user.accessTokenExpires ?? 0;
+        const u = user as unknown as BackendUser & {
+          accessToken: string;
+          refreshToken: string;
+          accessTokenExpires: number;
+        };
+        token.id = u.id;
+        token.role = u.role;
+        token.roleId = u.roleId;
+        token.teamId = u.teamId ?? null;
+        token.accessToken = u.accessToken;
+        token.refreshToken = u.refreshToken;
+        token.accessTokenExpires = u.accessTokenExpires ?? 0;
         return token;
       }
 
@@ -142,7 +159,7 @@ export const authConfig: NextAuthConfig = {
         return token;
       }
 
-      // Try refresh
+      // Refresh
       const refreshTokenStr = token.refreshToken as string | undefined;
       if (refreshTokenStr) {
         const refreshed = await refreshAccessToken(refreshTokenStr);
@@ -161,10 +178,16 @@ export const authConfig: NextAuthConfig = {
     },
 
     async session({ session, token }) {
-      session.user.id = token.id as string;
-      session.user.role = token.role as UserRole;
-      session.accessToken = token.accessToken as string;
-      if (token.error) session.error = token.error as 'RefreshAccessTokenError';
+      // Cast to attach extra fields
+      const u = session.user as unknown as Record<string, unknown>;
+      u.id = token.id as string;
+      u.role = (token.role as string) || 'OFFICER';
+      u.roleId = (token.roleId as string) || '';
+      u.teamId = (token.teamId as string | null) ?? null;
+      (session as unknown as Record<string, unknown>).accessToken = token.accessToken as string;
+      if (token.error) {
+        (session as unknown as Record<string, unknown>).error = token.error as 'RefreshAccessTokenError';
+      }
       return session;
     },
 
@@ -174,21 +197,15 @@ export const authConfig: NextAuthConfig = {
       const isOnRoot = nextUrl.pathname === '/';
       const isPublic = isOnLogin || isOnRoot;
 
-      // Logged in users on login page → redirect to their dashboard
-      const roleDest = (role: string | undefined): string => {
-        if (role === 'MANAGER' || role === 'ADMIN') return '/manager/dashboard';
-        if (role === 'APPROVER') return '/approver/dashboard';
-        return '/dashboard';
-      };
+      const userRole = (auth?.user as unknown as { role?: string })?.role;
 
       if (isLoggedIn && isOnLogin) {
-        return Response.redirect(new URL(roleDest(auth?.user?.role), nextUrl));
+        return Response.redirect(new URL(roleDest(userRole), nextUrl));
       }
       if (isLoggedIn && isOnRoot) {
-        return Response.redirect(new URL(roleDest(auth?.user?.role), nextUrl));
+        return Response.redirect(new URL(roleDest(userRole), nextUrl));
       }
 
-      // Not logged in: only allow public pages
       if (!isLoggedIn && !isPublic) {
         return Response.redirect(new URL('/login', nextUrl));
       }

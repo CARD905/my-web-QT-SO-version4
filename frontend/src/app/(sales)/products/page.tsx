@@ -13,12 +13,12 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatMoney } from '@/lib/utils';
 import type { ApiResponse, Product } from '@/types/api';
+import { usePermissions } from '@/hooks/use-permissions';
 
 export default function ProductsPage() {
   const t = useT();
-  const { data: session } = useSession();
-  const role = session?.user?.role;
-  const canManage = role === 'MANAGER' || role === 'ADMIN';
+  const { can } = usePermissions();
+  const canManage = can('product', 'create', 'ALL');
 
   const [list, setList] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);

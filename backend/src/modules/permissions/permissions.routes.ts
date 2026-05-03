@@ -1,21 +1,21 @@
 import { Router } from 'express';
 import { permissionsController } from './permissions.controller';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/role';
+import { requirePermission } from '../../middleware/permission';
 import { asyncHandler } from '../../middleware/error';
 
 const router = Router();
 
 router.use(authenticate);
 
+// Anyone authenticated can see their own permissions
 router.get('/me', asyncHandler(permissionsController.myPermissions));
-router.get('/matrix', asyncHandler(permissionsController.matrix));
 
-// Only Manager/Admin can update limits
-router.patch(
-  '/limits',
-  requireRole('MANAGER', 'ADMIN'),
-  asyncHandler(permissionsController.updateLimits),
+// Only Admin/CEO can see full matrix
+router.get(
+  '/matrix',
+  requirePermission('role', 'view', 'ALL'),
+  asyncHandler(permissionsController.matrix),
 );
 
 export default router;
