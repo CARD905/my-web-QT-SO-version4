@@ -9,9 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDate, formatMoney } from '@/lib/utils';
+import { formatDate, formatMoney, isExpiringSoon } from '@/lib/utils';
 import type { ApiResponse, Quotation } from '@/types/api';
-import { isExpiringSoon } from '@/lib/utils';
 
 const HIGH_VALUE = 100000;
 
@@ -46,11 +45,6 @@ export default function ApprovalQueuePage() {
       clearTimeout(handler);
     };
   }, [search, filter]);
-
-  const isExpiringSoon = (expiry: string) => {
-    const days = (new Date(expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    return days <= 7 && days >= 0;
-  };
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -107,7 +101,7 @@ export default function ApprovalQueuePage() {
         <div className="grid gap-3">
           {list.map((q) => {
             const high = Number(q.grandTotal) >= HIGH_VALUE;
-            const expiring = isExpiringSoon(typeof q.expiryDate === 'string' ? q.expiryDate : q.expiryDate.toISOString());
+            const expiring = isExpiringSoon(q.expiryDate);
             return (
               <Link key={q.id} href={`/approver/quotations/${q.id}`}>
                 <Card
