@@ -66,6 +66,15 @@ export function formatRelativeTime(date: Date | string): string {
   if (days < 7) return `${days}d ago`;
   return formatDate(d);
 }
+export function isExpiringSoon(date: Date | string | null | undefined, days = 7): boolean {
+  if (!date) return false;
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  const future = new Date();
+  future.setDate(future.getDate() + days);
+  return d >= now && d <= future;
+}
 
 /** Get status color class */
 export function getStatusClass(status: string): string {

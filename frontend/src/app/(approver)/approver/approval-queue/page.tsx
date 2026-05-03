@@ -11,6 +11,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney } from '@/lib/utils';
 import type { ApiResponse, Quotation } from '@/types/api';
+import { isExpiringSoon } from '@/lib/utils';
 
 const HIGH_VALUE = 100000;
 
@@ -106,7 +107,7 @@ export default function ApprovalQueuePage() {
         <div className="grid gap-3">
           {list.map((q) => {
             const high = Number(q.grandTotal) >= HIGH_VALUE;
-            const expiring = isExpiringSoon(q.expiryDate);
+            const expiring = isExpiringSoon(typeof q.expiryDate === 'string' ? q.expiryDate : q.expiryDate.toISOString());
             return (
               <Link key={q.id} href={`/approver/quotations/${q.id}`}>
                 <Card
