@@ -265,8 +265,8 @@ export default function ApproverQuotationDetailPage() {
                     <td className="py-3 text-xs text-muted-foreground">{it.productSku || '-'}</td>
                     <td className="py-3">
                       <div className="font-medium">{it.productName}</div>
-                      {it.description && (
-                        <div className="text-xs text-muted-foreground mt-0.5">{it.description}</div>
+                      {it.productDescription && (
+                        <div className="text-xs text-muted-foreground mt-0.5">{it.productDescription}</div>
                       )}
                     </td>
                     <td className="py-3 text-right">
@@ -322,7 +322,7 @@ export default function ApproverQuotationDetailPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium">{c.user.name}</span>
                       <Badge variant="outline" className="text-[10px] py-0 px-1.5">
-                        {c.user.role}
+                        {typeof c.user.role === 'string' ? c.user.role : c.user.role?.code || '-'}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
                         {formatRelativeTime(c.createdAt)}

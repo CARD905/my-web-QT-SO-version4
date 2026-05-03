@@ -66,6 +66,7 @@ export function formatRelativeTime(date: Date | string): string {
   if (days < 7) return `${days}d ago`;
   return formatDate(d);
 }
+
 /** Check if date is within `days` days from now (and not in the past) */
 export function isExpiringSoon(date: Date | string | null | undefined, days = 7): boolean {
   if (!date) return false;
@@ -75,18 +76,57 @@ export function isExpiringSoon(date: Date | string | null | undefined, days = 7)
   return daysLeft <= days && daysLeft >= 0;
 }
 
-
 /** Get status color class */
 export function getStatusClass(status: string): string {
   const map: Record<string, string> = {
     DRAFT: 'status-draft',
     PENDING: 'status-pending',
+    PENDING_BACKUP: 'status-pending',
+    PENDING_ESCALATED: 'status-pending',
     APPROVED: 'status-approved',
     REJECTED: 'status-rejected',
     CANCELLED: 'status-cancelled',
     EXPIRED: 'status-expired',
+    SENT: 'status-approved',
+    SIGNED: 'status-approved',
     CONFIRMED: 'status-approved',
     COMPLETED: 'status-approved',
   };
   return map[status] || 'status-draft';
+}
+
+/**
+ * Get display name for a role.
+ * Handles both legacy string ('SALES') and new Role object format ({ code, nameTh, nameEn }).
+ *
+ * Usage:
+ *   <span>{getRoleDisplay(user.role)}</span>
+ *   <span>{getRoleDisplay(user.role, 'en')}</span>
+ */
+export function getRoleDisplay(
+  role:
+    | string
+    | { code?: string; nameTh?: string | null; nameEn?: string | null }
+    | null
+    | undefined,
+  lang: 'th' | 'en' | 'code' = 'th',
+): string {
+  if (!role) return '-';
+  if (typeof role === 'string') return role;
+  if (lang === 'code') return role.code || '-';
+  if (lang === 'en') return role.nameEn || role.nameTh || role.code || '-';
+  return role.nameTh || role.nameEn || role.code || '-';
+}
+
+/** Get role code only (for permission/comparison logic) */
+export function getRoleCode(
+  role:
+    | string
+    | { code?: string }
+    | null
+    | undefined,
+): string {
+  if (!role) return '';
+  if (typeof role === 'string') return role;
+  return role.code || '';
 }
