@@ -8,7 +8,7 @@ export const paginationSchema = z
     sortBy: z.string().optional(),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
   })
-  .passthrough(); // Allow extra query fields (cache busters, filters, etc.)
+  .passthrough();
 
 export type PaginationQuery = z.infer<typeof paginationSchema>;
 
