@@ -32,7 +32,7 @@ export default function LoginPage() {
       }
       const { fireSparkle } = await import('@/lib/confetti');
       fireSparkle();
-      toast.success('Welcome back! 👋');
+      
       setTimeout(() => router.push('/'), 400);
     } catch (err) {
       console.error(err);
@@ -151,32 +151,7 @@ export default function LoginPage() {
           </form>
 
           {/* Test accounts hint */}
-          <div className="mt-6 pt-6 border-t border-white/20">
-            <p className="text-[10px] text-muted-foreground text-center mb-2 uppercase tracking-wider">
-              Test Accounts (password: Password@123)
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-              {[
-                { role: 'Sales', email: 'sales@example.com', color: 'from-blue-500 to-cyan-500' },
-                { role: 'Approver', email: 'approver@example.com', color: 'from-purple-500 to-fuchsia-500' },
-                { role: 'Manager', email: 'manager@example.com', color: 'from-amber-500 to-orange-500' },
-                { role: 'Admin', email: 'admin@example.com', color: 'from-rose-500 to-red-500' },
-              ].map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => {
-                    setEmail(acc.email);
-                    setPassword('Password@123');
-                  }}
-                  className={`p-2 rounded-lg bg-gradient-to-r ${acc.color} text-white font-medium opacity-90 hover:opacity-100 transition-opacity text-left`}
-                >
-                  <div className="font-bold">{acc.role}</div>
-                  <div className="text-[10px] opacity-90 truncate">{acc.email}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+         
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
