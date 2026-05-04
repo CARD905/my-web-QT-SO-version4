@@ -34,7 +34,6 @@ export const customersService = {
         skip,
         take,
         include: {
-          createdBy: { select: { id: true, name: true } },
           _count: { select: { quotations: true, saleOrders: true } },
         },
       }),
@@ -51,7 +50,6 @@ export const customersService = {
     const customer = await prisma.customer.findFirst({
       where: { id, deletedAt: null },
       include: {
-        createdBy: { select: { id: true, name: true } },
         _count: { select: { quotations: true, saleOrders: true } },
       },
     });
@@ -72,7 +70,6 @@ export const customersService = {
         billingAddress: input.billingAddress || null,
         shippingAddress: input.shippingAddress || null,
         notes: input.notes || null,
-        createdById: userId,
       },
     });
 
