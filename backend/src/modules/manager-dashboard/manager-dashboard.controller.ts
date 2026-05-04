@@ -1,37 +1,33 @@
 import { Request, Response } from 'express';
-import { success } from '../../utils/response';
+import { managerDashboardService } from './manager-dashboard.service';
+import { AppError, success } from '../../utils/response';
 
-/**
- * Phase 1 stub — Manager Dashboard endpoints will be rebuilt in Phase 2
- * with proper team-scoped queries.
- */
+function requireUser(req: Request) {
+  if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
+  const u = req.user as { id: string; role?: string; roleCode?: string; roleId?: string };
+  return {
+    id: u.id,
+    roleCode: u.roleCode || u.role || 'OFFICER',
+    roleId: u.roleId || '',
+  };
+}
+
 export const managerDashboardController = {
-  async overview(_req: Request, res: Response) {
-    return success(res, {
-      totals: {
-        quotations: 0,
-        pendingApprover: 0,
-        pendingManager: 0,
-        pendingApproverValue: 0,
-        pendingManagerValue: 0,
-      },
-      todayActivity: { approved: 0, rejected: 0 },
-      topSales: [],
-      topApprovers: [],
-      recentEscalated: [],
-    });
+  async overview(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await managerDashboardService.overview(user);
+    return success(res, data);
   },
 
-  async users(_req: Request, res: Response) {
-    return success(res, []);
+  async users(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await managerDashboardService.usersList(user);
+    return success(res, data);
   },
 
-  async userDetail(_req: Request, res: Response) {
-    return success(res, {
-      user: null,
-      totals: { quotations: 0, approvedValue: 0, thisMonth: 0 },
-      byStatus: [],
-      recent: [],
-    });
+  async userDetail(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await managerDashboardService.userDetail(req.params.userId, user);
+    return success(res, data);
   },
 };

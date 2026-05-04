@@ -1,16 +1,38 @@
 import { Router } from 'express';
 import { managerDashboardController } from './manager-dashboard.controller';
 import { authenticate } from '../../middleware/auth';
-import { requireRole } from '../../middleware/role';
+import { requireAnyPermission } from '../../middleware/permission';
 import { asyncHandler } from '../../middleware/error';
 
 const router = Router();
-
 router.use(authenticate);
-router.use(requireRole('MANAGER', 'ADMIN'));
 
-router.get('/overview', asyncHandler(managerDashboardController.overview));
-router.get('/users', asyncHandler(managerDashboardController.users));
-router.get('/users/:userId', asyncHandler(managerDashboardController.userDetail));
+// View — anyone with dashboard:view:team or :all
+router.get(
+  '/overview',
+  requireAnyPermission(
+    ['dashboard', 'view', 'TEAM'],
+    ['dashboard', 'view', 'ALL'],
+  ),
+  asyncHandler(managerDashboardController.overview),
+);
+
+router.get(
+  '/users',
+  requireAnyPermission(
+    ['user', 'view', 'TEAM'],
+    ['user', 'view', 'ALL'],
+  ),
+  asyncHandler(managerDashboardController.users),
+);
+
+router.get(
+  '/users/:userId',
+  requireAnyPermission(
+    ['user', 'view', 'TEAM'],
+    ['user', 'view', 'ALL'],
+  ),
+  asyncHandler(managerDashboardController.userDetail),
+);
 
 export default router;
