@@ -3,16 +3,28 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Download, FileText, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  FileText,
+  Loader2,
+  CheckCircle2,
+  Send,
+  Edit3,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { formatDate, formatNumber } from '@/lib/utils';
 import { useSession } from 'next-auth/react';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { ApiResponse, CompanySettings, SaleOrder } from '@/types/api';
 
-// Convert number to Thai baht text
+// ============================================================
+// Thai baht text utility
+// ============================================================
 function toThaiBahtText(num: number): string {
   const txtNumArr = ['ศูนย์', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
   const txtDigitArr = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน', 'ล้าน'];
@@ -55,32 +67,121 @@ function toThaiBahtText(num: number): string {
   return bahtText;
 }
 
+// ============================================================
+// Status display helper
+// ============================================================
+function getStatusBadge(status: string) {
+  const map: Record<string, { color: string; label: string; icon?: string }> = {
+    DRAFT: {
+      color: 'bg-gray-500/10 text-gray-700 border-gray-300',
+      label: '📝 DRAFT (แก้ไขได้)',
+    },
+    PENDING_REVIEW: {
+      color: 'bg-amber-500/10 text-amber-700 border-amber-300',
+      label: '⏳ PENDING REVIEW',
+    },
+    CONFIRMED: {
+      color: 'bg-blue-500/10 text-blue-700 border-blue-300',
+      label: '🔒 CONFIRMED (Locked)',
+    },
+    COMPLETED: {
+      color: 'bg-emerald-500/10 text-emerald-700 border-emerald-300',
+      label: '✅ COMPLETED',
+    },
+    CANCELLED: {
+      color: 'bg-red-500/10 text-red-700 border-red-300',
+      label: '❌ CANCELLED',
+    },
+  };
+  return map[status] || { color: 'bg-gray-500/10 text-gray-700', label: status };
+}
+
+// ============================================================
+// Main Component
+// ============================================================
 export default function SaleOrderDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const { data: session } = useSession();
+  const { role } = usePermissions();
 
   const [so, setSo] = useState<SaleOrder | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      const [soRes, cRes] = await Promise.all([
+        api.get<ApiResponse<SaleOrder>>(`/sale-orders/${id}`),
+        api.get<ApiResponse<CompanySettings>>('/company'),
+      ]);
+      setSo(soRes.data.data ?? null);
+      setCompany(cRes.data.data ?? null);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [soRes, cRes] = await Promise.all([
-          api.get<ApiResponse<SaleOrder>>(`/sale-orders/${id}`),
-          api.get<ApiResponse<CompanySettings>>('/company'),
-        ]);
-        setSo(soRes.data.data ?? null);
-        setCompany(cRes.data.data ?? null);
-      } catch (err) {
-        toast.error(getApiErrorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // ============================================================
+  // Action handlers
+  // ============================================================
+  const handleSubmitForReview = async () => {
+    const comment = prompt('ความเห็นถึง Manager (optional):') ?? '';
+    if (comment === null) return;
+    setActionLoading(true);
+    try {
+      await api.post(`/sale-orders/${id}/submit`, { comment });
+      toast.success('Submitted for Manager review');
+      await fetchData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (
+      !confirm(
+        'ยืนยัน Sale Order นี้?\n\n⚠️ หลังยืนยันแล้วจะ LOCK ไม่สามารถแก้ไขได้',
+      )
+    )
+      return;
+    setActionLoading(true);
+    try {
+      await api.post(`/sale-orders/${id}/confirm`);
+      toast.success('Sale Order ยืนยันแล้ว (Locked)');
+      await fetchData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReviewApprove = async () => {
+    const comment = prompt('Review comment (optional):') ?? '';
+    if (comment === null) return;
+    setActionLoading(true);
+    try {
+      await api.post(`/sale-orders/${id}/review-approve`, { comment });
+      toast.success('Review approved — กลับเป็น DRAFT แล้ว');
+      await fetchData();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const downloadPdf = async () => {
     if (!session?.accessToken) return;
@@ -109,6 +210,9 @@ export default function SaleOrderDetailPage() {
     }
   };
 
+  // ============================================================
+  // Loading / Not found
+  // ============================================================
   if (loading) {
     return (
       <div className="space-y-4 max-w-5xl mx-auto">
@@ -131,6 +235,26 @@ export default function SaleOrderDetailPage() {
   const itemCount = so.items?.length ?? 0;
   const padCount = Math.max(0, minRows - itemCount);
 
+  // ============================================================
+  // Status & permission checks
+  // ============================================================
+  const status = so.status;
+  const isDraft = status === 'DRAFT';
+  const isPendingReview = status === 'PENDING_REVIEW';
+  const isConfirmed = status === 'CONFIRMED';
+  const isCompleted = status === 'COMPLETED';
+  const isCancelled = status === 'CANCELLED';
+
+  const isManagerOrAbove =
+    role?.code === 'MANAGER' || role?.code === 'ADMIN' || role?.code === 'CEO';
+
+  const userId = session?.user?.id;
+  // Officer can edit/submit/confirm only their own SO (creator of source quotation)
+  const isOwnerOfSO = userId && (so as any)?.quotation?.createdById === userId;
+  const canEditOrAct = isOwnerOfSO || role?.code === 'ADMIN' || role?.code === 'CEO';
+
+  const statusMeta = getStatusBadge(status);
+
   return (
     <div className="max-w-5xl mx-auto">
       {/* Toolbar */}
@@ -141,7 +265,14 @@ export default function SaleOrderDetailPage() {
             กลับ
           </Link>
         </Button>
-        <div className="flex gap-2">
+
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Status badge */}
+          <Badge variant="outline" className={`text-xs px-3 py-1 ${statusMeta.color}`}>
+            {statusMeta.label}
+          </Badge>
+
+          {/* Quotation link */}
           {so.quotation && (
             <Button asChild variant="outline" size="sm">
               <Link href={`/quotations/${so.quotation.id}`}>
@@ -150,12 +281,86 @@ export default function SaleOrderDetailPage() {
               </Link>
             </Button>
           )}
+
+          {/* DRAFT — Officer (owner) actions */}
+          {isDraft && canEditOrAct && (
+            <>
+              <Button asChild variant="outline" size="sm" disabled={actionLoading}>
+                <Link href={`/sale-orders/${so.id}/edit`}>
+                  <Edit3 className="h-4 w-4" />
+                  แก้ไข
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSubmitForReview}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                ส่งให้ Manager review
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirm}
+                disabled={actionLoading}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {actionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Confirm (Lock)
+              </Button>
+            </>
+          )}
+
+          {/* PENDING_REVIEW — Manager+ approve */}
+          {isPendingReview && isManagerOrAbove && (
+            <Button
+              size="sm"
+              onClick={handleReviewApprove}
+              disabled={actionLoading}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {actionLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              อนุมัติ Review
+            </Button>
+          )}
+
+          {/* PDF download — always available */}
           <Button onClick={downloadPdf} disabled={downloading}>
-            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {downloading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             พิมพ์ / Save PDF
           </Button>
         </div>
       </div>
+
+      {/* Status banner for special states */}
+      {isPendingReview && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-300 text-amber-900 text-sm print:hidden">
+          ⏳ <strong>Pending Manager Review</strong> — รอ Manager ตรวจสอบและอนุมัติก่อนที่จะ confirm ได้
+        </div>
+      )}
+
+      {isConfirmed && (
+        <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-300 text-blue-900 text-sm print:hidden">
+          🔒 <strong>Confirmed (Locked)</strong> — เอกสารทางการ ไม่สามารถแก้ไขได้
+        </div>
+      )}
 
       {/* DOCUMENT — formal A4-style */}
       <div className="bg-white text-black shadow-sm" style={{ fontFamily: 'Sarabun, sans-serif' }}>
@@ -402,6 +607,9 @@ export default function SaleOrderDetailPage() {
   );
 }
 
+// ============================================================
+// Sub-components
+// ============================================================
 function CustomerRow({
   label,
   value,

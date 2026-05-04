@@ -513,12 +513,22 @@ export const quotationsService = {
       approverRoleCode === 'ADMIN' ||
       approverRoleCode === 'CEO';
 
-    if (existing.status === 'PENDING_ESCALATED' && !isMgrOrAbove) {
-      throw new AppError(
-        403,
-        'INSUFFICIENT_AUTHORITY',
-        'This quotation requires Manager-level approval',
-      );
+    // PENDING_ESCALATED requires CEO/ADMIN — Manager cannot approve
+    if (existing.status === 'PENDING_ESCALATED') {
+      if (approverRoleCode === 'OFFICER') {
+        throw new AppError(
+          403,
+          'INSUFFICIENT_AUTHORITY',
+          'This quotation requires CEO/Admin approval',
+        );
+      }
+      if (approverRoleCode === 'MANAGER') {
+        throw new AppError(
+          403,
+          'EXCEEDS_LIMIT',
+          'รายการนี้เกินอำนาจอนุมัติของคุณ ต้องรอ CEO/Admin อนุมัติ',
+        );
+      }
     }
 
     if (
@@ -578,7 +588,7 @@ export const quotationsService = {
         data: {
           saleOrderNo,
           quotationId: quotation.id,
-          status: 'PENDING',
+          status: 'DRAFT',
           issueDate: new Date(),
           currency: quotation.currency,
 

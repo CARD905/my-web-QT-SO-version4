@@ -18,7 +18,13 @@ export type QuotationStatus =
   | 'CANCELLED'
   | 'EXPIRED';
 
-export type SaleOrderStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+// ใหม่ ✅
+export type SaleOrderStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'CONFIRMED'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export type ApprovalAction =
   | 'PENDING'

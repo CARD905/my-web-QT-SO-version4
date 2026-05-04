@@ -30,6 +30,30 @@ export const saleOrdersController = {
     return success(res, so);
   },
 
+  async update(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.update(req.params.id, req.body, user, req);
+    return success(res, so, 'Sale Order updated');
+  },
+
+  async submit(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.submit(req.params.id, req.body, user, req);
+    return success(res, so, 'Sale Order submitted for review');
+  },
+
+  async reviewApprove(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.reviewApprove(req.params.id, req.body, user, req);
+    return success(res, so, 'Sale Order review approved');
+  },
+
+  async confirm(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.confirm(req.params.id, user, req);
+    return success(res, so, 'Sale Order confirmed (locked)');
+  },
+
   async generatePdf(req: Request, res: Response) {
     const user = requireUser(req);
     const result = await saleOrdersService.generatePdf(req.params.id, user, req);
