@@ -9,14 +9,15 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  if (session.user.role !== 'MANAGER' && session.user.role !== 'ADMIN') {
-    if (session.user.role === 'APPROVER') redirect('/approver/dashboard');
-    redirect('/dashboard');
-  }
+  // No role-based redirect — pages inside (manager) check permissions themselves
+  // (e.g. /manager/dashboard checks dashboard:view:team)
+  // OFFICER will see "ไม่มีสิทธิ์" via permission check on the page
+
+  const variant = pickAuroraVariant(session.user.role);
 
   return (
     <div className="flex min-h-screen relative">
-      <AuroraBackground variant={session.user.role === 'ADMIN' ? 'admin' : 'manager'} />
+      <AuroraBackground variant={variant} />
       <MouseSpotlight />
       <Sidebar role={session.user.role} />
       <div className="flex-1 flex flex-col min-w-0">
@@ -25,4 +26,10 @@ export default async function ManagerLayout({ children }: { children: React.Reac
       </div>
     </div>
   );
+}
+
+function pickAuroraVariant(roleCode: string | undefined): 'default' | 'admin' | 'manager' | 'approver' {
+  if (roleCode === 'ADMIN' || roleCode === 'CEO') return 'admin';
+  if (roleCode === 'MANAGER') return 'manager';
+  return 'default';
 }

@@ -9,13 +9,14 @@ export default async function SalesLayout({ children }: { children: React.ReactN
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  if (session.user.role === 'APPROVER') redirect('/approver/dashboard');
-  if (session.user.role === 'MANAGER' || session.user.role === 'ADMIN')
-    redirect('/manager/dashboard');
+  // No role-based redirect — permissions are enforced per-page
+  // Sidebar + PermissionGate handle UI visibility based on actual permissions
+
+  const variant = pickAuroraVariant(session.user.role);
 
   return (
     <div className="flex min-h-screen relative">
-      <AuroraBackground variant="default" />
+      <AuroraBackground variant={variant} />
       <MouseSpotlight />
       <Sidebar role={session.user.role} />
       <div className="flex-1 flex flex-col min-w-0">
@@ -24,4 +25,10 @@ export default async function SalesLayout({ children }: { children: React.ReactN
       </div>
     </div>
   );
+}
+
+function pickAuroraVariant(roleCode: string | undefined): 'default' | 'admin' | 'manager' | 'approver' {
+  if (roleCode === 'ADMIN' || roleCode === 'CEO') return 'admin';
+  if (roleCode === 'MANAGER') return 'manager';
+  return 'default';
 }

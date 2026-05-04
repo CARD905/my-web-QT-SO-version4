@@ -9,9 +9,7 @@ export default async function ApproverLayout({ children }: { children: React.Rea
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  if (session.user.role === 'SALES') redirect('/dashboard');
-  if (session.user.role === 'MANAGER' || session.user.role === 'ADMIN')
-    redirect('/manager/dashboard');
+  // No role-based redirect — page-level permission checks handle access
 
   return (
     <div className="flex min-h-screen relative">
