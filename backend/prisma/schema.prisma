@@ -465,7 +465,7 @@ model SaleOrder {
   grandTotal              Decimal         @map("grand_total") @db.Decimal(15, 2)
   paymentTerms            String?         @map("payment_terms")
   conditions              String?
-  status                  SaleOrderStatus @default(PENDING)
+  status                  SaleOrderStatus @default(DRAFT)
   deletedAt               DateTime?       @map("deleted_at")
   createdAt               DateTime        @default(now()) @map("created_at")
   updatedAt               DateTime        @updatedAt @map("updated_at")
@@ -603,8 +603,10 @@ enum QuotationStatus {
   EXPIRED
 }
 
+
 enum SaleOrderStatus {
-  PENDING
+  DRAFT
+  PENDING_REVIEW
   CONFIRMED
   COMPLETED
   CANCELLED
