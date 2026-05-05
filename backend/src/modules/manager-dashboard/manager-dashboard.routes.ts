@@ -7,7 +7,7 @@ import { asyncHandler } from '../../middleware/error';
 const router = Router();
 router.use(authenticate);
 
-// View — anyone with dashboard:view:team or :all
+// ── Overview — Manager/CEO/Admin (with filter via query params) ──
 router.get(
   '/overview',
   requireAnyPermission(
@@ -15,6 +15,16 @@ router.get(
     ['dashboard', 'view', 'ALL'],
   ),
   asyncHandler(managerDashboardController.overview),
+);
+
+// ── Filterable users — list users currentUser can pick from filter ──
+router.get(
+  '/filterable-users',
+  requireAnyPermission(
+    ['dashboard', 'view', 'TEAM'],
+    ['dashboard', 'view', 'ALL'],
+  ),
+  asyncHandler(managerDashboardController.filterableUsers),
 );
 
 router.get(

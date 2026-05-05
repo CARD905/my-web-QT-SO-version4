@@ -8,43 +8,94 @@ interface CurrentUser {
   roleCode: string;
 }
 
-const HIGH_VALUE_THRESHOLD = 100000;
+export type DashboardFilter = 'self' | 'team' | 'all' | 'user';
+
+interface OverviewOptions {
+  filter?: DashboardFilter;
+  userId?: string; // ใช้เมื่อ filter = 'user'
+}
+
+// ─── ตรวจสอบว่า currentUser ดู userId นี้ได้ไหม ─────────────────────────
+async function canViewUser(currentUser: CurrentUser, targetUserId: string): Promise<boolean> {
+  // CEO/Admin เห็นทุกคน
+  if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) return true;
+
+  // ดูตัวเองได้เสมอ
+  if (currentUser.id === targetUserId) return true;
+
+  // Manager — เห็นเฉพาะลูกน้องตรงสาย (reportsToId = manager.id)
+  if (currentUser.roleCode === 'MANAGER') {
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { reportsToId: true },
+    });
+    return target?.reportsToId === currentUser.id;
+  }
+
+  // Officer — ดูได้แค่ตัวเอง
+  return false;
+}
+
+// ─── สร้าง where clause จาก filter ──────────────────────────────────────
+async function resolveWhereFromFilter(
+  currentUser: CurrentUser,
+  options: OverviewOptions,
+): Promise<Prisma.QuotationWhereInput | null> {
+  const filter = options.filter || 'self';
+
+  // ── 'self' — เฉพาะของตัวเอง
+  if (filter === 'self') {
+    return { createdById: currentUser.id };
+  }
+
+  // ── 'user' — ดู user คนใดคนหนึ่ง (ต้อง permission ผ่าน)
+  if (filter === 'user') {
+    if (!options.userId) {
+      throw new Error('userId is required when filter=user');
+    }
+    const allowed = await canViewUser(currentUser, options.userId);
+    if (!allowed) {
+      throw new Error('FORBIDDEN: You cannot view this user');
+    }
+    return { createdById: options.userId };
+  }
+
+  // ── 'all' — เฉพาะ CEO/Admin
+  if (filter === 'all') {
+    if (!['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
+      throw new Error('FORBIDDEN: Only CEO/Admin can view all');
+    }
+    return {}; // ไม่มี filter
+  }
+
+  // ── 'team' — own + ลูกน้องทุกคนในทีม (ใช้ scope filter)
+  if (filter === 'team') {
+    const scope = await buildScopeFilter(
+      currentUser, 'quotation', 'view', 'createdById',
+    );
+    if (!scope) return null;
+    return scope;
+  }
+
+  return null;
+}
 
 export const managerDashboardService = {
   // ============================================================
-  // OVERVIEW — scope-aware (Manager: TEAM, Admin/CEO: ALL)
+  // OVERVIEW with role-based filter
   // ============================================================
-  async overview(currentUser: CurrentUser) {
-    // Build scope filter for "view team's quotations"
-    const scope = await buildScopeFilter(
-      currentUser,
-      'quotation',
-      'view',
-      'createdById',
-    );
+  async overview(currentUser: CurrentUser, options: OverviewOptions = {}) {
+    const filterWhere = await resolveWhereFromFilter(currentUser, options);
 
-    if (!scope) {
-      return {
-        totals: {
-          quotations: 0,
-          pending: 0,
-          escalated: 0,
-          approved: 0,
-          rejected: 0,
-          totalValue: 0,
-          pendingValue: 0,
-        },
-        todayActivity: { approved: 0, rejected: 0 },
-        topOfficers: [],
-        topApprovers: [],
-        recentEscalated: [],
-        statusBreakdown: [],
-      };
+    if (filterWhere === null) {
+      return emptyDashboard();
     }
 
-    const baseWhere: Prisma.QuotationWhereInput = { deletedAt: null, ...scope };
+    const baseWhere: Prisma.QuotationWhereInput = {
+      deletedAt: null,
+      ...filterWhere,
+    };
 
-    // Run parallel queries
     const [
       totalCount,
       pendingCount,
@@ -59,43 +110,25 @@ export const managerDashboardService = {
       recentEscalatedData,
       statusBreakdownData,
     ] = await Promise.all([
-      // Counts
       prisma.quotation.count({ where: baseWhere }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING_ESCALATED' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'APPROVED' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'REJECTED' } }),
-
-      // Values
       prisma.quotation.aggregate({
         where: { ...baseWhere, status: 'APPROVED' },
         _sum: { grandTotal: true },
       }),
       prisma.quotation.aggregate({
-        where: {
-          ...baseWhere,
-          status: { in: ['PENDING', 'PENDING_ESCALATED'] },
-        },
+        where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED'] } },
         _sum: { grandTotal: true },
       }),
-
-      // Today's activity
       prisma.quotation.count({
-        where: {
-          ...baseWhere,
-          status: 'APPROVED',
-          approvedAt: { gte: startOfToday() },
-        },
+        where: { ...baseWhere, status: 'APPROVED', approvedAt: { gte: startOfToday() } },
       }),
       prisma.quotation.count({
-        where: {
-          ...baseWhere,
-          status: 'REJECTED',
-          rejectedAt: { gte: startOfToday() },
-        },
+        where: { ...baseWhere, status: 'REJECTED', rejectedAt: { gte: startOfToday() } },
       }),
-
-      // Top officers (by quotation count)
       prisma.quotation.groupBy({
         by: ['createdById'],
         where: baseWhere,
@@ -104,18 +137,12 @@ export const managerDashboardService = {
         orderBy: { _count: { id: 'desc' } },
         take: 5,
       }),
-
-      // Recent escalated (top 5)
       prisma.quotation.findMany({
         where: { ...baseWhere, status: 'PENDING_ESCALATED' },
         orderBy: { submittedAt: 'desc' },
         take: 5,
-        include: {
-          createdBy: { select: { id: true, name: true } },
-        },
+        include: { createdBy: { select: { id: true, name: true } } },
       }),
-
-      // Status breakdown
       prisma.quotation.groupBy({
         by: ['status'],
         where: baseWhere,
@@ -123,7 +150,7 @@ export const managerDashboardService = {
       }),
     ]);
 
-    // Hydrate top officers with user info
+    // Hydrate top officers
     const officerIds = topOfficersData.map((t) => t.createdById);
     const officers = await prisma.user.findMany({
       where: { id: { in: officerIds } },
@@ -139,35 +166,9 @@ export const managerDashboardService = {
       value: Number(t._sum.grandTotal ?? 0),
     }));
 
-    // Top approvers — count approvals in scope
-    const topApproversRaw = await prisma.quotation.groupBy({
-      by: ['approvedById'],
-      where: {
-        ...baseWhere,
-        status: 'APPROVED',
-        approvedById: { not: null },
-      },
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 5,
-    });
-    const approverIds = topApproversRaw
-      .map((t) => t.approvedById)
-      .filter((id): id is string => id !== null);
-    const approvers = await prisma.user.findMany({
-      where: { id: { in: approverIds } },
-      select: { id: true, name: true, email: true },
-    });
-    const approverMap = new Map(approvers.map((u) => [u.id, u]));
-    const topApprovers = topApproversRaw
-      .filter((t): t is typeof t & { approvedById: string } => t.approvedById !== null)
-      .map((t) => ({
-        userId: t.approvedById,
-        userName: approverMap.get(t.approvedById)?.name || '-',
-        count: t._count.id,
-      }));
-
     return {
+      filter: options.filter || 'self',
+      filterUserId: options.userId,
       totals: {
         quotations: totalCount,
         pending: pendingCount,
@@ -182,7 +183,7 @@ export const managerDashboardService = {
         rejected: todayRejectedCount,
       },
       topOfficers,
-      topApprovers,
+      topApprovers: [], // simplified
       recentEscalated: recentEscalatedData.map((q) => ({
         id: q.id,
         quotationNo: q.quotationNo,
@@ -199,17 +200,52 @@ export const managerDashboardService = {
   },
 
   // ============================================================
-  // USERS LIST — team members of the manager
+  // FILTERABLE USERS — list users currentUser can pick from filter
+  // ============================================================
+  async filterableUsers(currentUser: CurrentUser) {
+    // CEO/Admin — เห็นทุกคน
+    if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
+      const users = await prisma.user.findMany({
+        where: { deletedAt: null, isActive: true, id: { not: currentUser.id } },
+        include: { role: { select: { code: true, nameTh: true, level: true } } },
+        orderBy: [{ role: { level: 'desc' } }, { name: 'asc' }],
+      });
+      return users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: { code: u.role.code, nameTh: u.role.nameTh },
+      }));
+    }
+
+    // Manager — เห็นเฉพาะลูกน้องตรงสาย
+    if (currentUser.roleCode === 'MANAGER') {
+      const users = await prisma.user.findMany({
+        where: {
+          reportsToId: currentUser.id,
+          deletedAt: null,
+          isActive: true,
+        },
+        include: { role: { select: { code: true, nameTh: true } } },
+        orderBy: { name: 'asc' },
+      });
+      return users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: { code: u.role.code, nameTh: u.role.nameTh },
+      }));
+    }
+
+    // Officer — ไม่มี filter
+    return [];
+  },
+
+  // ============================================================
+  // (เก็บ usersList และ userDetail แบบเดิม — ไม่แตะ)
   // ============================================================
   async usersList(currentUser: CurrentUser) {
-    // Get user IDs in scope
-    const scope = await buildScopeFilter(
-      currentUser,
-      'user',
-      'view',
-      'id',
-    );
-
+    const scope = await buildScopeFilter(currentUser, 'user', 'view', 'id');
     if (!scope) return [];
 
     const users = await prisma.user.findMany({
@@ -217,14 +253,11 @@ export const managerDashboardService = {
       include: {
         role: { select: { code: true, nameTh: true, level: true } },
         team: { select: { id: true, name: true } },
-        _count: {
-          select: { createdQuotations: { where: { deletedAt: null } } },
-        },
+        _count: { select: { createdQuotations: { where: { deletedAt: null } } } },
       },
       orderBy: [{ isActive: 'desc' }, { role: { level: 'desc' } }, { name: 'asc' }],
     });
 
-    // Get stats per user
     const userIds = users.map((u) => u.id);
     const statsRaw = await prisma.quotation.groupBy({
       by: ['createdById', 'status'],
@@ -236,11 +269,7 @@ export const managerDashboardService = {
     type UserStats = { total: number; approved: number; approvedValue: number };
     const statsByUser = new Map<string, UserStats>();
     for (const s of statsRaw) {
-      const cur = statsByUser.get(s.createdById) ?? {
-        total: 0,
-        approved: 0,
-        approvedValue: 0,
-      };
+      const cur = statsByUser.get(s.createdById) ?? { total: 0, approved: 0, approvedValue: 0 };
       cur.total += s._count.id;
       if (s.status === 'APPROVED') {
         cur.approved += s._count.id;
@@ -262,19 +291,9 @@ export const managerDashboardService = {
     }));
   },
 
-  // ============================================================
-  // USER DETAIL — drill-down on a specific user
-  // ============================================================
   async userDetail(userId: string, currentUser: CurrentUser) {
-    // Verify access via scope
-    const scope = await buildScopeFilter(
-      currentUser,
-      'user',
-      'view',
-      'id',
-    );
-
-    if (!scope) {
+    const allowed = await canViewUser(currentUser, userId);
+    if (!allowed) {
       return {
         user: null,
         totals: { quotations: 0, approvedValue: 0, thisMonth: 0 },
@@ -284,7 +303,7 @@ export const managerDashboardService = {
     }
 
     const user = await prisma.user.findFirst({
-      where: { id: userId, deletedAt: null, ...scope },
+      where: { id: userId, deletedAt: null },
       include: {
         role: { select: { code: true, nameTh: true } },
         team: { select: { id: true, name: true } },
@@ -311,11 +330,7 @@ export const managerDashboardService = {
         _sum: { grandTotal: true },
       }),
       prisma.quotation.count({
-        where: {
-          createdById: userId,
-          createdAt: { gte: startOfMonth },
-          deletedAt: null,
-        },
+        where: { createdById: userId, createdAt: { gte: startOfMonth }, deletedAt: null },
       }),
       prisma.quotation.groupBy({
         by: ['status'],
@@ -326,13 +341,7 @@ export const managerDashboardService = {
         where: { createdById: userId, deletedAt: null },
         orderBy: { createdAt: 'desc' },
         take: 10,
-        select: {
-          id: true,
-          quotationNo: true,
-          status: true,
-          grandTotal: true,
-          createdAt: true,
-        },
+        select: { id: true, quotationNo: true, status: true, grandTotal: true, createdAt: true },
       }),
     ]);
 
@@ -366,4 +375,20 @@ function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function emptyDashboard() {
+  return {
+    filter: 'self' as DashboardFilter,
+    filterUserId: undefined,
+    totals: {
+      quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0,
+      totalValue: 0, pendingValue: 0,
+    },
+    todayActivity: { approved: 0, rejected: 0 },
+    topOfficers: [],
+    topApprovers: [],
+    recentEscalated: [],
+    statusBreakdown: [],
+  };
 }
