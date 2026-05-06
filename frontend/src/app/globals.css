@@ -246,6 +246,24 @@
     100% { filter: hue-rotate(360deg); }
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+     AURORA RING LOGO — animations (NEW)
+     ════════════════════════════════════════════════════════════════════════ */
+  @keyframes aurora-spin-slow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes aurora-spin-rev {
+    from { transform: rotate(360deg); }
+    to   { transform: rotate(0deg); }
+  }
+  .aurora-spin-slow { animation: aurora-spin-slow 20s linear infinite; }
+  .aurora-spin-rev  { animation: aurora-spin-rev 14s linear infinite; }
+
+  /* Center disc — light/dark adaptive */
+  .aurora-disc { fill: #1a1a2e; }
+  .dark .aurora-disc { fill: #0a0a1a; }
+
   /* ── Animation classes ── */
   .animate-fade-in       { animation: fade-in 0.4s ease-out; }
   .animate-slide-up      { animation: slide-up 0.3s ease-out; }

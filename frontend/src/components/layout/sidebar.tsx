@@ -30,59 +30,50 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROLE THEMES — แต่ละ role มี holographic gradient ของตัวเอง (4 stops)
+// ROLE THEMES
 // ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
   brandLabel: string;
   tagline: string;
-  /** สีหลัก — ใช้สำหรับ accent (active bar, glow, etc.) */
   accentColor: string;
-  /** Gradient stops 4 สี — สำหรับ holographic ring */
   gradientStops: [string, string, string, string];
 }
 
 const ROLE_THEMES: Record<string, RoleTheme> = {
   OFFICER: {
-    brandLabel: 'WISDOM',
-    tagline: 'Officer',
+    brandLabel: 'WISDOM', tagline: 'Officer',
     accentColor: '#06b6d4',
     gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'],
   },
   SALES: {
-    brandLabel: 'WISDOM',
-    tagline: 'Sales',
+    brandLabel: 'WISDOM', tagline: 'Sales',
     accentColor: '#06b6d4',
     gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'],
   },
   MANAGER: {
-    brandLabel: 'WISDOM',
-    tagline: 'Manager',
+    brandLabel: 'WISDOM', tagline: 'Manager',
     accentColor: '#f59e0b',
     gradientStops: ['#fbbf24', '#f59e0b', '#f97316', '#ef4444'],
   },
   APPROVER: {
-    brandLabel: 'WISDOM',
-    tagline: 'Approver',
+    brandLabel: 'WISDOM', tagline: 'Approver',
     accentColor: '#a855f7',
     gradientStops: ['#a855f7', '#c084fc', '#d946ef', '#ec4899'],
   },
   ADMIN: {
-    brandLabel: 'WISDOM',
-    tagline: 'Admin',
+    brandLabel: 'WISDOM', tagline: 'Admin',
     accentColor: '#ef4444',
     gradientStops: ['#fb7185', '#f43f5e', '#ef4444', '#dc2626'],
   },
   CEO: {
-    brandLabel: 'WISDOM',
-    tagline: 'CEO',
+    brandLabel: 'WISDOM', tagline: 'CEO',
     accentColor: '#d4a574',
-    // Premium holographic — gold + purple + pink
     gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'],
   },
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// AURORA RING LOGO — Holographic gradient หมุน + counter-rotating dashed ring
+// AURORA RING LOGO
 // ════════════════════════════════════════════════════════════════════════════
 function AuroraRingLogo({
   theme,
@@ -91,7 +82,6 @@ function AuroraRingLogo({
 }: {
   theme: RoleTheme;
   size?: number;
-  /** unique id ป้องกัน gradient id ชนกันถ้ามีหลาย logo ในหน้า */
   uniqueId: string;
 }) {
   const gradId = `aurora-${uniqueId}`;
@@ -124,7 +114,6 @@ function AuroraRingLogo({
           </linearGradient>
         </defs>
 
-        {/* ── Outer holographic ring — หมุนช้าๆ ── */}
         <g className="aurora-spin-slow" style={{ transformOrigin: '50px 50px' }}>
           <circle
             cx="50" cy="50" r="40"
@@ -134,7 +123,6 @@ function AuroraRingLogo({
           />
         </g>
 
-        {/* ── Inner dashed ring — หมุนสวนทาง ── */}
         <g className="aurora-spin-rev" style={{ transformOrigin: '50px 50px' }}>
           <circle
             cx="50" cy="50" r="32"
@@ -146,13 +134,10 @@ function AuroraRingLogo({
           />
         </g>
 
-        {/* ── Center dark disc ── */}
         <circle cx="50" cy="50" r="26" className="aurora-disc" />
 
-        {/* ── Letter W ── */}
         <text
-          x="50"
-          y="61"
+          x="50" y="61"
           textAnchor="middle"
           fill="white"
           fontSize="26"
@@ -193,7 +178,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   // ─── Brand header ────────────────────────────────────────────────────────
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
     <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
-      {/* Subtle role glow background */}
       <div
         className="absolute inset-0 opacity-[0.06] pointer-events-none"
         style={{
@@ -234,7 +218,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         )}
       </div>
 
-      {/* Toggle / close button */}
       {!showClose && (
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -359,27 +342,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
   return (
     <>
-      {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* CSS animations + dark mode disc                                       */}
-      {/* ════════════════════════════════════════════════════════════════════ */}
-      <style jsx global>{`
-        @keyframes aurora-spin-slow {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        @keyframes aurora-spin-rev {
-          from { transform: rotate(360deg); }
-          to   { transform: rotate(0deg); }
-        }
-        .aurora-spin-slow { animation: aurora-spin-slow 20s linear infinite; }
-        .aurora-spin-rev  { animation: aurora-spin-rev 14s linear infinite; }
-
-        /* Light mode — disc สว่าง */
-        .aurora-disc { fill: #1a1a2e; }
-        /* Dark mode — disc มืดกว่า ให้ ring เด่น */
-        .dark .aurora-disc { fill: #0a0a1a; }
-      `}</style>
-
       {/* ── DESKTOP sidebar ── */}
       <aside
         className={cn(
@@ -388,7 +350,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
           collapsed ? 'w-16' : 'w-64',
         )}
       >
-        {/* Side accent line */}
         <div
           className="absolute right-0 top-0 bottom-0 w-px opacity-30"
           style={{
