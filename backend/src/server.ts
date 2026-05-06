@@ -16,10 +16,10 @@ async function bootstrap() {
 
   const app = createApp();
 
-  const server = app.listen(env.PORT, () => {
-    logger.success(`Server running at http://localhost:${env.PORT}${env.API_PREFIX}`);
+  const server = app.listen(env.PORT, '0.0.0.0', () => {
+    logger.success(`Server running on port ${env.PORT}${env.API_PREFIX}`);
     logger.info(`Environment: ${env.NODE_ENV}`);
-    logger.info(`Health check: http://localhost:${env.PORT}${env.API_PREFIX}/health`);
+    logger.info(`Health check at port ${env.PORT}${env.API_PREFIX}/health`);
   });
 
   const shutdown = async (signal: string) => {
