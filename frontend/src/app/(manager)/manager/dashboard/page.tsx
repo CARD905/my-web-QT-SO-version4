@@ -127,9 +127,9 @@ export default function ManagerDashboardPage() {
 
   // ─── Filter selection display name ──────────────────────────────────────
   const filterDisplay = (() => {
-    if (filterValue === 'self') return 'ของฉัน';
-    if (filterValue === 'team') return 'ทีมทั้งหมด (ฉัน + ลูกน้อง)';
-    if (filterValue === 'all') return 'ทุกคนในระบบ';
+    if (filterValue === 'self') return 'Me';
+    if (filterValue === 'team') return ' My Team';
+    if (filterValue === 'all') return 'All users in the system';
     if (filterValue.startsWith('user:')) {
       const userId = filterValue.slice(5);
       const u = users.find((x) => x.id === userId);
@@ -167,14 +167,14 @@ export default function ManagerDashboardPage() {
               className="flex h-10 min-w-[240px] rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {/* ── Built-in filters ── */}
-              <option value="self">— ของฉัน (เริ่มต้น)</option>
+              <option value="self">— Me (Default)</option>
 
               {role?.code === 'MANAGER' && (
-                <option value="team">— ทีมทั้งหมด (ฉัน + ลูกน้อง)</option>
+                <option value="team">— My Team</option>
               )}
 
               {isExecutive && (
-                <option value="all">— ทุกคนในระบบ</option>
+                <option value="all">— All Team</option>
               )}
 
               {/* ── Specific users ── */}
@@ -189,7 +189,7 @@ export default function ManagerDashboardPage() {
               )}
 
               {officers.length > 0 && (
-                <optgroup label={role?.code === 'MANAGER' ? 'ลูกน้อง' : 'Officers'}>
+                <optgroup label={role?.code === 'MANAGER' ? 'Subordinates' : 'Officers'}>
                   {officers.map((u) => (
                     <option key={u.id} value={`user:${u.id}`}>
                       {u.name}
