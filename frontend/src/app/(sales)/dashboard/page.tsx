@@ -1,15 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
-  FileText,
-  ClipboardList,
-  TrendingUp,
-  Clock,
-  AlertCircle,
-  ArrowRight,
+  FileText, ClipboardList, TrendingUp, Clock,
+  AlertCircle, ArrowRight,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,15 +14,36 @@ import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, getStatusClass } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { ApiResponse, SalesDashboard } from '@/types/api';
+
+// ─── Role ที่ต้อง redirect ไปยัง manager dashboard ─────────────────────────
+const MANAGER_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
 
 export default function SalesDashboardPage() {
   const t = useT();
+  const router = useRouter();
   const { data: session } = useSession();
+  const { role, loading: permLoading } = usePermissions();
+
   const [stats, setStats] = useState<SalesDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
 
+  // ─── Redirect Manager/CEO/Admin → /manager/dashboard ─────────────────────
   useEffect(() => {
+    if (permLoading) return;
+    if (role?.code && MANAGER_ROLES.includes(role.code)) {
+      setRedirecting(true);
+      router.replace('/manager/dashboard');
+    }
+  }, [role, permLoading, router]);
+
+  // ─── Fetch sales stats — Officer เท่านั้น ────────────────────────────────
+  useEffect(() => {
+    if (permLoading || redirecting) return;
+    if (role?.code && MANAGER_ROLES.includes(role.code)) return; // ไม่โหลดถ้ากำลัง redirect
+
     let cancelled = false;
     (async () => {
       try {
@@ -37,17 +55,30 @@ export default function SalesDashboardPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => { cancelled = true; };
+  }, [permLoading, redirecting, role]);
 
+  // ─── Loading / Redirecting state ─────────────────────────────────────────
+  if (permLoading || redirecting) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mx-auto" />
+          <p className="text-sm text-muted-foreground">
+            {redirecting ? 'กำลังเปิด Manager Dashboard...' : 'กำลังโหลด...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── โค้ดเดิมของ Officer dashboard ────────────────────────────────────────
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">
-          {t('dashboard.Dashboard Quotations')}, {session?.user?.name?.split(' ')[0] || ''} 
+          Dashboard, {session?.user?.name?.split(' ')[0] || ''}
         </h1>
         <p className="text-muted-foreground mt-1">{t('dashboard.title')}</p>
       </div>
@@ -208,11 +239,7 @@ export default function SalesDashboardPage() {
 }
 
 function StatCard({
-  title,
-  value,
-  icon: Icon,
-  loading,
-  tone = 'primary',
+  title, value, icon: Icon, loading, tone = 'primary',
 }: {
   title: string;
   value?: number | string;
