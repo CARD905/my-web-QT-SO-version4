@@ -167,10 +167,13 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const [collapsed, setCollapsed] = useState(false);
 
   const items = NAV_ITEMS.filter((item) => {
-    if (loading) return false;
+  
+    if (loading) {
+      return !item.requires;
+    }
     if (!item.requires) return true;
     return can(item.requires.resource, item.requires.action, item.requires.scope ?? 'OWN');
-  });
+});
 
   const roleCode = role?.code || initialRole || 'OFFICER';
   const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
