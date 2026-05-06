@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import {
   ArrowLeft,
   Send,
@@ -21,13 +22,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { ApiResponse, Quotation } from '@/types/api';
+
+// ─── Roles ที่มีอำนาจ cancel ทุกสถานะ ──────────────────────────────────────
+const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
 
 export default function QuotationDetailPage() {
   const t = useT();
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { data: session } = useSession();
+  const { role } = usePermissions();
 
   const [q, setQ] = useState<Quotation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,13 +70,17 @@ export default function QuotationDetailPage() {
     }
   };
 
+  // ─── Cancel — ไม่มี popup, confirm สั้นๆ พอ ─────────────────────────────
   const cancel = async () => {
-    const reason = prompt('Cancellation reason:');
-    if (!reason) return;
+    if (!confirm('ยืนยันการยกเลิกใบเสนอราคานี้?')) return;
+
     setActing('cancel');
     try {
-      await api.post(`/quotations/${id}/cancel`, { reason });
-      toast.success('Quotation cancelled');
+      // ส่ง reason เป็น default ไปเลย เพื่อไม่ให้ backend error
+      await api.post(`/quotations/${id}/cancel`, {
+        reason: 'Cancelled by ' + (role?.code || 'user'),
+      });
+      toast.success('ยกเลิกใบเสนอราคาเรียบร้อย');
       await load();
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -99,9 +110,27 @@ export default function QuotationDetailPage() {
     );
   }
 
-  const canSubmit = q.status === 'DRAFT' || q.status === 'REJECTED';
-  const canEdit = q.status === 'DRAFT' || q.status === 'REJECTED';
-  const canCancel = q.status === 'DRAFT' || q.status === 'PENDING';
+  // ─── Permission logic ────────────────────────────────────────────────────
+  const userId = session?.user?.id;
+  const isOwner = userId && q.createdById === userId;
+  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code); // Manager / CEO / Admin
+
+  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+  const canEdit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+
+  // ─── Cancel rules ─────────────────────────────────────────────────────────
+  // - DRAFT  → Owner (Officer) ยกเลิกได้ + Manager+ ก็ได้
+  // - PENDING / PENDING_ESCALATED / APPROVED → เฉพาะ Manager+ เท่านั้น
+  // - REJECTED / CANCELLED / EXPIRED → ไม่มีปุ่ม
+  const canCancel = (() => {
+    if (q.status === 'DRAFT') {
+      return isOwner || isElevated;
+    }
+    if (q.status === 'PENDING' || q.status === 'PENDING_ESCALATED' || q.status === 'APPROVED') {
+      return isElevated; // Officer ไม่เห็นปุ่ม
+    }
+    return false; // REJECTED, CANCELLED, EXPIRED, SENT, SIGNED
+  })();
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -201,6 +230,11 @@ export default function QuotationDetailPage() {
               <p className="text-sm mt-1">
                 Submitted on {formatDate(q.submittedAt)} · Waiting for approver review
               </p>
+              {!isElevated && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  ส่งขออนุมัติแล้ว — ไม่สามารถยกเลิกได้ ติดต่อ Manager หากต้องการยกเลิก
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
