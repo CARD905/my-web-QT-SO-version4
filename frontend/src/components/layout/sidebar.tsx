@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
-  Building2, Shield, TrendingUp, Crown, ChevronLeft, ChevronRight,
-  X, Sparkles, type LucideIcon,
+  Building2, Shield, ChevronLeft, ChevronRight, X,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -30,174 +30,138 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROLE THEME CONFIG — แต่ละ role มีเอกลักษณ์ที่ต่างกัน
+// ROLE THEMES — แต่ละ role มี holographic gradient ของตัวเอง (4 stops)
 // ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
-  /** Brand label ที่แสดงในมุมซ้ายบน */
   brandLabel: string;
-  /** Tagline เล็กๆ ใต้ brand */
   tagline: string;
-  /** Gradient สำหรับโลโก้และ accent */
-  gradient: string;
-  /** Solid color สำหรับ glow */
-  glowColor: string;
-  /** Tailwind class สำหรับ glow ring */
-  glowClass: string;
-  /** สีของวงโคจร 3 วง */
-  orbitColors: [string, string, string];
-  /** Icon ของ role */
-  icon: LucideIcon;
+  /** สีหลัก — ใช้สำหรับ accent (active bar, glow, etc.) */
+  accentColor: string;
+  /** Gradient stops 4 สี — สำหรับ holographic ring */
+  gradientStops: [string, string, string, string];
 }
 
 const ROLE_THEMES: Record<string, RoleTheme> = {
   OFFICER: {
     brandLabel: 'WISDOM',
     tagline: 'Officer',
-    gradient: 'from-blue-400 via-cyan-400 to-blue-600',
-    glowColor: '#06b6d4',
-    glowClass: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]',
-    orbitColors: ['#06b6d4', '#3b82f6', '#0891b2'],
-    icon: Users,
+    accentColor: '#06b6d4',
+    gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'],
   },
   SALES: {
     brandLabel: 'WISDOM',
     tagline: 'Sales',
-    gradient: 'from-blue-400 via-cyan-400 to-blue-600',
-    glowColor: '#06b6d4',
-    glowClass: 'shadow-[0_0_20px_rgba(6,182,212,0.5)]',
-    orbitColors: ['#06b6d4', '#3b82f6', '#0891b2'],
-    icon: Users,
+    accentColor: '#06b6d4',
+    gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'],
   },
   MANAGER: {
     brandLabel: 'WISDOM',
     tagline: 'Manager',
-    gradient: 'from-amber-400 via-orange-400 to-red-500',
-    glowColor: '#f59e0b',
-    glowClass: 'shadow-[0_0_24px_rgba(245,158,11,0.55)]',
-    orbitColors: ['#f59e0b', '#f97316', '#fb923c'],
-    icon: TrendingUp,
+    accentColor: '#f59e0b',
+    gradientStops: ['#fbbf24', '#f59e0b', '#f97316', '#ef4444'],
   },
   APPROVER: {
     brandLabel: 'WISDOM',
     tagline: 'Approver',
-    gradient: 'from-purple-400 via-fuchsia-400 to-pink-500',
-    glowColor: '#a855f7',
-    glowClass: 'shadow-[0_0_22px_rgba(168,85,247,0.55)]',
-    orbitColors: ['#a855f7', '#d946ef', '#c026d3'],
-    icon: TrendingUp,
+    accentColor: '#a855f7',
+    gradientStops: ['#a855f7', '#c084fc', '#d946ef', '#ec4899'],
   },
   ADMIN: {
     brandLabel: 'WISDOM',
     tagline: 'Admin',
-    gradient: 'from-rose-400 via-red-400 to-pink-600',
-    glowColor: '#ef4444',
-    glowClass: 'shadow-[0_0_22px_rgba(239,68,68,0.55)]',
-    orbitColors: ['#ef4444', '#f43f5e', '#dc2626'],
-    icon: Shield,
+    accentColor: '#ef4444',
+    gradientStops: ['#fb7185', '#f43f5e', '#ef4444', '#dc2626'],
   },
   CEO: {
     brandLabel: 'WISDOM',
     tagline: 'CEO',
-    gradient: 'from-amber-300 via-yellow-400 to-amber-600',
-    glowColor: '#fbbf24',
-    glowClass: 'shadow-[0_0_28px_rgba(251,191,36,0.65)]',
-    orbitColors: ['#fbbf24', '#f59e0b', '#facc15'],
-    icon: Crown,
+    accentColor: '#d4a574',
+    // Premium holographic — gold + purple + pink
+    gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'],
   },
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// ORBITAL LOGO — โลโก้วงกลมพร้อมวงโคจร 3 วง
+// AURORA RING LOGO — Holographic gradient หมุน + counter-rotating dashed ring
 // ════════════════════════════════════════════════════════════════════════════
-function OrbitalLogo({ theme, size = 40 }: { theme: RoleTheme; size?: number }) {
+function AuroraRingLogo({
+  theme,
+  size = 44,
+  uniqueId,
+}: {
+  theme: RoleTheme;
+  size?: number;
+  /** unique id ป้องกัน gradient id ชนกันถ้ามีหลาย logo ในหน้า */
+  uniqueId: string;
+}) {
+  const gradId = `aurora-${uniqueId}`;
+  const [s1, s2, s3, s4] = theme.gradientStops;
+
   return (
     <div
-      className={cn('relative flex items-center justify-center shrink-0', theme.glowClass)}
-      style={{ width: size, height: size }}
+      className="relative shrink-0"
+      style={{
+        width: size,
+        height: size,
+        filter: `drop-shadow(0 0 8px ${theme.accentColor}40)`,
+      }}
     >
-      {/* SVG วงโคจร — หมุนอยู่ด้านหลัง */}
       <svg
         viewBox="0 0 100 100"
-        className="absolute inset-0 w-full h-full overflow-visible"
+        className="w-full h-full overflow-visible"
         aria-hidden="true"
       >
-        {/* วงโคจรชั้นที่ 1 — เอียง 0° */}
-        <g className="orbit-ring orbit-ring-1" style={{ transformOrigin: '50px 50px' }}>
-          <ellipse
-            cx="50" cy="50" rx="48" ry="14"
+        <defs>
+          <linearGradient
+            id={gradId}
+            gradientUnits="userSpaceOnUse"
+            x1="10" y1="10" x2="90" y2="90"
+          >
+            <stop offset="0%"   stopColor={s1} />
+            <stop offset="33%"  stopColor={s2} />
+            <stop offset="66%"  stopColor={s3} />
+            <stop offset="100%" stopColor={s4} />
+          </linearGradient>
+        </defs>
+
+        {/* ── Outer holographic ring — หมุนช้าๆ ── */}
+        <g className="aurora-spin-slow" style={{ transformOrigin: '50px 50px' }}>
+          <circle
+            cx="50" cy="50" r="40"
             fill="none"
-            stroke={theme.orbitColors[0]}
-            strokeWidth="0.8"
-            opacity="0.45"
+            stroke={`url(#${gradId})`}
+            strokeWidth="3"
           />
-          <circle r="2.5" fill={theme.orbitColors[0]}>
-            <animateMotion
-              dur="3.5s"
-              repeatCount="indefinite"
-              path="M 2 50 A 48 14 0 1 1 98 50 A 48 14 0 1 1 2 50"
-            />
-          </circle>
         </g>
 
-        {/* วงโคจรชั้นที่ 2 — เอียง 60° */}
-        <g
-          className="orbit-ring orbit-ring-2"
-          style={{ transformOrigin: '50px 50px', transform: 'rotate(60deg)' }}
-        >
-          <ellipse
-            cx="50" cy="50" rx="48" ry="14"
+        {/* ── Inner dashed ring — หมุนสวนทาง ── */}
+        <g className="aurora-spin-rev" style={{ transformOrigin: '50px 50px' }}>
+          <circle
+            cx="50" cy="50" r="32"
             fill="none"
-            stroke={theme.orbitColors[1]}
+            stroke={`url(#${gradId})`}
             strokeWidth="0.8"
-            opacity="0.45"
+            strokeDasharray="2 4"
+            opacity="0.6"
           />
-          <circle r="2" fill={theme.orbitColors[1]}>
-            <animateMotion
-              dur="5s"
-              repeatCount="indefinite"
-              path="M 2 50 A 48 14 0 1 0 98 50 A 48 14 0 1 0 2 50"
-            />
-          </circle>
         </g>
 
-        {/* วงโคจรชั้นที่ 3 — เอียง -60° */}
-        <g
-          className="orbit-ring orbit-ring-3"
-          style={{ transformOrigin: '50px 50px', transform: 'rotate(-60deg)' }}
+        {/* ── Center dark disc ── */}
+        <circle cx="50" cy="50" r="26" className="aurora-disc" />
+
+        {/* ── Letter W ── */}
+        <text
+          x="50"
+          y="61"
+          textAnchor="middle"
+          fill="white"
+          fontSize="26"
+          fontWeight="600"
+          style={{ letterSpacing: '-0.04em' }}
         >
-          <ellipse
-            cx="50" cy="50" rx="48" ry="14"
-            fill="none"
-            stroke={theme.orbitColors[2]}
-            strokeWidth="0.8"
-            opacity="0.4"
-          />
-          <circle r="1.8" fill={theme.orbitColors[2]}>
-            <animateMotion
-              dur="4.2s"
-              repeatCount="indefinite"
-              path="M 2 50 A 48 14 0 1 1 98 50 A 48 14 0 1 1 2 50"
-            />
-          </circle>
-        </g>
+          W
+        </text>
       </svg>
-
-      {/* วงกลม core ตรงกลาง — ตัว W */}
-      <div
-        className={cn(
-          'relative z-10 rounded-full bg-gradient-to-br flex items-center justify-center text-white font-black',
-          theme.gradient,
-        )}
-        style={{
-          width: size * 0.6,
-          height: size * 0.6,
-          fontSize: size * 0.32,
-          letterSpacing: '-0.05em',
-          textShadow: '0 0 12px rgba(255,255,255,0.4)',
-        }}
-      >
-        W
-      </div>
     </div>
   );
 }
@@ -227,34 +191,41 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
 
   // ─── Brand header ────────────────────────────────────────────────────────
-  const brandHeader = (showClose = false) => (
-    <div className="h-20 px-3 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
-      {/* Subtle background glow ของ role */}
+  const brandHeader = (showClose = false, idSuffix = 'desktop') => (
+    <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
+      {/* Subtle role glow background */}
       <div
-        className="absolute inset-0 opacity-[0.08] pointer-events-none"
+        className="absolute inset-0 opacity-[0.06] pointer-events-none"
         style={{
-          background: `radial-gradient(circle at 30% 50%, ${theme.glowColor} 0%, transparent 70%)`,
+          background: `radial-gradient(circle at 20% 50%, ${theme.accentColor} 0%, transparent 65%)`,
         }}
       />
 
       <div className="flex items-center gap-3 min-w-0 relative z-10">
-        <OrbitalLogo theme={theme} size={collapsed ? 36 : 44} />
+        <AuroraRingLogo
+          theme={theme}
+          size={collapsed ? 36 : 44}
+          uniqueId={`${roleCode}-${idSuffix}`}
+        />
 
         {!collapsed && (
           <div className="min-w-0">
             <div
-              className="font-black text-base tracking-wide bg-clip-text text-transparent bg-gradient-to-r"
+              className="font-bold text-base tracking-[0.08em] bg-clip-text text-transparent"
               style={{
-                backgroundImage: `linear-gradient(to right, ${theme.orbitColors[0]}, ${theme.orbitColors[1]})`,
+                backgroundImage: `linear-gradient(135deg, ${theme.gradientStops[0]}, ${theme.gradientStops[2]})`,
               }}
             >
               {theme.brandLabel}
             </div>
-            <div className="flex items-center gap-1 mt-0.5">
-              <Sparkles className="h-2.5 w-2.5" style={{ color: theme.glowColor }} />
+            <div className="flex items-center gap-1.5 mt-0.5">
               <span
-                className="text-[10px] font-bold uppercase tracking-[0.15em]"
-                style={{ color: theme.glowColor }}
+                className="inline-block w-1 h-1 rounded-full animate-pulse"
+                style={{ backgroundColor: theme.accentColor }}
+              />
+              <span
+                className="text-[10px] font-medium uppercase tracking-[0.2em]"
+                style={{ color: theme.accentColor }}
               >
                 {role?.nameTh || theme.tagline}
               </span>
@@ -263,7 +234,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         )}
       </div>
 
-      {/* Toggle button */}
+      {/* Toggle / close button */}
       {!showClose && (
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -303,7 +274,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
       {!loading && (
         <nav className="flex-1 overflow-y-auto p-3 space-y-1 relative">
-          {items.map((item, idx) => {
+          {items.map((item) => {
             const active =
               pathname === item.href ||
               (item.href !== '/dashboard' && pathname.startsWith(item.href));
@@ -320,23 +291,18 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
                     ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent/30 hover:translate-x-0.5',
                 )}
-                style={{
-                  animationDelay: `${idx * 50}ms`,
-                }}
                 title={collapsed ? t(item.labelKey) : undefined}
               >
-                {/* Active indicator — vertical bar */}
                 {active && (
                   <span
                     className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full"
                     style={{
-                      background: `linear-gradient(to bottom, ${theme.orbitColors[0]}, ${theme.orbitColors[1]})`,
-                      boxShadow: `0 0 12px ${theme.glowColor}80`,
+                      background: `linear-gradient(to bottom, ${theme.gradientStops[0]}, ${theme.gradientStops[2]})`,
+                      boxShadow: `0 0 12px ${theme.accentColor}80`,
                     }}
                   />
                 )}
 
-                {/* Icon — มี glow ตอน active */}
                 <div
                   className={cn(
                     'relative flex items-center justify-center shrink-0 transition-all',
@@ -346,8 +312,8 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
                   <Icon
                     className="h-4 w-4 relative z-10"
                     style={{
-                      color: active ? theme.glowColor : undefined,
-                      filter: active ? `drop-shadow(0 0 4px ${theme.glowColor}80)` : undefined,
+                      color: active ? theme.accentColor : undefined,
+                      filter: active ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
                     }}
                   />
                 </div>
@@ -356,11 +322,10 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
                   <span className="truncate flex-1">{t(item.labelKey)}</span>
                 )}
 
-                {/* Hover dot indicator */}
                 {!active && !collapsed && (
                   <span
                     className="w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-60 transition-opacity"
-                    style={{ backgroundColor: theme.glowColor }}
+                    style={{ backgroundColor: theme.accentColor }}
                   />
                 )}
               </Link>
@@ -369,7 +334,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         </nav>
       )}
 
-      {/* Footer — version + role badge */}
+      {/* Footer */}
       <div className="p-3 border-t border-border/40 shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between gap-2">
@@ -377,9 +342,9 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
             <div
               className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{
-                background: `linear-gradient(to right, ${theme.orbitColors[0]}20, ${theme.orbitColors[1]}20)`,
-                color: theme.glowColor,
-                border: `1px solid ${theme.glowColor}30`,
+                background: `linear-gradient(to right, ${theme.gradientStops[0]}20, ${theme.gradientStops[2]}20)`,
+                color: theme.accentColor,
+                border: `1px solid ${theme.accentColor}30`,
               }}
             >
               {role?.code || theme.tagline}
@@ -394,6 +359,27 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
   return (
     <>
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      {/* CSS animations + dark mode disc                                       */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      <style jsx global>{`
+        @keyframes aurora-spin-slow {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes aurora-spin-rev {
+          from { transform: rotate(360deg); }
+          to   { transform: rotate(0deg); }
+        }
+        .aurora-spin-slow { animation: aurora-spin-slow 20s linear infinite; }
+        .aurora-spin-rev  { animation: aurora-spin-rev 14s linear infinite; }
+
+        /* Light mode — disc สว่าง */
+        .aurora-disc { fill: #1a1a2e; }
+        /* Dark mode — disc มืดกว่า ให้ ring เด่น */
+        .dark .aurora-disc { fill: #0a0a1a; }
+      `}</style>
+
       {/* ── DESKTOP sidebar ── */}
       <aside
         className={cn(
@@ -402,15 +388,15 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
           collapsed ? 'w-16' : 'w-64',
         )}
       >
-        {/* Side accent line — แบ่งสีตาม role */}
+        {/* Side accent line */}
         <div
           className="absolute right-0 top-0 bottom-0 w-px opacity-30"
           style={{
-            background: `linear-gradient(to bottom, transparent, ${theme.glowColor}, transparent)`,
+            background: `linear-gradient(to bottom, transparent, ${theme.accentColor}, transparent)`,
           }}
         />
 
-        {brandHeader(false)}
+        {brandHeader(false, 'desktop')}
         {navContent}
       </aside>
 
@@ -421,7 +407,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        {brandHeader(true)}
+        {brandHeader(true, 'mobile')}
         {navContent}
       </aside>
     </>
