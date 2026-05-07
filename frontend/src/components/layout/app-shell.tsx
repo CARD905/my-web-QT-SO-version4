@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Sidebar } from '@/components/layout/sidebar';
-import { Header } from '@/components/layout/header';
 import { AuroraBackground } from '@/components/effects/aurora-background';
 import { MouseSpotlight } from '@/components/effects/mouse-spotlight';
 import { ParticleField } from '@/components/effects/particle-field';
@@ -25,11 +24,16 @@ function pickParticleColor(roleCode?: string): string {
 }
 
 interface AppShellProps {
-  children: React.ReactNode;
+  children: ReactNode;
+  /**
+   * Header เป็น slot — server component ส่งเข้ามา
+   * (Header ใช้ auth() ที่ต้องอยู่ใน server boundary)
+   */
+  header: ReactNode;
   role?: string;
 }
 
-export function AppShell({ children, role }: AppShellProps) {
+export function AppShell({ children, header, role }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // ─── ฟัง event จาก MobileMenuTrigger (ที่อยู่ใน server Header) ──────────
@@ -73,7 +77,9 @@ export function AppShell({ children, role }: AppShellProps) {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
+        {/* Header — ส่งจาก server layout แล้ว pass มาเป็น slot */}
+        {header}
+
         <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in">
           {children}
         </main>
