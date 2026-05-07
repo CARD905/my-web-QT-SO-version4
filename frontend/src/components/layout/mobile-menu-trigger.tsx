@@ -2,10 +2,6 @@
 
 import { Menu } from 'lucide-react';
 
-/**
- * ปุ่ม hamburger สำหรับเปิด mobile drawer
- * ใช้ custom event เพื่อสื่อสารกับ AppShell (เพราะ Header เป็น server component)
- */
 export function MobileMenuTrigger() {
   return (
     <button
