@@ -163,17 +163,26 @@ interface SidebarProps {
 export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const t = useT();
-  const { can, role, loading } = usePermissions();
+  const { can, role, loading, permissions } = usePermissions();
   const [collapsed, setCollapsed] = useState(false);
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // PERMISSIVE FILTER — ป้องกัน menu หายเมื่อ permissions ยังไม่โหลด
+  // ═════════════════════════════════════════════════════════════════════════
   const items = NAV_ITEMS.filter((item) => {
-  
-    if (loading) {
-      return !item.requires;
-    }
+    // Item ไม่ต้องการ permission → แสดงเสมอ
     if (!item.requires) return true;
+
+    // ระหว่างโหลด permissions → แสดงทุก item ก่อน (จะ re-filter เมื่อโหลดเสร็จ)
+    if (loading) return true;
+
+    // ถ้า permissions array ว่างเปล่า (API fail หรือยังไม่ seed) → แสดงทุก item
+    // Backend จะเช็คสิทธิ์อีกชั้นถ้า user คลิก
+    if (!permissions || permissions.length === 0) return true;
+
+    // ปกติ → check permission ตาม scope
     return can(item.requires.resource, item.requires.action, item.requires.scope ?? 'OWN');
-});
+  });
 
   const roleCode = role?.code || initialRole || 'OFFICER';
   const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
@@ -246,79 +255,65 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   // ─── Nav items ────────────────────────────────────────────────────────────
   const navContent = (
     <>
-      {loading && (
-        <div className="flex-1 p-2 space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-10 rounded-lg bg-muted/30 animate-pulse"
-              style={{ animationDelay: `${i * 0.1}s` }}
-            />
-          ))}
-        </div>
-      )}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1 relative">
+        {items.map((item) => {
+          const active =
+            pathname === item.href ||
+            (item.href !== '/dashboard' && pathname.startsWith(item.href));
+          const Icon = item.icon;
 
-      {!loading && (
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1 relative">
-          {items.map((item) => {
-            const active =
-              pathname === item.href ||
-              (item.href !== '/dashboard' && pathname.startsWith(item.href));
-            const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onMobileClose}
+              className={cn(
+                'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+                active
+                  ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/30 hover:translate-x-0.5',
+              )}
+              title={collapsed ? t(item.labelKey) : undefined}
+            >
+              {active && (
+                <span
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full"
+                  style={{
+                    background: `linear-gradient(to bottom, ${theme.gradientStops[0]}, ${theme.gradientStops[2]})`,
+                    boxShadow: `0 0 12px ${theme.accentColor}80`,
+                  }}
+                />
+              )}
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onMobileClose}
+              <div
                 className={cn(
-                  'group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-                  active
-                    ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/30 hover:translate-x-0.5',
+                  'relative flex items-center justify-center shrink-0 transition-all',
+                  active && 'scale-110',
                 )}
-                title={collapsed ? t(item.labelKey) : undefined}
               >
-                {active && (
-                  <span
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full"
-                    style={{
-                      background: `linear-gradient(to bottom, ${theme.gradientStops[0]}, ${theme.gradientStops[2]})`,
-                      boxShadow: `0 0 12px ${theme.accentColor}80`,
-                    }}
-                  />
-                )}
+                <Icon
+                  className="h-4 w-4 relative z-10"
+                  style={{
+                    color: active ? theme.accentColor : undefined,
+                    filter: active ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
+                  }}
+                />
+              </div>
 
-                <div
-                  className={cn(
-                    'relative flex items-center justify-center shrink-0 transition-all',
-                    active && 'scale-110',
-                  )}
-                >
-                  <Icon
-                    className="h-4 w-4 relative z-10"
-                    style={{
-                      color: active ? theme.accentColor : undefined,
-                      filter: active ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
-                    }}
-                  />
-                </div>
+              {!collapsed && (
+                <span className="truncate flex-1">{t(item.labelKey)}</span>
+              )}
 
-                {!collapsed && (
-                  <span className="truncate flex-1">{t(item.labelKey)}</span>
-                )}
-
-                {!active && !collapsed && (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-60 transition-opacity"
-                    style={{ backgroundColor: theme.accentColor }}
-                  />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-      )}
+              {!active && !collapsed && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-60 transition-opacity"
+                  style={{ backgroundColor: theme.accentColor }}
+                />
+              )}
+            </Link>
+          );
+        })}
+      </nav>
 
       {/* Footer */}
       <div className="p-3 border-t border-border/40 shrink-0">
