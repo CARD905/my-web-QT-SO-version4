@@ -23,6 +23,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { CommentThread } from '@/components/comments/comment-thread';
 import type { ApiResponse, Quotation } from '@/types/api';
 
 // ─── Roles ที่มีอำนาจ cancel ทุกสถานะ ──────────────────────────────────────
@@ -76,7 +77,6 @@ export default function QuotationDetailPage() {
 
     setActing('cancel');
     try {
-      // ส่ง reason เป็น default ไปเลย เพื่อไม่ให้ backend error
       await api.post(`/quotations/${id}/cancel`, {
         reason: 'Cancelled by ' + (role?.code || 'user'),
       });
@@ -113,24 +113,22 @@ export default function QuotationDetailPage() {
   // ─── Permission logic ────────────────────────────────────────────────────
   const userId = session?.user?.id;
   const isOwner = userId && q.createdById === userId;
-  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code); // Manager / CEO / Admin
+  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code);
 
   const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
   const canEdit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
 
-  // ─── Cancel rules ─────────────────────────────────────────────────────────
-  // - DRAFT  → Owner (Officer) ยกเลิกได้ + Manager+ ก็ได้
-  // - PENDING / PENDING_ESCALATED / APPROVED → เฉพาะ Manager+ เท่านั้น
-  // - REJECTED / CANCELLED / EXPIRED → ไม่มีปุ่ม
   const canCancel = (() => {
-    if (q.status === 'DRAFT') {
-      return isOwner || isElevated;
-    }
+    if (q.status === 'DRAFT') return isOwner || isElevated;
     if (q.status === 'PENDING' || q.status === 'PENDING_ESCALATED' || q.status === 'APPROVED') {
-      return isElevated; // Officer ไม่เห็นปุ่ม
+      return isElevated;
     }
-    return false; // REJECTED, CANCELLED, EXPIRED, SENT, SIGNED
+    return false;
   })();
+
+  // ─── Comment thread permission ────────────────────────────────────────────
+  // canPostInternal: Manager / CEO / Admin เท่านั้น
+  const canPostInternal = !!isElevated;
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -169,13 +167,21 @@ export default function QuotationDetailPage() {
           )}
           {canCancel && (
             <Button variant="outline" onClick={cancel} disabled={acting !== null}>
-              {acting === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              {acting === 'cancel' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <X className="h-4 w-4" />
+              )}
               {t('common.cancel')}
             </Button>
           )}
           {canSubmit && (
             <Button onClick={submit} disabled={acting !== null}>
-              {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {acting === 'submit' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
               {t('quotation.submitForApproval')}
             </Button>
           )}
@@ -226,7 +232,9 @@ export default function QuotationDetailPage() {
           <CardContent className="pt-4 flex gap-3">
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold text-amber-700 dark:text-amber-400">Pending Approval</div>
+              <div className="font-semibold text-amber-700 dark:text-amber-400">
+                Pending Approval
+              </div>
               <p className="text-sm mt-1">
                 Submitted on {formatDate(q.submittedAt)} · Waiting for approver review
               </p>
@@ -304,7 +312,9 @@ export default function QuotationDetailPage() {
                     <td className="py-3">
                       <div className="font-medium">{it.productName}</div>
                       {it.productDescription && (
-                        <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>
+                        <div className="text-[10px] text-gray-700 mt-0.5">
+                          {it.productDescription}
+                        </div>
                       )}
                     </td>
                     <td className="py-3 text-right">
@@ -318,7 +328,9 @@ export default function QuotationDetailPage() {
                           : formatNumber(it.discount)
                         : '-'}
                     </td>
-                    <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+                    <td className="py-3 text-right font-semibold">
+                      {formatNumber(it.lineTotal)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -380,6 +392,9 @@ export default function QuotationDetailPage() {
           )}
         </div>
       )}
+
+      {/* ─── Comment Thread ─────────────────────────────────────────────────── */}
+      <CommentThread quotationId={id} />
     </div>
   );
 }

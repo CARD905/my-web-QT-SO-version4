@@ -1,20 +1,28 @@
 import { Request, Response } from 'express';
-import { quotationsService } from './quotations.service';
+import { quotationsService, CurrentUser } from './quotations.service';
 import { AppError, created, success } from '../../utils/response';
 
-function requireUser(req: Request) {
+// ─── requireUser — ดึง user จาก req พร้อม name/email ──────────────────────
+function requireUser(req: Request): CurrentUser {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
+
   const u = req.user as {
     id: string;
+    name?: string;
+    email?: string;
     role?: string;
     roleCode?: string;
     roleId?: string;
   };
+
   if (!u.roleId) throw new AppError(401, 'INVALID_TOKEN', 'Token missing role info');
+
   return {
     id: u.id,
     roleCode: u.roleCode || u.role || 'OFFICER',
     roleId: u.roleId,
+    name: u.name ?? '',
+    email: u.email ?? '',
   };
 }
 
@@ -83,5 +91,20 @@ export const quotationsController = {
     const user = requireUser(req);
     const comment = await quotationsService.addComment(req.params.id, req.body, user, req);
     return created(res, comment, 'Comment added');
+  },
+
+  async bulkApprove(req: Request, res: Response) {
+    const user = requireUser(req);
+    const { ids } = req.body as { ids: string[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new AppError(400, 'BAD_REQUEST', 'ids array required');
+    }
+    if (ids.length > 50) {
+      throw new AppError(400, 'BAD_REQUEST', 'Maximum 50 quotations per batch');
+    }
+
+    const data = await quotationsService.bulkApprove(ids, user);
+    return success(res, data);
   },
 };

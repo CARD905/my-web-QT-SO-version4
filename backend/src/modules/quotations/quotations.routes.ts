@@ -4,6 +4,7 @@ import { authenticate } from '../../middleware/auth';
 import { requirePermission, requireAnyPermission } from '../../middleware/permission';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
+import commentsRoutes from './comments.routes';
 import {
   addCommentSchema,
   approveQuotationSchema,
@@ -20,8 +21,22 @@ const router = Router();
 router.use(authenticate);
 
 // ============================================================
+// STATIC routes ต้องอยู่ก่อน /:id เสมอ
+// เพื่อป้องกัน Express match "bulk-approve" เป็น :id
+// ============================================================
+
+// POST /bulk-approve — Manager (TEAM) or Admin/CEO (ALL)
+router.post(
+  '/bulk-approve',
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'ALL'],
+  ),
+  asyncHandler(quotationsController.bulkApprove),
+);
+
+// ============================================================
 // VIEW — anyone with any view scope (OWN/TEAM/ALL)
-// Service-layer scope filter handles actual filtering.
 // ============================================================
 router.get(
   '/',
@@ -103,7 +118,7 @@ router.post(
 );
 
 // ============================================================
-// VERSIONS / COMMENTS — anyone with view permission
+// VERSIONS — anyone with view permission
 // ============================================================
 router.get(
   '/:id/versions',
@@ -115,25 +130,9 @@ router.get(
   asyncHandler(quotationsController.getVersions),
 );
 
-router.get(
-  '/:id/comments',
-  requireAnyPermission(
-    ['quotation', 'view', 'OWN'],
-    ['quotation', 'view', 'TEAM'],
-    ['quotation', 'view', 'ALL'],
-  ),
-  asyncHandler(quotationsController.getComments),
-);
-
-router.post(
-  '/:id/comments',
-  requireAnyPermission(
-    ['quotation', 'view', 'OWN'],
-    ['quotation', 'view', 'TEAM'],
-    ['quotation', 'view', 'ALL'],
-  ),
-  validate(addCommentSchema),
-  asyncHandler(quotationsController.addComment),
-);
+// ============================================================
+// COMMENTS — mount commentsRoutes ครั้งเดียวที่ /:quotationId/comments
+// ============================================================
+router.use('/:quotationId/comments', commentsRoutes);
 
 export default router;

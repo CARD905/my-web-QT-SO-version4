@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Search, FileText, CheckCircle2, XCircle, Loader2, Lock } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Lock,
+  CheckSquare,
+  Square,
+  ListChecks,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,6 +34,11 @@ export default function QuotationsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [actioningId, setActioningId] = useState<string | null>(null);
+
+  // ─── Bulk Approve state ──────────────────────────────────────────────────
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkActing, setBulkActing] = useState(false);
 
   const canCreate = can('quotation', 'create', 'OWN');
   const canApprove = can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL');
@@ -57,6 +73,12 @@ export default function QuotationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
+  // ─── Reset bulk selection when exiting bulk mode ─────────────────────────
+  useEffect(() => {
+    if (!bulkMode) setSelected(new Set());
+  }, [bulkMode]);
+
+  // ─── Per-item approve/reject (single) ────────────────────────────────────
   const handleApprove = async (e: React.MouseEvent, q: Quotation) => {
     e.preventDefault();
     e.stopPropagation();
@@ -90,6 +112,65 @@ export default function QuotationsPage() {
     }
   };
 
+  // ─── Bulk: toggle select ──────────────────────────────────────────────────
+  const toggleSelect = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  // ─── Bulk: select all approvable items on screen ──────────────────────────
+  const approvableList = list.filter((q) => {
+    const isPending = q.status === 'PENDING';
+    const isEscalated = q.status === 'PENDING_ESCALATED';
+    return (
+      canApprove &&
+      ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
+        (isEscalated && canApproveAll))
+    );
+  });
+
+  const allSelected =
+    approvableList.length > 0 && approvableList.every((q) => selected.has(q.id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(approvableList.map((q) => q.id)));
+    }
+  };
+
+  // ─── Bulk Approve (POST /quotations/bulk-approve) ────────────────────────
+  const handleBulkApprove = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`อนุมัติ ${selected.size} รายการ ใช่หรือไม่?`)) return;
+
+    setBulkActing(true);
+    try {
+      const res = await api.post<
+        ApiResponse<{ approved: number; failed: { id: string; error: string }[] }>
+      >('/quotations/bulk-approve', { ids: Array.from(selected) });
+
+      const { approved, failed } = res.data.data ?? { approved: 0, failed: [] };
+
+      if (approved > 0) toast.success(`อนุมัติสำเร็จ ${approved} รายการ`);
+      if (failed.length > 0)
+        toast.error(`ล้มเหลว ${failed.length} รายการ — ${failed[0]?.error ?? ''}`);
+
+      setBulkMode(false);
+      await fetchList();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setBulkActing(false);
+    }
+  };
+
   const statuses = [
     '',
     'DRAFT',
@@ -111,15 +192,70 @@ export default function QuotationsPage() {
             {loading ? t('common.loading') : `${list.length} items`}
           </p>
         </div>
-        {canCreate && (
-          <Button asChild>
-            <Link href="/quotations/new">
-              <Plus className="h-4 w-4" />
-              {t('quotation.newQuotation')}
-            </Link>
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {/* Bulk Approve toggle — Manager+ only */}
+          {canApprove && approvableList.length > 0 && (
+            <Button
+              variant={bulkMode ? 'secondary' : 'outline'}
+              onClick={() => setBulkMode((v) => !v)}
+            >
+              <ListChecks className="h-4 w-4" />
+              {bulkMode ? 'ยกเลิก Bulk' : 'Bulk Approve'}
+            </Button>
+          )}
+          {canCreate && (
+            <Button asChild>
+              <Link href="/quotations/new">
+                <Plus className="h-4 w-4" />
+                {t('quotation.newQuotation')}
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* ─── Bulk action bar ─────────────────────────────────────────────── */}
+      {bulkMode && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="py-3 px-4 flex flex-wrap items-center gap-3">
+            {/* Select all */}
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+            >
+              {allSelected ? (
+                <CheckSquare className="h-4 w-4 text-primary" />
+              ) : (
+                <Square className="h-4 w-4 text-muted-foreground" />
+              )}
+              เลือกทั้งหมด ({approvableList.length})
+            </button>
+
+            <div className="flex-1" />
+
+            {selected.size > 0 && (
+              <span className="text-sm text-muted-foreground">
+                เลือกแล้ว{' '}
+                <span className="font-semibold text-foreground">{selected.size}</span> รายการ
+              </span>
+            )}
+
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700"
+              disabled={selected.size === 0 || bulkActing}
+              onClick={handleBulkApprove}
+            >
+              {bulkActing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              Approve {selected.size > 0 ? `(${selected.size})` : ''}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -180,17 +316,57 @@ export default function QuotationsPage() {
             const isEscalated = q.status === 'PENDING_ESCALATED';
             const isManagerOnly = role?.code === 'MANAGER';
 
-            // Manager can approve PENDING (≤limit) but not PENDING_ESCALATED
             const showApproveButtons =
+              !bulkMode &&
               canApprove &&
               ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
                 (isEscalated && canApproveAll));
 
+            const isApprovable =
+              canApprove &&
+              ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
+                (isEscalated && canApproveAll));
+
+            const isChecked = selected.has(q.id);
+
             return (
-              <Link key={q.id} href={`/quotations/${q.id}`}>
-                <Card className="cursor-pointer hover:border-primary/50 transition-colors">
+              <Link
+                key={q.id}
+                href={bulkMode ? '#' : `/quotations/${q.id}`}
+                onClick={
+                  bulkMode && isApprovable
+                    ? (e) => toggleSelect(e, q.id)
+                    : bulkMode
+                    ? (e) => e.preventDefault()
+                    : undefined
+                }
+              >
+                <Card
+                  className={`cursor-pointer transition-colors ${
+                    bulkMode && isApprovable
+                      ? isChecked
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:border-primary/40'
+                      : 'hover:border-primary/50'
+                  } ${bulkMode && !isApprovable ? 'opacity-50 cursor-default' : ''}`}
+                >
                   <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0 flex-1">
+                      {/* Bulk checkbox */}
+                      {bulkMode && (
+                        <div className="shrink-0">
+                          {isApprovable ? (
+                            isChecked ? (
+                              <CheckSquare className="h-5 w-5 text-primary" />
+                            ) : (
+                              <Square className="h-5 w-5 text-muted-foreground" />
+                            )
+                          ) : (
+                            <Square className="h-5 w-5 text-muted-foreground/30" />
+                          )}
+                        </div>
+                      )}
+
                       <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                         <FileText className="h-5 w-5" />
                       </div>
@@ -204,7 +380,10 @@ export default function QuotationsPage() {
                             <span className="text-xs text-muted-foreground">v{q.version}</span>
                           )}
                           {isEscalated && isManagerOnly && (
-                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">
+                            <Badge
+                              variant="outline"
+                              className="text-xs bg-amber-500/10 text-amber-700 border-amber-300"
+                            >
                               <Lock className="h-2.5 w-2.5 mr-1" />
                               รอ CEO อนุมัติ
                             </Badge>
@@ -226,7 +405,7 @@ export default function QuotationsPage() {
                         </div>
                       </div>
 
-                      {/* Approve/Reject buttons */}
+                      {/* Single Approve/Reject buttons (non-bulk mode) */}
                       {showApproveButtons && (
                         <div className="flex gap-2">
                           <Button

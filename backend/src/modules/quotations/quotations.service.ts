@@ -23,10 +23,13 @@ import {
 const HIGH_VALUE_THRESHOLD = 100000;
 const EXPIRING_SOON_DAYS = 7;
 
-interface CurrentUser {
+// ─── Single CurrentUser interface ───────────────────────────────────────────
+export interface CurrentUser {
   id: string;
   roleCode: string;
   roleId: string;
+  name: string;
+  email: string;
 }
 
 const quotationDetailInclude = {
@@ -69,10 +72,6 @@ function isOfficer(roleCode: string): boolean {
   return roleCode === 'OFFICER' || roleCode === 'SALES';
 }
 
-function isManager(roleCode: string): boolean {
-  return roleCode === 'MANAGER' || roleCode === 'ADMIN' || roleCode === 'CEO';
-}
-
 export const quotationsService = {
   // ============================================================
   // LIST
@@ -82,7 +81,6 @@ export const quotationsService = {
 
     const where: Prisma.QuotationWhereInput = { deletedAt: null };
 
-    // Apply scope filter based on user's permissions
     const scopeFilter = await buildScopeFilter(
       currentUser,
       'quotation',
@@ -91,17 +89,12 @@ export const quotationsService = {
     );
 
     if (!scopeFilter) {
-      // No permission to view any
       return { data: [], meta: buildPaginationMeta(0, page, limit) };
     }
 
     Object.assign(where, scopeFilter);
 
-    // Drill-down filter (Manager/Admin only — restricted by scope filter above)
-    if (query.createdById) {
-      where.createdById = query.createdById;
-    }
-
+    if (query.createdById) where.createdById = query.createdById;
     if (query.status) where.status = query.status;
     if (query.customerId) where.customerId = query.customerId;
 
@@ -160,17 +153,16 @@ export const quotationsService = {
 
     if (!quotation) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-  const canView = await canActOnEntity(
-    currentUser,
-    'quotation',
-    'view',
-    quotation.createdById,
-  );
-  if (!canView) {
-    throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
-  }
+    const canView = await canActOnEntity(
+      currentUser,
+      'quotation',
+      'view',
+      quotation.createdById,
+    );
+    if (!canView) {
+      throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
+    }
 
-    // Auto-mark as expired if past expiry date
     if (
       (quotation.status === 'DRAFT' || quotation.status === 'PENDING') &&
       new Date(quotation.expiryDate) < new Date()
@@ -277,12 +269,7 @@ export const quotationsService = {
   // ============================================================
   // UPDATE
   // ============================================================
-  async update(
-    id: string,
-    input: UpdateQuotationInput,
-    userId: string,
-    req?: Request,
-  ) {
+  async update(id: string, input: UpdateQuotationInput, userId: string, req?: Request) {
     const existing = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
       include: { items: true },
@@ -322,7 +309,6 @@ export const quotationsService = {
     );
 
     const updated = await prisma.$transaction(async (tx) => {
-      // Save current snapshot
       await tx.quotationVersion.create({
         data: {
           quotationId: existing.id,
@@ -430,13 +416,11 @@ export const quotationsService = {
       throw new AppError(409, 'EXPIRED', 'Quotation has expired. Please update expiry date first.');
     }
 
-    // Determine target status based on grand total vs MANAGER role default limit
     const managerRole = await prisma.role.findUnique({ where: { code: 'MANAGER' } });
     const approverLimit = Number(managerRole?.defaultApprovalLimit ?? HIGH_VALUE_THRESHOLD);
     const grandTotal = Number(existing.grandTotal);
     const exceedsLimit = grandTotal > approverLimit;
     const targetStatus: QuotationStatus = exceedsLimit ? 'PENDING_ESCALATED' : 'PENDING';
-
     const isResubmit = existing.status === 'REJECTED';
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -452,7 +436,6 @@ export const quotationsService = {
         });
       }
 
-      // Notify the right role
       const notifyRoleCode = exceedsLimit ? 'CEO' : 'MANAGER';
       const notifyTitle = exceedsLimit
         ? `🔥 High-value quotation (>${approverLimit.toLocaleString()})`
@@ -492,7 +475,16 @@ export const quotationsService = {
   // ============================================================
   // APPROVE
   // ============================================================
-  async approve(id: string, input: ApproveQuotationInput, approverId: string, req?: Request) {
+  async approve(
+    id: string,
+    input: ApproveQuotationInput | string, // รับได้ทั้ง object (จาก controller) และ string comment (จาก bulkApprove)
+    approverId: string,
+    req?: Request,
+  ) {
+    // Normalise input — bulkApprove ส่ง comment string มาตรงๆ
+    const approveInput: ApproveQuotationInput =
+      typeof input === 'string' ? { comment: input } : input;
+
     const existing = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
       include: { items: { orderBy: { sortOrder: 'asc' } } },
@@ -503,17 +495,10 @@ export const quotationsService = {
       where: { id: approverId },
       include: { role: true },
     });
-    if (!approverUser) {
-      throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
-    }
+    if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
 
     const approverRoleCode = approverUser.role.code;
-    const isMgrOrAbove =
-      approverRoleCode === 'MANAGER' ||
-      approverRoleCode === 'ADMIN' ||
-      approverRoleCode === 'CEO';
 
-    // PENDING_ESCALATED requires CEO/ADMIN — Manager cannot approve
     if (existing.status === 'PENDING_ESCALATED') {
       if (approverRoleCode === 'OFFICER') {
         throw new AppError(
@@ -543,13 +528,9 @@ export const quotationsService = {
       );
     }
 
-    // Defensive limit check (using Role default)
     const managerRole = await prisma.role.findUnique({ where: { code: 'MANAGER' } });
     const approverLimit = Number(managerRole?.defaultApprovalLimit ?? HIGH_VALUE_THRESHOLD);
-    if (
-      approverRoleCode === 'MANAGER' &&
-      Number(existing.grandTotal) > approverLimit
-    ) {
+    if (approverRoleCode === 'MANAGER' && Number(existing.grandTotal) > approverLimit) {
       throw new AppError(
         403,
         'EXCEEDS_LIMIT',
@@ -558,27 +539,25 @@ export const quotationsService = {
     }
 
     if (new Date(existing.expiryDate) < new Date()) {
-      await prisma.quotation.update({
-        where: { id },
-        data: { status: 'EXPIRED' },
-      });
+      await prisma.quotation.update({ where: { id }, data: { status: 'EXPIRED' } });
       throw new AppError(409, 'EXPIRED', 'Cannot approve expired quotation');
     }
 
     const result = await prisma.$transaction(async (tx) => {
       const quotation = await tx.quotation.update({
         where: { id },
-        data: {
-          status: 'APPROVED',
-          approvedAt: new Date(),
-          approvedById: approverId,
-        },
+        data: { status: 'APPROVED', approvedAt: new Date(), approvedById: approverId },
         include: { items: { orderBy: { sortOrder: 'asc' } } },
       });
 
-      if (input.comment) {
+      if (approveInput.comment) {
         await tx.quotationComment.create({
-          data: { quotationId: id, userId: approverId, message: input.comment, isInternal: false },
+          data: {
+            quotationId: id,
+            userId: approverId,
+            message: approveInput.comment,
+            isInternal: false,
+          },
         });
       }
 
@@ -709,7 +688,7 @@ export const quotationsService = {
         type: 'QUOTATION_REJECTED',
         title: 'Quotation rejected',
         message: `${q.quotationNo} was rejected. Reason: ${input.reason}`,
-        link: `/quotations/${q.id}`,
+        link: `/q/quotations/${q.id}`,
         metadata: { quotationId: q.id },
       });
 
@@ -751,11 +730,7 @@ export const quotationsService = {
 
     const updated = await prisma.quotation.update({
       where: { id },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-        cancelledReason: input.reason,
-      },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: input.reason },
       include: quotationDetailInclude,
     });
 
@@ -779,6 +754,61 @@ export const quotationsService = {
     });
 
     return updated;
+  },
+
+  // ============================================================
+  // BULK APPROVE
+  // ============================================================
+  async bulkApprove(ids: string[], currentUser: CurrentUser) {
+    const result = {
+      succeeded: [] as Array<{ id: string; quotationNo: string }>,
+      failed: [] as Array<{ id: string; quotationNo?: string; reason: string }>,
+    };
+
+    // โหลด quotation พื้นฐานเพื่อเช็ค status + เลขที่
+    const quotations = await prisma.quotation.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, quotationNo: true, status: true },
+    });
+    const qMap = new Map(quotations.map((q) => [q.id, q]));
+
+    for (const id of ids) {
+      const q = qMap.get(id);
+      if (!q) {
+        result.failed.push({ id, reason: 'Not found' });
+        continue;
+      }
+
+      if (!['PENDING', 'PENDING_ESCALATED'].includes(q.status)) {
+        result.failed.push({
+          id,
+          quotationNo: q.quotationNo,
+          reason: `Cannot approve status ${q.status}`,
+        });
+        continue;
+      }
+
+      try {
+        // เรียก approve() เดิม — มี business logic เช็ค limit ครบอยู่แล้ว
+        await this.approve(id, 'Bulk approved', currentUser.id);
+        result.succeeded.push({ id, quotationNo: q.quotationNo });
+      } catch (err: any) {
+        result.failed.push({
+          id,
+          quotationNo: q.quotationNo,
+          reason: err?.message || 'Unknown error',
+        });
+      }
+    }
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: 'quotation.bulkApprove',
+      entityType: 'Quotation',
+      description: `Bulk approved ${result.succeeded.length}/${ids.length} quotations`,
+    });
+
+    return result;
   },
 
   // ============================================================
@@ -821,12 +851,7 @@ export const quotationsService = {
     return comments;
   },
 
-  async addComment(
-    id: string,
-    input: AddCommentInput,
-    user: CurrentUser,
-    req?: Request,
-  ) {
+  async addComment(id: string, input: AddCommentInput, user: CurrentUser, req?: Request) {
     await this.getById(id, user);
 
     const isInternal = isOfficer(user.roleCode) ? false : input.isInternal;

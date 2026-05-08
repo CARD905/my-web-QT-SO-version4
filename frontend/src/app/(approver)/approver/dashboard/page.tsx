@@ -54,7 +54,7 @@ export default function ApproverDashboardPage() {
       {/* Top Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="📥 Pending"
+          title=" Pending"
           value={stats?.pending.count}
           icon={Inbox}
           tone="warning"
