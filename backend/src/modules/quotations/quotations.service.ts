@@ -806,6 +806,7 @@ export const quotationsService = {
       action: 'quotation.bulkApprove',
       entityType: 'Quotation',
       description: `Bulk approved ${result.succeeded.length}/${ids.length} quotations`,
+     
     });
 
     return result;
@@ -875,5 +876,22 @@ export const quotationsService = {
     });
 
     return comment;
+  },
+
+  async deleteComment(commentId: string, currentUser: CurrentUser) {
+    const comment = await prisma.quotationComment.findUnique({
+      where: { id: commentId },
+    });
+    if (!comment) throw new AppError(404, 'NOT_FOUND', 'Comment not found');
+
+    const isOwner = comment.userId === currentUser.id;
+    const isAdmin =
+      currentUser.roleCode === 'ADMIN' || currentUser.roleCode === 'CEO';
+
+    if (!isOwner && !isAdmin) {
+      throw new AppError(403, 'FORBIDDEN', 'Cannot delete other users comment');
+    }
+
+    await prisma.quotationComment.delete({ where: { id: commentId } });
   },
 };

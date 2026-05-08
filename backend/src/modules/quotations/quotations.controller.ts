@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { quotationsService, CurrentUser } from './quotations.service';
 import { AppError, created, success } from '../../utils/response';
 
-// ─── requireUser — ดึง user จาก req พร้อม name/email ──────────────────────
 function requireUser(req: Request): CurrentUser {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
 
@@ -91,6 +90,12 @@ export const quotationsController = {
     const user = requireUser(req);
     const comment = await quotationsService.addComment(req.params.id, req.body, user, req);
     return created(res, comment, 'Comment added');
+  },
+
+  async deleteComment(req: Request, res: Response) {
+    const user = requireUser(req);
+    await quotationsService.deleteComment(req.params.commentId, user);
+    return success(res, null, 'Comment deleted');
   },
 
   async bulkApprove(req: Request, res: Response) {

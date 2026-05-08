@@ -6,7 +6,6 @@ import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
 import commentsRoutes from './comments.routes';
 import {
-  addCommentSchema,
   approveQuotationSchema,
   cancelQuotationSchema,
   createQuotationSchema,
@@ -21,11 +20,10 @@ const router = Router();
 router.use(authenticate);
 
 // ============================================================
-// STATIC routes ต้องอยู่ก่อน /:id เสมอ
-// เพื่อป้องกัน Express match "bulk-approve" เป็น :id
+// STATIC routes — ต้องอยู่ก่อน /:id เสมอ
 // ============================================================
 
-// POST /bulk-approve — Manager (TEAM) or Admin/CEO (ALL)
+// POST /bulk-approve
 router.post(
   '/bulk-approve',
   requireAnyPermission(
@@ -35,8 +33,14 @@ router.post(
   asyncHandler(quotationsController.bulkApprove),
 );
 
+// DELETE /comments/:commentId
+router.delete(
+  '/comments/:commentId',
+  asyncHandler(quotationsController.deleteComment),
+);
+
 // ============================================================
-// VIEW — anyone with any view scope (OWN/TEAM/ALL)
+// VIEW
 // ============================================================
 router.get(
   '/',
@@ -62,7 +66,7 @@ router.get(
 );
 
 // ============================================================
-// CREATE / UPDATE / SUBMIT / CANCEL — Officer (own)
+// CREATE / UPDATE / SUBMIT / CANCEL
 // ============================================================
 router.post(
   '/',
@@ -93,7 +97,7 @@ router.post(
 );
 
 // ============================================================
-// APPROVE / REJECT — Manager (TEAM) or Admin/CEO (ALL)
+// APPROVE / REJECT
 // ============================================================
 router.post(
   '/:id/approve',
@@ -118,7 +122,7 @@ router.post(
 );
 
 // ============================================================
-// VERSIONS — anyone with view permission
+// VERSIONS
 // ============================================================
 router.get(
   '/:id/versions',
@@ -131,7 +135,8 @@ router.get(
 );
 
 // ============================================================
-// COMMENTS — mount commentsRoutes ครั้งเดียวที่ /:quotationId/comments
+// COMMENTS — mount ที่ /:quotationId/comments
+// commentsRoutes ใช้ mergeParams: true จึงเข้าถึง :quotationId ได้
 // ============================================================
 router.use('/:quotationId/comments', commentsRoutes);
 
