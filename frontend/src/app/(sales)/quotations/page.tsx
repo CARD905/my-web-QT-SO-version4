@@ -7,7 +7,6 @@ import {
   Search,
   FileText,
   CheckCircle2,
-  XCircle,
   Loader2,
   Lock,
   CheckSquare,
@@ -33,7 +32,6 @@ export default function QuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [actioningId, setActioningId] = useState<string | null>(null);
 
   // ─── Bulk Approve state ──────────────────────────────────────────────────
   const [bulkMode, setBulkMode] = useState(false);
@@ -73,46 +71,10 @@ export default function QuotationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
-  // ─── Reset bulk selection when exiting bulk mode ─────────────────────────
   useEffect(() => {
     if (!bulkMode) setSelected(new Set());
   }, [bulkMode]);
 
-  // ─── Per-item approve/reject (single) ────────────────────────────────────
-  const handleApprove = async (e: React.MouseEvent, q: Quotation) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm(`อนุมัติใบเสนอราคา ${q.quotationNo} ใช่หรือไม่?`)) return;
-    setActioningId(q.id);
-    try {
-      await api.post(`/quotations/${q.id}/approve`, { comment: '' });
-      toast.success(`Approved ${q.quotationNo}`);
-      fetchList();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActioningId(null);
-    }
-  };
-
-  const handleReject = async (e: React.MouseEvent, q: Quotation) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const reason = prompt(`ปฏิเสธ ${q.quotationNo} — กรุณาระบุเหตุผล:`);
-    if (!reason || reason.trim().length < 2) return;
-    setActioningId(q.id);
-    try {
-      await api.post(`/quotations/${q.id}/reject`, { reason });
-      toast.success(`Rejected ${q.quotationNo}`);
-      fetchList();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActioningId(null);
-    }
-  };
-
-  // ─── Bulk: toggle select ──────────────────────────────────────────────────
   const toggleSelect = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -123,7 +85,6 @@ export default function QuotationsPage() {
     });
   };
 
-  // ─── Bulk: select all approvable items on screen ──────────────────────────
   const approvableList = list.filter((q) => {
     const isPending = q.status === 'PENDING';
     const isEscalated = q.status === 'PENDING_ESCALATED';
@@ -145,23 +106,18 @@ export default function QuotationsPage() {
     }
   };
 
-  // ─── Bulk Approve (POST /quotations/bulk-approve) ────────────────────────
   const handleBulkApprove = async () => {
     if (selected.size === 0) return;
     if (!confirm(`อนุมัติ ${selected.size} รายการ ใช่หรือไม่?`)) return;
-
     setBulkActing(true);
     try {
       const res = await api.post<
         ApiResponse<{ approved: number; failed: { id: string; error: string }[] }>
       >('/quotations/bulk-approve', { ids: Array.from(selected) });
-
       const { approved, failed } = res.data.data ?? { approved: 0, failed: [] };
-
       if (approved > 0) toast.success(`อนุมัติสำเร็จ ${approved} รายการ`);
       if (failed.length > 0)
         toast.error(`ล้มเหลว ${failed.length} รายการ — ${failed[0]?.error ?? ''}`);
-
       setBulkMode(false);
       await fetchList();
     } catch (err) {
@@ -172,14 +128,8 @@ export default function QuotationsPage() {
   };
 
   const statuses = [
-    '',
-    'DRAFT',
-    'PENDING',
-    'PENDING_ESCALATED',
-    'APPROVED',
-    'REJECTED',
-    'CANCELLED',
-    'EXPIRED',
+    '', 'DRAFT', 'PENDING', 'PENDING_ESCALATED',
+    'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED',
   ];
 
   return (
@@ -193,7 +143,6 @@ export default function QuotationsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Bulk Approve toggle — Manager+ only */}
           {canApprove && approvableList.length > 0 && (
             <Button
               variant={bulkMode ? 'secondary' : 'outline'}
@@ -214,11 +163,10 @@ export default function QuotationsPage() {
         </div>
       </div>
 
-      {/* ─── Bulk action bar ─────────────────────────────────────────────── */}
+      {/* Bulk action bar */}
       {bulkMode && (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="py-3 px-4 flex flex-wrap items-center gap-3">
-            {/* Select all */}
             <button
               onClick={toggleSelectAll}
               className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
@@ -230,16 +178,13 @@ export default function QuotationsPage() {
               )}
               เลือกทั้งหมด ({approvableList.length})
             </button>
-
             <div className="flex-1" />
-
             {selected.size > 0 && (
               <span className="text-sm text-muted-foreground">
                 เลือกแล้ว{' '}
                 <span className="font-semibold text-foreground">{selected.size}</span> รายการ
               </span>
             )}
-
             <Button
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700"
@@ -312,21 +257,12 @@ export default function QuotationsPage() {
       ) : (
         <div className="grid gap-3">
           {list.map((q) => {
-            const isPending = q.status === 'PENDING';
             const isEscalated = q.status === 'PENDING_ESCALATED';
             const isManagerOnly = role?.code === 'MANAGER';
-
-            const showApproveButtons =
-              !bulkMode &&
-              canApprove &&
-              ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
-                (isEscalated && canApproveAll));
-
             const isApprovable =
               canApprove &&
-              ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
+              ((q.status === 'PENDING' && (canApproveAll || role?.code === 'MANAGER')) ||
                 (isEscalated && canApproveAll));
-
             const isChecked = selected.has(q.id);
 
             return (
@@ -352,7 +288,6 @@ export default function QuotationsPage() {
                 >
                   <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0 flex-1">
-                      {/* Bulk checkbox */}
                       {bulkMode && (
                         <div className="shrink-0">
                           {isApprovable ? (
@@ -366,7 +301,6 @@ export default function QuotationsPage() {
                           )}
                         </div>
                       )}
-
                       <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                         <FileText className="h-5 w-5" />
                       </div>
@@ -394,45 +328,13 @@ export default function QuotationsPage() {
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <div className="text-lg font-bold">
-                          {formatMoney(q.grandTotal, q.currency)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {t('quotation.expiryDate')}: {formatDate(q.expiryDate)}
-                        </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-lg font-bold">
+                        {formatMoney(q.grandTotal, q.currency)}
                       </div>
-
-                      {/* Single Approve/Reject buttons (non-bulk mode) */}
-                      {showApproveButtons && (
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            onClick={(e) => handleApprove(e, q)}
-                            disabled={actioningId === q.id}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                          >
-                            {actioningId === q.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                            )}
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={(e) => handleReject(e, q)}
-                            disabled={actioningId === q.id}
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                            Reject
-                          </Button>
-                        </div>
-                      )}
+                      <div className="text-xs text-muted-foreground">
+                        {t('quotation.expiryDate')}: {formatDate(q.expiryDate)}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
