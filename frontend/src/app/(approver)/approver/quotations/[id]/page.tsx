@@ -3,125 +3,53 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 import {
   ArrowLeft,
-  Send,
-  X,
   Check,
+  X,
   Loader2,
-  FileText,
+  AlertTriangle,
   CheckCircle2,
   Clock,
-  AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDate, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
-import { usePermissions } from '@/hooks/use-permissions';
-import { CommentThread } from '@/components/comments/comment-thread';
-import type { ApiResponse, Quotation } from '@/types/api';
+import { formatDate, formatMoney, formatNumber, formatRelativeTime, getStatusClass } from '@/lib/utils';
+import type { ApiResponse, Quotation, QuotationComment } from '@/types/api';
 
-const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
+const HIGH_VALUE = 100000;
 
-// ─── Inline Confirm Popover ───────────────────────────────────────────────────
-function ConfirmPopover({
-  title,
-  description,
-  confirmLabel,
-  confirmVariant = 'default',
-  requireComment = false,
-  onClose,
-  onConfirm,
-  loading,
-}: {
-  title: string;
-  description: string;
-  confirmLabel: string;
-  confirmVariant?: 'default' | 'destructive';
-  requireComment?: boolean;
-  onClose: () => void;
-  onConfirm: (comment: string) => void;
-  loading: boolean;
-}) {
-  const [comment, setComment] = useState('');
-
-  return (
-    // backdrop
-    <div
-      className="fixed inset-0 z-40"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      {/* popover card — anchored bottom-right */}
-      <div className="absolute bottom-6 right-6 z-50 w-80 rounded-xl border bg-background shadow-2xl animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
-        <div className="p-4 space-y-3">
-          <div>
-            <p className="font-semibold text-sm">{title}</p>
-            <p className="text-xs text-muted-foreground mt-1">{description}</p>
-          </div>
-          <div>
-            <Label className="text-xs">
-              {requireComment ? 'เหตุผล' : 'Comment (optional)'}
-              {requireComment && <span className="text-destructive ml-1">*</span>}
-            </Label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={2}
-              autoFocus
-              placeholder={requireComment ? 'ระบุเหตุผลที่ปฏิเสธ...' : 'เพิ่มหมายเหตุ...'}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={onClose} disabled={loading}>
-              ยกเลิก
-            </Button>
-            <Button
-              size="sm"
-              variant={confirmVariant}
-              onClick={() => onConfirm(comment)}
-              disabled={loading || (requireComment && !comment.trim())}
-              className={confirmVariant === 'default' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-            >
-              {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {confirmLabel}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function QuotationDetailPage() {
+export default function ApproverQuotationDetailPage() {
   const t = useT();
-  const params = useParams();
   const router = useRouter();
+  const params = useParams();
   const id = params.id as string;
-  const { data: session } = useSession();
-  const { role, can } = usePermissions();
 
   const [q, setQ] = useState<Quotation | null>(null);
+  const [comments, setComments] = useState<QuotationComment[]>([]);
+  const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
-
-  // ─── Confirm popover state ───────────────────────────────────────────────
-  const [showApprovePopover, setShowApprovePopover] = useState(false);
-  const [showRejectPopover, setShowRejectPopover] = useState(false);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get<ApiResponse<Quotation>>(`/quotations/${id}`);
-      setQ(res.data.data ?? null);
+      const [qRes, cRes] = await Promise.all([
+        api.get<ApiResponse<Quotation>>(`/quotations/${id}`),
+        api.get<ApiResponse<QuotationComment[]>>(`/quotations/${id}/comments`),
+      ]);
+      setQ(qRes.data.data ?? null);
+      setComments(cRes.data.data ?? []);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -134,64 +62,18 @@ export default function QuotationDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const submit = async () => {
-    setActing('submit');
+  const postComment = async () => {
+    if (!newComment.trim()) return;
     try {
-      await api.post(`/quotations/${id}/submit`, {});
-      toast.success('Submitted for approval');
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
-
-  const cancel = async () => {
-    if (!confirm('ยืนยันการยกเลิกใบเสนอราคานี้?')) return;
-    setActing('cancel');
-    try {
-      await api.post(`/quotations/${id}/cancel`, {
-        reason: 'Cancelled by ' + (role?.code || 'user'),
+      await api.post(`/quotations/${id}/comments`, {
+        message: newComment,
+        isInternal: false,
       });
-      toast.success('ยกเลิกใบเสนอราคาเรียบร้อย');
-      await load();
+      setNewComment('');
+      const cRes = await api.get<ApiResponse<QuotationComment[]>>(`/quotations/${id}/comments`);
+      setComments(cRes.data.data ?? []);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
-
-  // ─── Approve ─────────────────────────────────────────────────────────────
-  const handleApprove = async (comment: string) => {
-    setActing('approve');
-    try {
-      const { fireConfetti } = await import('@/lib/confetti');
-      await api.post(`/quotations/${id}/approve`, { comment });
-      fireConfetti();
-      toast.success('🎉 Approved! Sale Order created.');
-      setShowApprovePopover(false);
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
-
-  // ─── Reject ──────────────────────────────────────────────────────────────
-  const handleReject = async (reason: string) => {
-    setActing('reject');
-    try {
-      await api.post(`/quotations/${id}/reject`, { reason });
-      toast.success('Quotation rejected');
-      setShowRejectPopover(false);
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
     }
   };
 
@@ -199,50 +81,18 @@ export default function QuotationDetailPage() {
     return (
       <div className="space-y-4 max-w-6xl">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-64 w-full" />
         <Skeleton className="h-96 w-full" />
       </div>
     );
   }
 
   if (!q) {
-    return (
-      <div className="text-center py-20">
-        <p>Not found</p>
-        <Button asChild variant="ghost" className="mt-4">
-          <Link href="/quotations">{t('common.back')}</Link>
-        </Button>
-      </div>
-    );
+    return <div className="text-center py-20">Not found</div>;
   }
 
-  // ─── Permissions ─────────────────────────────────────────────────────────
-  const userId = session?.user?.id;
-  const isOwner = userId && q.createdById === userId;
-  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code);
-
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-  const canEdit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-
-  const canCancel = (() => {
-    if (q.status === 'DRAFT') return isOwner || isElevated;
-    if (['PENDING', 'PENDING_ESCALATED', 'APPROVED'].includes(q.status)) return isElevated;
-    return false;
-  })();
-
-  // ─── canApprove: Manager สำหรับ PENDING, CEO/ADMIN สำหรับ PENDING_ESCALATED
-  const canApproveThis = (() => {
-    if (!isElevated) return false;
-    if (q.status === 'PENDING') {
-      return (
-        can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL')
-      );
-    }
-    if (q.status === 'PENDING_ESCALATED') {
-      return can('quotation', 'approve', 'ALL'); // CEO / ADMIN เท่านั้น
-    }
-    return false;
-  })();
+  const high = Number(q.grandTotal) >= HIGH_VALUE;
+  const expired = new Date(q.expiryDate) < new Date();
+  const canApprove = q.status === 'PENDING' && !expired;
 
   return (
     <div className="space-y-5 max-w-6xl">
@@ -250,7 +100,7 @@ export default function QuotationDetailPage() {
       <div className="flex flex-wrap gap-4 items-start justify-between">
         <div className="flex items-start gap-3">
           <Button asChild variant="ghost" size="icon" className="mt-1">
-            <Link href="/quotations">
+            <Link href="/approver/approval-queue">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
@@ -260,66 +110,50 @@ export default function QuotationDetailPage() {
               <Badge className={getStatusClass(q.status)} variant="outline">
                 ● {q.status}
               </Badge>
-              {q.version > 1 && (
-                <span className="text-xs text-muted-foreground">v{q.version}</span>
+              {high && (
+                <Badge variant="destructive">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  High Value
+                </Badge>
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {q.customerCompany} · {formatDate(q.issueDate)} → {formatDate(q.expiryDate)}
+              By {q.createdBy?.name} · {q.customerCompany}
             </p>
           </div>
         </div>
 
-        <div className="flex gap-2">
-          {canEdit && (
-            <Button asChild variant="outline">
-              <Link href={`/quotations/${id}/edit`}>
-                <FileText className="h-4 w-4" />
-                {t('common.edit')}
-              </Link>
+        {canApprove && (
+          <div className="flex gap-2">
+            <Button
+              variant="destructive"
+              onClick={() => setShowRejectModal(true)}
+              disabled={acting !== null}
+            >
+              <X className="h-4 w-4" />
+              {t('common.reject')}
             </Button>
-          )}
-          {canCancel && (
-            <Button variant="outline" onClick={cancel} disabled={acting !== null}>
-              {acting === 'cancel' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <X className="h-4 w-4" />
-              )}
-              {t('common.cancel')}
+            <Button
+              variant="success"
+              onClick={() => setShowApproveModal(true)}
+              disabled={acting !== null}
+            >
+              <Check className="h-4 w-4" />
+              {t('common.approve')}
             </Button>
-          )}
-          {canSubmit && (
-            <Button onClick={submit} disabled={acting !== null}>
-              {acting === 'submit' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              {t('quotation.submitForApproval')}
-            </Button>
-          )}
-          {q.saleOrder && (
-            <Button asChild variant="success">
-              <Link href={`/sale-orders/${q.saleOrder.id}`}>
-                <FileText className="h-4 w-4" />
-                {q.saleOrder.saleOrderNo}
-              </Link>
-            </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Status alerts */}
-      {q.status === 'REJECTED' && q.rejectionReason && (
+      {expired && q.status === 'PENDING' && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="pt-4 flex gap-3">
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold text-destructive">Rejected</div>
-              <p className="text-sm mt-1">{q.rejectionReason}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                You can edit and resubmit this quotation.
+              <div className="font-semibold text-destructive">Quotation Expired</div>
+              <p className="text-sm mt-1">
+                Expired on {formatDate(q.expiryDate)}. Cannot be approved. Sales must update expiry date and resubmit.
               </p>
             </div>
           </CardContent>
@@ -341,62 +175,68 @@ export default function QuotationDetailPage() {
         </Card>
       )}
 
-      {q.status === 'PENDING' && (
-        <Card className="border-amber-500/50 bg-amber-500/5">
+      {q.status === 'REJECTED' && q.rejectionReason && (
+        <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="pt-4 flex gap-3">
-            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <X className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold text-amber-700 dark:text-amber-400">
-                Pending Approval
-              </div>
-              <p className="text-sm mt-1">
-                Submitted on {formatDate(q.submittedAt)} · Waiting for approver review
-              </p>
-              {!isElevated && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  ส่งขออนุมัติแล้ว — ไม่สามารถยกเลิกได้ ติดต่อ Manager หากต้องการยกเลิก
-                </p>
-              )}
+              <div className="font-semibold text-destructive">Rejected</div>
+              <p className="text-sm mt-1">{q.rejectionReason}</p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Customer info */}
+      {/* Document info */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-xs text-muted-foreground uppercase font-medium">Issue Date</div>
+            <div className="font-semibold mt-1">{formatDate(q.issueDate)}</div>
+          </CardContent>
+        </Card>
+        <Card className={expired ? 'border-destructive/40' : ''}>
+          <CardContent className="pt-6">
+            <div className="text-xs text-muted-foreground uppercase font-medium">Expiry Date</div>
+            <div className={`font-semibold mt-1 ${expired ? 'text-destructive' : ''}`}>
+              {formatDate(q.expiryDate)}
+              {expired && ' ⚠️'}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-xs text-muted-foreground uppercase font-medium">Submitted</div>
+            <div className="font-semibold mt-1">
+              {q.submittedAt ? formatRelativeTime(q.submittedAt) : '-'}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Customer */}
       <Card>
         <CardContent className="pt-6">
           <h2 className="font-semibold mb-3">{t('quotation.customerInfo')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
             <div>
-              <span className="text-muted-foreground">{t('customer.company')}:</span>{' '}
+              <span className="text-muted-foreground">Company:</span>{' '}
               <span className="font-medium">{q.customerCompany}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">{t('customer.contactName')}:</span>{' '}
+              <span className="text-muted-foreground">Contact:</span>{' '}
               <span className="font-medium">{q.customerContactName}</span>
             </div>
             {q.customerTaxId && (
               <div>
-                <span className="text-muted-foreground">{t('customer.taxId')}:</span>{' '}
+                <span className="text-muted-foreground">Tax ID:</span>{' '}
                 <span className="font-medium">{q.customerTaxId}</span>
               </div>
             )}
             {q.customerPhone && (
               <div>
-                <span className="text-muted-foreground">{t('customer.phone')}:</span>{' '}
+                <span className="text-muted-foreground">Phone:</span>{' '}
                 <span className="font-medium">{q.customerPhone}</span>
-              </div>
-            )}
-            {q.customerEmail && (
-              <div className="md:col-span-2">
-                <span className="text-muted-foreground">{t('customer.email')}:</span>{' '}
-                <span className="font-medium">{q.customerEmail}</span>
-              </div>
-            )}
-            {q.customerBillingAddress && (
-              <div className="md:col-span-2">
-                <span className="text-muted-foreground">{t('customer.billingAddress')}:</span>{' '}
-                <span className="font-medium">{q.customerBillingAddress}</span>
               </div>
             )}
           </div>
@@ -411,12 +251,12 @@ export default function QuotationDetailPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs uppercase text-muted-foreground">
-                  <th className="text-left py-2 font-medium">SKU</th>
-                  <th className="text-left py-2 font-medium">Product</th>
-                  <th className="text-right py-2 font-medium">Qty</th>
-                  <th className="text-right py-2 font-medium">Unit Price</th>
-                  <th className="text-right py-2 font-medium">Discount</th>
-                  <th className="text-right py-2 font-medium">Line Total</th>
+                  <th className="text-left py-2">SKU</th>
+                  <th className="text-left py-2">Product</th>
+                  <th className="text-right py-2">Qty</th>
+                  <th className="text-right py-2">Price</th>
+                  <th className="text-right py-2">Discount</th>
+                  <th className="text-right py-2">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -426,9 +266,7 @@ export default function QuotationDetailPage() {
                     <td className="py-3">
                       <div className="font-medium">{it.productName}</div>
                       {it.productDescription && (
-                        <div className="text-[10px] text-gray-700 mt-0.5">
-                          {it.productDescription}
-                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{it.productDescription}</div>
                       )}
                     </td>
                     <td className="py-3 text-right">
@@ -442,9 +280,7 @@ export default function QuotationDetailPage() {
                           : formatNumber(it.discount)
                         : '-'}
                     </td>
-                    <td className="py-3 text-right font-semibold">
-                      {formatNumber(it.lineTotal)}
-                    </td>
+                    <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -453,110 +289,182 @@ export default function QuotationDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Summary */}
-      <Card>
-        <CardContent className="pt-6 flex justify-end">
-          <div className="w-full md:w-80 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">{t('quotation.subtotal')}</span>
-              <span>{formatNumber(q.subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">{t('quotation.discount')}</span>
-              <span className="text-destructive">-{formatNumber(q.discountTotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">
-                {t('quotation.vat')} ({formatNumber(q.vatRate)}%)
-              </span>
-              <span>{q.vatEnabled ? formatNumber(q.vatAmount) : 'No VAT'}</span>
-            </div>
-            <div className="border-t pt-2 flex justify-between items-baseline">
-              <span className="font-semibold">{t('quotation.grandTotal')}</span>
-              <span className="text-2xl font-bold text-primary">
-                {formatMoney(q.grandTotal, q.currency)}
-              </span>
-            </div>
+      {/* Big Total */}
+      <Card className={high ? 'border-destructive/40 bg-destructive/5' : 'bg-primary/5'}>
+        <CardContent className="pt-6">
+          <div className="flex justify-end items-baseline gap-4">
+            <span className="text-sm text-muted-foreground uppercase font-semibold">Grand Total</span>
+            <span className={`text-4xl font-bold ${high ? 'text-destructive' : 'text-primary'}`}>
+              {formatMoney(q.grandTotal, q.currency)}
+            </span>
+          </div>
+          <div className="flex justify-end mt-2 text-xs text-muted-foreground">
+            Subtotal {formatNumber(q.subtotal)} − Discount {formatNumber(q.discountTotal)} +{' '}
+            {q.vatEnabled ? `VAT ${formatNumber(q.vatRate)}% (${formatNumber(q.vatAmount)})` : 'No VAT'}
           </div>
         </CardContent>
       </Card>
 
-      {/* Payment / Conditions */}
-      {(q.paymentTerms || q.conditions) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {q.paymentTerms && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-xs uppercase text-muted-foreground font-semibold">
-                  {t('quotation.paymentTerms')}
+      {/* Comments */}
+      <Card>
+        <CardContent className="pt-6">
+          <h2 className="font-semibold mb-4">💬 Comments</h2>
+          <div className="space-y-3 mb-4">
+            {comments.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No comments yet</p>
+            ) : (
+              comments.map((c) => (
+                <div key={c.id} className="flex gap-3">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+                    {c.user.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{c.user.name}</span>
+                      <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                        {typeof c.user.role === 'string' ? c.user.role : c.user.role?.code || '-'}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatRelativeTime(c.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-sm mt-1 whitespace-pre-wrap">{c.message}</p>
+                  </div>
                 </div>
-                <div className="mt-1 font-medium">{q.paymentTerms}</div>
-              </CardContent>
-            </Card>
-          )}
-          {q.conditions && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-xs uppercase text-muted-foreground font-semibold">
-                  {t('quotation.conditions')}
-                </div>
-                <div className="mt-1 text-sm whitespace-pre-wrap">{q.conditions}</div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+              ))
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment..."
+              onKeyDown={(e) => e.key === 'Enter' && postComment()}
+            />
+            <Button onClick={postComment} disabled={!newComment.trim()}>
+              Send
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Comment Thread */}
-      <CommentThread quotationId={id} />
-
-      {/* ─── Approve / Reject bar — Manager/CEO/Admin เท่านั้น ─────────────── */}
-      {canApproveThis && (
-        <div className="flex justify-end gap-3 pb-2">
-          <Button
-            variant="destructive"
-            onClick={() => { setShowApprovePopover(false); setShowRejectPopover(true); }}
-            disabled={acting !== null}
-          >
-            <X className="h-4 w-4" />
-            Reject
-          </Button>
-          <Button
-            className="bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => { setShowRejectPopover(false); setShowApprovePopover(true); }}
-            disabled={acting !== null}
-          >
-            <Check className="h-4 w-4" />
-            Approve
-          </Button>
-        </div>
-      )}
-
-      {/* Approve popover */}
-      {showApprovePopover && (
-        <ConfirmPopover
-          title={`อนุมัติ ${q.quotationNo}?`}
-          description="ระบบจะสร้าง Sale Order ให้อัตโนมัติ และแจ้ง Sales ทันที"
-          confirmLabel="✓ Approve"
-          onClose={() => setShowApprovePopover(false)}
-          onConfirm={handleApprove}
+      {/* Approve modal */}
+      {showApproveModal && (
+        <ConfirmModal
+          title="Approve Quotation?"
+          description={`This will approve ${q.quotationNo} and automatically create a Sale Order. The Sales rep will be notified.`}
+          confirmLabel={`✓ ${t('common.approve')}`}
+          confirmVariant="success"
+          onClose={() => setShowApproveModal(false)}
+          onConfirm={async (comment) => {
+            setActing('approve');
+            try {
+              const { fireConfetti } = await import('@/lib/confetti');
+              await api.post(`/quotations/${id}/approve`, { comment });
+              fireConfetti();
+              toast.success('🎉 Approved! Sale Order created.');
+              setTimeout(() => {
+                const isManager =
+                  typeof window !== 'undefined' && window.location.pathname.includes('/manager/');
+                router.push(isManager ? '/manager/approval-queue' : '/approver/approval-queue');
+              }, 800);
+            } catch (err) {
+              toast.error(getApiErrorMessage(err));
+              setShowApproveModal(false);
+            } finally {
+              setActing(null);
+            }
+          }}
           loading={acting === 'approve'}
         />
       )}
 
-      {/* Reject popover */}
-      {showRejectPopover && (
-        <ConfirmPopover
-          title={`ปฏิเสธ ${q.quotationNo}?`}
-          description="Sales จะได้รับแจ้งและสามารถแก้ไขแล้วส่งใหม่ได้"
-          confirmLabel="✕ Reject"
+      {/* Reject modal */}
+      {showRejectModal && (
+        <ConfirmModal
+          title="Reject Quotation?"
+          description="The Sales rep will be notified and can edit & resubmit. Reason is required."
+          confirmLabel={`✕ ${t('common.reject')}`}
           confirmVariant="destructive"
           requireComment
-          onClose={() => setShowRejectPopover(false)}
-          onConfirm={handleReject}
+          onClose={() => setShowRejectModal(false)}
+          onConfirm={async (reason) => {
+            if (!reason) return;
+            setActing('reject');
+            try {
+              await api.post(`/quotations/${id}/reject`, { reason });
+              toast.success('Quotation rejected');
+              router.push('/approver/approval-queue');
+            } catch (err) {
+              toast.error(getApiErrorMessage(err));
+              setShowRejectModal(false);
+            } finally {
+              setActing(null);
+            }
+          }}
           loading={acting === 'reject'}
         />
       )}
+    </div>
+  );
+}
+
+function ConfirmModal({
+  title,
+  description,
+  confirmLabel,
+  confirmVariant = 'default',
+  requireComment = false,
+  onClose,
+  onConfirm,
+  loading,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  confirmVariant?: 'default' | 'success' | 'destructive';
+  requireComment?: boolean;
+  onClose: () => void;
+  onConfirm: (comment: string) => void;
+  loading: boolean;
+}) {
+  const [comment, setComment] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+      <Card className="w-full max-w-md shadow-2xl animate-slide-up">
+        <CardContent className="pt-6 space-y-4">
+          <h2 className="text-xl font-bold">{title}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+          <div>
+            <Label className="text-xs">
+              {requireComment ? 'Reason' : 'Comment'}
+              {requireComment && <span className="text-destructive ml-1">*</span>}
+            </Label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              rows={3}
+              className="mt-1.5 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+              autoFocus
+              placeholder={requireComment ? 'Explain why this is rejected...' : 'Optional'}
+            />
+          </div>
+        </CardContent>
+        <div className="flex justify-end gap-2 p-6 pt-0">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant={confirmVariant}
+            onClick={() => onConfirm(comment)}
+            disabled={loading || (requireComment && !comment.trim())}
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            {confirmLabel}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
