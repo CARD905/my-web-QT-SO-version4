@@ -150,6 +150,11 @@ model User {
   role               Role                  @relation(fields: [roleId], references: [id])
   team               Team?                 @relation("TeamMembers", fields: [teamId], references: [id])
 
+  // ─── PO workflow relations (NEW) ───
+  poUploadedQuotations  Quotation[]  @relation("QuotationPoUploadedBy")
+  poApprovedQuotations  Quotation[]  @relation("QuotationPoApprovedBy")
+  poRejectedQuotations  Quotation[]  @relation("QuotationPoRejectedBy")
+
   @@unique([email, deletedAt])
   @@index([email])
   @@index([roleId])
@@ -311,6 +316,23 @@ model Quotation {
   deletedAt               DateTime?             @map("deleted_at")
   createdAt               DateTime              @default(now()) @map("created_at")
   updatedAt               DateTime              @updatedAt @map("updated_at")
+
+  // ─── NEW: PO workflow fields ───────────────────────────────────────────
+  poFileUrl          String?   @map("po_file_url")
+  poFileName         String?   @map("po_file_name")
+  poFileSize         Int?      @map("po_file_size")
+  poFileMimeType     String?   @map("po_file_mime_type")
+  poUploadedAt       DateTime? @map("po_uploaded_at")
+  poUploadedById     String?   @map("po_uploaded_by_id")
+  poSubmittedAt      DateTime? @map("po_submitted_at")
+  poApprovedAt       DateTime? @map("po_approved_at")
+  poApprovedById     String?   @map("po_approved_by_id")
+  poRejectedAt       DateTime? @map("po_rejected_at")
+  poRejectedById     String?   @map("po_rejected_by_id")
+  poRejectionReason  String?   @map("po_rejection_reason")
+  poUploadHistory    Json?     @map("po_upload_history")
+  // ───────────────────────────────────────────────────────────────────────
+
   approvals               QuotationApproval[]
   attachments             QuotationAttachment[]
   comments                QuotationComment[]
@@ -323,6 +345,12 @@ model Quotation {
   primaryApprover         User?                 @relation("PrimaryApprover", fields: [primaryApproverId], references: [id])
   rejectedBy              User?                 @relation("QuotationRejecter", fields: [rejectedById], references: [id])
   saleOrder               SaleOrder?
+
+  // ─── NEW: PO relations ─────────────────────────────────────────────────
+  poUploadedBy  User? @relation("QuotationPoUploadedBy", fields: [poUploadedById], references: [id])
+  poApprovedBy  User? @relation("QuotationPoApprovedBy", fields: [poApprovedById], references: [id])
+  poRejectedBy  User? @relation("QuotationPoRejectedBy", fields: [poRejectedById], references: [id])
+  // ───────────────────────────────────────────────────────────────────────
 
   @@index([quotationNo])
   @@index([customerId])
@@ -583,6 +611,10 @@ model DocumentCounter {
   @@map("document_counters")
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════════════════
+
 enum PermissionScope {
   OWN
   TEAM
@@ -601,8 +633,12 @@ enum QuotationStatus {
   SIGNED
   CANCELLED
   EXPIRED
-}
 
+  // ─── NEW: PO Workflow ───
+  PO_PENDING    // Officer อัปโหลด PO แล้ว รอ Manager ตรวจสอบ
+  PO_APPROVED   // PO ตรงกับ QT — Sale Order ถูกสร้างแล้ว
+  PO_REJECTED   // PO ไม่ตรง — Officer ต้องอัปโหลดใหม่
+}
 
 enum SaleOrderStatus {
   DRAFT
@@ -666,6 +702,10 @@ enum NotificationType {
   MANAGER_RESIGNED
   ROLE_CHANGED
   SYSTEM_ALERT
+  // ─── NEW ───
+  PO_APPROVED
+  PO_REJECTED
+  SO_CREATED
 }
 
 enum Lang {

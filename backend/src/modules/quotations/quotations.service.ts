@@ -473,21 +473,23 @@ export const quotationsService = {
   },
 
   // ============================================================
-  // APPROVE
+  // APPROVE — ⚠️ CHANGED: ไม่สร้าง SaleOrder อัตโนมัติแล้ว
+  //
+  // เดิม: approve() → สร้าง SaleOrder ทันที
+  // ใหม่: approve() → status = APPROVED → ไปหน้า Checklist
+  //       SaleOrder จะถูกสร้างตอน Manager approve PO ใน po.service.ts
   // ============================================================
   async approve(
     id: string,
-    input: ApproveQuotationInput | string, // รับได้ทั้ง object (จาก controller) และ string comment (จาก bulkApprove)
+    input: ApproveQuotationInput | string,
     approverId: string,
     req?: Request,
   ) {
-    // Normalise input — bulkApprove ส่ง comment string มาตรงๆ
     const approveInput: ApproveQuotationInput =
       typeof input === 'string' ? { comment: input } : input;
 
     const existing = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
@@ -543,11 +545,12 @@ export const quotationsService = {
       throw new AppError(409, 'EXPIRED', 'Cannot approve expired quotation');
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const quotation = await tx.quotation.update({
+    // ─── Update status to APPROVED only — no SaleOrder creation ─────────
+    const quotation = await prisma.$transaction(async (tx) => {
+      const q = await tx.quotation.update({
         where: { id },
         data: { status: 'APPROVED', approvedAt: new Date(), approvedById: approverId },
-        include: { items: { orderBy: { sortOrder: 'asc' } } },
+        include: quotationDetailInclude,
       });
 
       if (approveInput.comment) {
@@ -561,72 +564,17 @@ export const quotationsService = {
         });
       }
 
-      const saleOrderNo = await generateDocumentNumber(tx, 'SO');
-
-      const saleOrder = await tx.saleOrder.create({
-        data: {
-          saleOrderNo,
-          quotationId: quotation.id,
-          status: 'DRAFT',
-          issueDate: new Date(),
-          currency: quotation.currency,
-
-          customerId: quotation.customerId,
-          customerContactName: quotation.customerContactName,
-          customerCompany: quotation.customerCompany,
-          customerTaxId: quotation.customerTaxId,
-          customerEmail: quotation.customerEmail,
-          customerPhone: quotation.customerPhone,
-          customerBillingAddress: quotation.customerBillingAddress,
-          customerShippingAddress: quotation.customerShippingAddress,
-
-          subtotal: quotation.subtotal,
-          discountTotal: quotation.discountTotal,
-          vatEnabled: quotation.vatEnabled,
-          vatRate: quotation.vatRate,
-          vatAmount: quotation.vatAmount,
-          grandTotal: quotation.grandTotal,
-
-          paymentTerms: quotation.paymentTerms,
-          conditions: quotation.conditions,
-
-          items: {
-            create: quotation.items.map((item) => ({
-              productId: item.productId,
-              productSku: item.productSku,
-              productName: item.productName,
-              productDescription: item.productDescription,
-              quantity: item.quantity,
-              unit: item.unit,
-              unitPrice: item.unitPrice,
-              discount: item.discount,
-              discountType: item.discountType,
-              lineTotal: item.lineTotal,
-              sortOrder: item.sortOrder,
-            })),
-          },
-        },
-      });
-
+      // ─── Notify Officer — go to Checklist page ───────────────────────
       await createNotification(tx, {
-        userId: quotation.createdById,
+        userId: q.createdById,
         type: 'QUOTATION_APPROVED',
-        title: 'Quotation approved ✓',
-        message: `${quotation.quotationNo} has been approved. Sale Order ${saleOrder.saleOrderNo} created.`,
-        link: `/quotations/${quotation.id}`,
-        metadata: { quotationId: quotation.id, saleOrderId: saleOrder.id },
+        title: 'Quotation อนุมัติแล้ว ✓',
+        message: `${q.quotationNo} อนุมัติแล้ว — กรุณาอัปโหลดใบ PO ที่หน้า Checklist`,
+        link: `/quotations/checklist/${q.id}`,
+        metadata: { quotationId: q.id },
       });
 
-      await createNotification(tx, {
-        userId: quotation.createdById,
-        type: 'SALE_ORDER_CREATED',
-        title: 'New Sale Order created',
-        message: `Sale Order ${saleOrder.saleOrderNo} from ${quotation.quotationNo}`,
-        link: `/sale-orders/${saleOrder.id}`,
-        metadata: { saleOrderId: saleOrder.id, quotationId: quotation.id },
-      });
-
-      return { quotation, saleOrder };
+      return q;
     });
 
     await logActivity(prisma, {
@@ -634,11 +582,11 @@ export const quotationsService = {
       action: 'quotation.approve',
       entityType: 'Quotation',
       entityId: id,
-      description: `Approved quotation ${result.quotation.quotationNo}, created Sale Order ${result.saleOrder.saleOrderNo}`,
+      description: `Approved quotation ${quotation.quotationNo} → awaiting PO upload`,
       req,
     });
 
-    return result;
+    return quotation;
   },
 
   // ============================================================
@@ -688,7 +636,7 @@ export const quotationsService = {
         type: 'QUOTATION_REJECTED',
         title: 'Quotation rejected',
         message: `${q.quotationNo} was rejected. Reason: ${input.reason}`,
-        link: `/q/quotations/${q.id}`,
+        link: `/quotations/${q.id}`,
         metadata: { quotationId: q.id },
       });
 
@@ -720,11 +668,14 @@ export const quotationsService = {
       throw new AppError(403, 'FORBIDDEN', 'You can only cancel your own quotations');
     }
 
-    if (!['DRAFT', 'PENDING', 'PENDING_BACKUP', 'PENDING_ESCALATED'].includes(existing.status)) {
+    // ─── CHANGED: เอา PENDING ออก — Officer ห้ามยกเลิกหลัง submit ────────
+    // ตามที่หัวหน้า feedback มา: หลังกดส่ง PENDING แล้ว Officer ลบ/ยกเลิกไม่ได้
+    // ต้องรอ Manager reject กลับมาเอง
+    if (!['DRAFT'].includes(existing.status)) {
       throw new AppError(
         409,
         'INVALID_STATUS',
-        `Cannot cancel quotation with status ${existing.status}`,
+        `Only DRAFT quotations can be cancelled. Current: ${existing.status}`,
       );
     }
 
@@ -734,22 +685,12 @@ export const quotationsService = {
       include: quotationDetailInclude,
     });
 
-    if (existing.status !== 'DRAFT') {
-      await notifyByRole(prisma, 'MANAGER', {
-        type: 'QUOTATION_CANCELLED',
-        title: 'Quotation cancelled',
-        message: `${updated.quotationNo} has been cancelled by the officer`,
-        link: `/quotations/${updated.id}`,
-        metadata: { quotationId: updated.id },
-      });
-    }
-
     await logActivity(prisma, {
       userId,
       action: 'quotation.cancel',
       entityType: 'Quotation',
       entityId: id,
-      description: `Cancelled quotation ${updated.quotationNo}: ${input.reason}`,
+      description: `Cancelled DRAFT quotation ${updated.quotationNo}: ${input.reason}`,
       req,
     });
 
@@ -765,7 +706,6 @@ export const quotationsService = {
       failed: [] as Array<{ id: string; quotationNo?: string; reason: string }>,
     };
 
-    // โหลด quotation พื้นฐานเพื่อเช็ค status + เลขที่
     const quotations = await prisma.quotation.findMany({
       where: { id: { in: ids }, deletedAt: null },
       select: { id: true, quotationNo: true, status: true },
@@ -789,7 +729,6 @@ export const quotationsService = {
       }
 
       try {
-        // เรียก approve() เดิม — มี business logic เช็ค limit ครบอยู่แล้ว
         await this.approve(id, 'Bulk approved', currentUser.id);
         result.succeeded.push({ id, quotationNo: q.quotationNo });
       } catch (err: any) {
@@ -806,7 +745,6 @@ export const quotationsService = {
       action: 'quotation.bulkApprove',
       entityType: 'Quotation',
       description: `Bulk approved ${result.succeeded.length}/${ids.length} quotations`,
-     
     });
 
     return result;
@@ -853,7 +791,29 @@ export const quotationsService = {
   },
 
   async addComment(id: string, input: AddCommentInput, user: CurrentUser, req?: Request) {
-    await this.getById(id, user);
+    const existing = await prisma.quotation.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
+
+    // ─── CHANGED: Comment เปิดเฉพาะตอน PENDING/PO_PENDING ────────────────
+    // Workflow ใหม่: คุยกันได้เฉพาะตอนรออนุมัติ (เพื่อให้ Manager บอก Officer
+    // จุดที่ต้องแก้ไข) สถานะอื่นล็อกไม่ให้ comment
+    const allowCommentStatuses: QuotationStatus[] = [
+      'PENDING',
+      'PENDING_ESCALATED',
+      'PENDING_BACKUP',
+      'PO_PENDING',
+    ];
+    if (!allowCommentStatuses.includes(existing.status)) {
+      throw new AppError(
+        409,
+        'INVALID_STATUS',
+        `Cannot comment when status is ${existing.status}. Comment only allowed during pending review.`,
+      );
+    }
+
+    await this.getById(id, user); // เช็ค permission view
 
     const isInternal = isOfficer(user.roleCode) ? false : input.isInternal;
 

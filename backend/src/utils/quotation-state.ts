@@ -7,11 +7,15 @@ const ALLOWED_TRANSITIONS: Record<QuotationStatus, QuotationStatus[]> = {
   PENDING_BACKUP: ['APPROVED', 'REJECTED', 'PENDING_ESCALATED', 'CANCELLED'],
   PENDING_ESCALATED: ['APPROVED', 'REJECTED', 'CANCELLED'],
   REJECTED: ['DRAFT', 'CANCELLED'],
-  APPROVED: ['SENT', 'CANCELLED'],
+  APPROVED: ['PO_PENDING', 'SENT', 'CANCELLED'],
   SENT: ['SIGNED', 'EXPIRED', 'CANCELLED'],
   SIGNED: [],
   CANCELLED: [],
   EXPIRED: ['DRAFT'],
+  // ─── PO workflow statuses ────────────────────────────────────────────
+  PO_PENDING: ['PO_APPROVED', 'PO_REJECTED'],
+  PO_APPROVED: [],
+  PO_REJECTED: ['PO_PENDING'],
 };
 
 export function canTransition(
