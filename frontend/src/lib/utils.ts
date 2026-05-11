@@ -76,21 +76,30 @@ export function isExpiringSoon(date: Date | string | null | undefined, days = 7)
   return daysLeft <= days && daysLeft >= 0;
 }
 
-/** Get status color class */
+/** Get status color class — ใช้ CSS class จาก globals.css */
 export function getStatusClass(status: string): string {
   const map: Record<string, string> = {
-    DRAFT: 'status-draft',
-    PENDING: 'status-pending',
-    PENDING_BACKUP: 'status-pending',
+    // ── Quotation statuses ──
+    DRAFT:             'status-draft',
+    PENDING:           'status-pending',
+    PENDING_BACKUP:    'status-pending',
     PENDING_ESCALATED: 'status-pending',
-    APPROVED: 'status-approved',
-    REJECTED: 'status-rejected',
-    CANCELLED: 'status-cancelled',
-    EXPIRED: 'status-expired',
-    SENT: 'status-approved',
-    SIGNED: 'status-approved',
-    CONFIRMED: 'status-approved',
-    COMPLETED: 'status-approved',
+    APPROVED:          'status-approved',
+    REJECTED:          'status-rejected',
+    CANCELLED:         'status-cancelled',
+    EXPIRED:           'status-expired',
+    SENT:              'status-approved',
+    SIGNED:            'status-approved',
+
+    // ── NEW: PO Workflow statuses ──
+    PO_PENDING:        'status-pending',   // amber — รอ Manager ตรวจสอบ
+    PO_APPROVED:       'status-approved',  // green — PO ผ่าน
+    PO_REJECTED:       'status-rejected',  // red   — PO ถูกปฏิเสธ
+
+    // ── Sale Order statuses ──
+    CONFIRMED:         'status-approved',
+    COMPLETED:         'status-approved',
+    PENDING_REVIEW:    'status-pending',
   };
   return map[status] || 'status-draft';
 }
@@ -98,10 +107,6 @@ export function getStatusClass(status: string): string {
 /**
  * Get display name for a role.
  * Handles both legacy string ('SALES') and new Role object format ({ code, nameTh, nameEn }).
- *
- * Usage:
- *   <span>{getRoleDisplay(user.role)}</span>
- *   <span>{getRoleDisplay(user.role, 'en')}</span>
  */
 export function getRoleDisplay(
   role:
