@@ -18,8 +18,8 @@ function requireUser(req: Request) {
   return {
     id: u.id,
     roleCode: u.roleCode || u.role || 'OFFICER',
-    name: u.name || '',
-    email: u.email || '',
+    name: u.name,
+    email: u.email,
   };
 }
 
@@ -30,28 +30,28 @@ export const poController = {
     if (!req.file) {
       throw new AppError(400, 'BAD_REQUEST', 'No file uploaded (field: file)');
     }
-    const data = await poService.uploadPo(req.params.id, user, req.file);
+    const data = await poService.uploadPo(req.params.id, user, req.file, req);
     return success(res, data);
   },
 
   // POST /quotations/:id/po-submit
   async submit(req: Request, res: Response) {
     const user = requireUser(req);
-    const data = await poService.submitPo(req.params.id, user);
+    const data = await poService.submitPo(req.params.id, user, req);
     return success(res, data);
   },
 
   // POST /quotations/:id/po-approve
   async approve(req: Request, res: Response) {
     const user = requireUser(req);
-    const data = await poService.approvePo(req.params.id, user);
+    const data = await poService.approvePo(req.params.id, user, req);
     return success(res, data);
   },
 
   // POST /quotations/:id/po-reject  body: { reason: string }
   async reject(req: Request, res: Response) {
     const user = requireUser(req);
-    const data = await poService.rejectPo(req.params.id, user, req.body.reason);
+    const data = await poService.rejectPo(req.params.id, user, req.body.reason, req);
     return success(res, data);
   },
 

@@ -1,8 +1,14 @@
 /**
  * PO Workflow Service
  * Path: backend/src/modules/quotations/po.service.ts
+ *
+ * Workflow:
+ *   APPROVED → [Officer upload PO] → APPROVED (with poFileUrl)
+ *           → [Officer submits] → PO_PENDING
+ *           → [Manager approves] → PO_APPROVED + creates SaleOrder
+ *           → [Manager rejects] → PO_REJECTED → Officer uploads new PO → PO_PENDING
  */
-import { Prisma } from '@prisma/client';
+import { NotificationType, Prisma } from '@prisma/client';
 import { Request } from 'express';
 import { prisma } from '../../config/prisma';
 import {
@@ -39,7 +45,7 @@ function isElevated(roleCode: string): boolean {
 
 export const poService = {
   // ═══════════════════════════════════════════════════════════════════════
-  // 1) UPLOAD PO FILE
+  // 1) UPLOAD PO FILE (Officer only — owner of quotation)
   // ═══════════════════════════════════════════════════════════════════════
   async uploadPo(
     quotationId: string,
@@ -106,7 +112,7 @@ export const poService = {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 2) SUBMIT PO FOR REVIEW
+  // 2) SUBMIT PO FOR REVIEW (Officer only — APPROVED → PO_PENDING)
   // ═══════════════════════════════════════════════════════════════════════
   async submitPo(quotationId: string, user: CurrentUser, req?: Request) {
     const q = await prisma.quotation.findUnique({
@@ -151,14 +157,13 @@ export const poService = {
       },
     });
 
-    // ─── Notify approver ──────────────────────────────────────────────
+    // ─── Notify the approver who approved this quotation ─────────────────
     const notifyToId = q.primaryApproverId || q.approvedById;
     if (notifyToId) {
       await prisma.notification.create({
         data: {
           userId: notifyToId,
-          // ใช้ QUOTATION_SUBMITTED แทน PO_SUBMITTED ที่ไม่มีใน enum
-          type: 'QUOTATION_SUBMITTED',
+          type: 'PO_SUBMITTED' as NotificationType,
           title: 'PO รอการตรวจสอบ',
           message: `${q.quotationNo} อัปโหลด PO รอการตรวจสอบ`,
           link: `/quotations/checklist/${quotationId}`,
@@ -201,8 +206,10 @@ export const poService = {
         );
       }
 
+      // ─── Generate SaleOrder number ─────────────────────────────────────
       const saleOrderNo = await generateDocumentNumber(tx, 'SO');
 
+      // ─── Create SaleOrder ──────────────────────────────────────────────
       const saleOrder = await tx.saleOrder.create({
         data: {
           saleOrderNo,
@@ -247,6 +254,7 @@ export const poService = {
         },
       });
 
+      // ─── Update quotation status ───────────────────────────────────────
       const updated = await tx.quotation.update({
         where: { id: quotationId },
         data: {
@@ -256,10 +264,11 @@ export const poService = {
         },
       });
 
+      // ─── Notify Officer ────────────────────────────────────────────────
       await tx.notification.create({
         data: {
           userId: q.createdById,
-          type: 'QUOTATION_APPROVED', // ใช้ type ที่มีใน enum
+          type: 'PO_APPROVED' as NotificationType,
           title: 'PO อนุมัติแล้ว',
           message: `PO ของ ${q.quotationNo} อนุมัติ — Sale Order ${saleOrderNo} ถูกสร้าง`,
           link: `/sale-orders/${saleOrder.id}`,
@@ -323,6 +332,7 @@ export const poService = {
       );
     }
 
+    // ─── Save current PO to history before clearing ──────────────────────
     const history = (q.poUploadHistory as unknown as UploadHistoryEntry[] | null) || [];
     history.push({
       url: q.poFileUrl,
@@ -342,6 +352,7 @@ export const poService = {
         poRejectedById: user.id,
         poRejectionReason: reason.trim(),
         poUploadHistory: history as unknown as Prisma.InputJsonValue,
+        // เคลียร์ไฟล์เดิม → Officer ต้องอัปโหลดใหม่
         poFileUrl: null,
         poFileName: null,
         poFileSize: null,
@@ -352,10 +363,11 @@ export const poService = {
       },
     });
 
+    // ─── Notify Officer ────────────────────────────────────────────────
     await prisma.notification.create({
       data: {
         userId: q.createdById,
-        type: 'QUOTATION_REJECTED', // ใช้ type ที่มีใน enum
+        type: 'PO_REJECTED' as NotificationType,
         title: 'PO ถูกปฏิเสธ',
         message: `PO ของ ${q.quotationNo} ถูกปฏิเสธ: ${reason}`,
         link: `/quotations/checklist/${quotationId}`,
@@ -375,7 +387,7 @@ export const poService = {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 5) GET CHECKLIST
+  // 5) GET CHECKLIST (list of approved + PO_* quotations)
   // ═══════════════════════════════════════════════════════════════════════
   async getChecklist(
     user: CurrentUser,
@@ -387,10 +399,11 @@ export const poService = {
     const where: Prisma.QuotationWhereInput = {
       deletedAt: null,
       status: options.status && validStatuses.includes(options.status)
-        ? (options.status as any)
+        ? (options.status as Prisma.EnumQuotationStatusFilter)
         : { in: validStatuses as any },
     };
 
+    // Officer เห็นเฉพาะของตัวเอง
     if (!elevated) {
       where.createdById = user.id;
     }

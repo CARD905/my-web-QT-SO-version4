@@ -634,10 +634,10 @@ enum QuotationStatus {
   CANCELLED
   EXPIRED
 
-  // ─── NEW: PO Workflow ───
-  PO_PENDING    // Officer อัปโหลด PO แล้ว รอ Manager ตรวจสอบ
-  PO_APPROVED   // PO ตรงกับ QT — Sale Order ถูกสร้างแล้ว
-  PO_REJECTED   // PO ไม่ตรง — Officer ต้องอัปโหลดใหม่
+ 
+  PO_PENDING    
+  PO_APPROVED   
+  PO_REJECTED   
 }
 
 enum SaleOrderStatus {

@@ -54,7 +54,9 @@
     "permissions": "สิทธิ์ของฉัน",
     "managePermissions": "จัดการสิทธิ์",
     "teamOverview": "ภาพรวมทีม",
-    "userDrillDown": "ดูข้อมูลรายบุคคล"
+    "userDrillDown": "ดูข้อมูลรายบุคคล",
+    "quotationList": "รายการใบเสนอราคา",
+    "quotationChecklist": "Checklist (รอ PO)"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

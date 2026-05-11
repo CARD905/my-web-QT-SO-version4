@@ -54,7 +54,9 @@
     "permissions": "My Permissions",
     "managePermissions": "Manage Permissions",
     "teamOverview": "Team Overview",
-    "userDrillDown": "Drill-down Users"
+    "userDrillDown": "Drill-down Users",
+    "quotationList": "Quotation List",
+    "quotationChecklist": "Checklist (Awaiting PO)"
   },
   "login": {
     "title": "Sign In",
