@@ -16,7 +16,10 @@ export type QuotationStatus =
   | 'SENT'
   | 'SIGNED'
   | 'CANCELLED'
-  | 'EXPIRED';
+  | 'EXPIRED'
+  | 'PO_PENDING'
+  | 'PO_APPROVED'
+  | 'PO_REJECTED';
 
 // ใหม่ ✅
 export type SaleOrderStatus =
@@ -205,6 +208,19 @@ export interface Quotation {
   createdBy?: User;
   items?: QuotationItem[];
   saleOrder?: SaleOrder | null;
+  poFileUrl?: string | null;
+  poFileName?: string | null;
+  poFileSize?: number | null;
+  poFileMimeType?: string | null;
+  poUploadedAt?: string | Date | null;
+  poUploadedById?: string | null;
+  poSubmittedAt?: string | Date | null;
+  poApprovedAt?: string | Date | null;
+  poApprovedById?: string | null;
+  poRejectedAt?: string | Date | null;
+  poRejectedById?: string | null;
+  poRejectionReason?: string | null;
+  poUploadHistory?: unknown;
 }
 
 export interface QuotationComment {

@@ -14,10 +14,9 @@ import { useT } from '@/lib/i18n';
 import { usePermissions } from '@/hooks/use-permissions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// NAV STRUCTURE — รองรับ dropdown ผ่าน children
+// NAV STRUCTURE
 // ════════════════════════════════════════════════════════════════════════════
 interface NavItem {
-  /** ไม่มี href ถ้าเป็น group ที่มีลูก */
   href?: string;
   labelKey: string;
   icon: LucideIcon;
@@ -32,7 +31,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
     requires: { resource: 'dashboard', action: 'view', scope: 'OWN' },
   },
-  // ─── Quotations dropdown ─────────────────────────────────────────────
   {
     labelKey: 'nav.quotations',
     icon: FileText,
@@ -80,7 +78,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
-// ROLE THEMES (เหมือนเดิม)
+// ROLE THEMES
 // ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
   brandLabel: string;
@@ -133,7 +131,7 @@ function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// NAV ITEM RENDERER (recursive — รองรับ children)
+// SHARED PROPS TYPE
 // ════════════════════════════════════════════════════════════════════════════
 interface NavItemViewProps {
   item: NavItem;
@@ -142,52 +140,70 @@ interface NavItemViewProps {
   theme: RoleTheme;
   t: (k: string) => string;
   onMobileClose?: () => void;
-  /** ใช้ระบุระดับ indent ของ children */
   level?: number;
 }
 
-function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
+// ════════════════════════════════════════════════════════════════════════════
+// NAV GROUP ITEM — แยก component เพื่อให้ useState/useEffect อยู่ top-level
+// ════════════════════════════════════════════════════════════════════════════
+function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
   const Icon = item.icon;
+  const children = item.children!;
 
-  // ── Active state ────────────────────────────────────────────────────────
-  const isLeafActive = item.href
-    ? pathname === item.href ||
-      (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
-    : false;
+  const anyChildActive = children.some((c) =>
+    c.href
+      ? pathname === c.href ||
+        (c.href !== '/dashboard' && pathname.startsWith(c.href + '/'))
+      : false,
+  );
 
-  // ── ถ้ามี children → render group ──────────────────────────────────────
-  if (item.children && item.children.length > 0) {
-    // Auto-open ถ้า child ตัวใดตัวหนึ่ง active
-    const anyChildActive = item.children.some((c) =>
-      c.href
-        ? pathname === c.href ||
-          (c.href !== '/dashboard' && pathname.startsWith(c.href + '/'))
-        : false
+  // Hooks อยู่ top-level เสมอ ไม่มี condition ครอบ
+  const [open, setOpen] = useState(anyChildActive);
+
+  useEffect(() => {
+    if (anyChildActive) setOpen(true);
+  }, [anyChildActive]);
+
+  // Collapsed → แสดง icon ลิงก์ไป child ตัวแรก
+  if (collapsed) {
+    const firstChild = children[0];
+    if (!firstChild?.href) return null;
+    return (
+      <Link
+        href={firstChild.href}
+        onClick={onMobileClose}
+        className={cn(
+          'group relative flex items-center justify-center p-2.5 rounded-lg transition-all duration-200',
+          anyChildActive
+            ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent/30',
+        )}
+        title={t(item.labelKey)}
+      >
+        <Icon
+          className="h-4 w-4"
+          style={{
+            color: anyChildActive ? theme.accentColor : undefined,
+            filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
+          }}
+        />
+      </Link>
     );
+  }
 
-    const [open, setOpen] = useState(anyChildActive);
-
-    // Sync เมื่อ pathname เปลี่ยน
-    useEffect(() => {
-      if (anyChildActive) setOpen(true);
-    }, [anyChildActive]);
-
-    // Collapsed sidebar → แสดงเป็น link ไป child ตัวแรกแทน
-    if (collapsed) {
-      const firstChild = item.children[0];
-      if (!firstChild.href) return null;
-      return (
-        <Link
-          href={firstChild.href}
-          onClick={onMobileClose}
-          className={cn(
-            'group relative flex items-center justify-center p-2.5 rounded-lg transition-all duration-200',
-            anyChildActive
-              ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-accent/30',
-          )}
-          title={t(item.labelKey)}
-        >
+  return (
+    <div>
+      {/* Group header */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'group w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
+          anyChildActive
+            ? 'text-foreground bg-gradient-to-r from-accent/40 to-transparent'
+            : 'text-muted-foreground hover:text-foreground hover:bg-accent/30',
+        )}
+      >
+        <div className="relative flex items-center justify-center shrink-0">
           <Icon
             className="h-4 w-4"
             style={{
@@ -195,68 +211,69 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
               filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
             }}
           />
-        </Link>
-      );
-    }
-
-    return (
-      <div>
-        {/* Group header */}
-        <button
-          onClick={() => setOpen(!open)}
+        </div>
+        <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>
+        <ChevronDown
           className={cn(
-            'group w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-            anyChildActive
-              ? 'text-foreground bg-gradient-to-r from-accent/40 to-transparent'
-              : 'text-muted-foreground hover:text-foreground hover:bg-accent/30',
+            'h-3.5 w-3.5 transition-transform duration-200 shrink-0',
+            open && 'rotate-180',
           )}
-        >
-          <div className="relative flex items-center justify-center shrink-0">
-            <Icon
-              className="h-4 w-4"
-              style={{
-                color: anyChildActive ? theme.accentColor : undefined,
-                filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined,
-              }}
+          style={{ color: theme.accentColor, opacity: 0.7 }}
+        />
+      </button>
+
+      {/* Children — animated collapse */}
+      <div
+        className={cn(
+          'overflow-hidden transition-all duration-300 ease-out',
+          open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0',
+        )}
+      >
+        <div className="pl-3 ml-3 border-l border-border/40 space-y-0.5">
+          {children.map((child) => (
+            <NavItemView
+              key={child.href ?? child.labelKey}
+              item={child}
+              pathname={pathname}
+              collapsed={collapsed}
+              theme={theme}
+              t={t}
+              onMobileClose={onMobileClose}
+              level={level + 1}
             />
-          </div>
-          <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>
-          <ChevronDown
-            className={cn(
-              'h-3.5 w-3.5 transition-transform duration-200 shrink-0',
-              open && 'rotate-180',
-            )}
-            style={{ color: theme.accentColor, opacity: 0.7 }}
-          />
-        </button>
-
-        {/* Children — animated collapse */}
-        <div
-          className={cn(
-            'overflow-hidden transition-all duration-300 ease-out',
-            open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0',
-          )}
-        >
-          <div className="pl-3 ml-3 border-l border-border/40 space-y-0.5">
-            {item.children.map((child) => (
-              <NavItemView
-                key={child.href ?? child.labelKey}
-                item={child}
-                pathname={pathname}
-                collapsed={collapsed}
-                theme={theme}
-                t={t}
-                onMobileClose={onMobileClose}
-                level={level + 1}
-              />
-            ))}
-          </div>
+          ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NAV ITEM VIEW — leaf หรือ delegate ไป NavGroupItem
+// ════════════════════════════════════════════════════════════════════════════
+function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
+  const Icon = item.icon;
+
+  const isLeafActive = item.href
+    ? pathname === item.href ||
+      (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+    : false;
+
+  // มี children → delegate ไป NavGroupItem (hooks อยู่ใน component นั้น)
+  if (item.children && item.children.length > 0) {
+    return (
+      <NavGroupItem
+        item={item}
+        pathname={pathname}
+        collapsed={collapsed}
+        theme={theme}
+        t={t}
+        onMobileClose={onMobileClose}
+        level={level}
+      />
     );
   }
 
-  // ── Leaf item ──────────────────────────────────────────────────────────
   if (!item.href) return null;
 
   return (
@@ -312,7 +329,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const { can, role, loading, permissions } = usePermissions();
   const [collapsed, setCollapsed] = useState(false);
 
-  // ─── Filter ที่รองรับ children ──────────────────────────────────────────
   const filterItems = (items: NavItem[]): NavItem[] => {
     return items
       .filter((item) => {
@@ -331,7 +347,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const roleCode = role?.code || initialRole || 'OFFICER';
   const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
 
-  // ─── Brand header ────────────────────────────────────────────────────────
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
     <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
       <div
@@ -382,7 +397,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
     </div>
   );
 
-  // ─── Nav content ─────────────────────────────────────────────────────────
   const navContent = (
     <>
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 relative">
@@ -399,7 +413,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="p-3 border-t border-border/40 shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between gap-2">
