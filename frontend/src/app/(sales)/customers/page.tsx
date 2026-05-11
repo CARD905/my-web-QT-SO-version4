@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus, Search, Users, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -17,15 +17,14 @@ export default function CustomersPage() {
   const t = useT();
   const { role } = usePermissions();
 
-  // ─── Role-based permissions (ตรงกับ backend requireRole) ─────────────────
   const roleCode = role?.code ?? '';
   const isAdmin   = roleCode === 'ADMIN';
   const isCEO     = roleCode === 'CEO';
   const isManager = roleCode === 'MANAGER';
 
   const canCreate = isAdmin || isCEO;
-  const canEdit   = isAdmin || isCEO || isManager;  // Admin, CEO, Manager แก้ไขได้
-  const canDelete = isAdmin || isCEO;                // Admin, CEO ลบได้
+  const canEdit   = isAdmin || isCEO || isManager;
+  const canDelete = isAdmin || isCEO;
 
   const [list, setList] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +32,7 @@ export default function CustomersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const load = async (q: string) => {
+  const load = useCallback(async (q: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -46,12 +45,25 @@ export default function CustomersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handler = setTimeout(() => load(search), 300);
     return () => clearTimeout(handler);
-  }, [search]);
+  }, [search, load]);
+
+  // ─── Stable callbacks ด้วย useCallback ── ป้องกัน modal useEffect re-run ──
+  const handleCloseCreate = useCallback(() => setShowCreate(false), []);
+  const handleSavedCreate = useCallback(() => {
+    setShowCreate(false);
+    load(search);
+  }, [load, search]);
+
+  const handleCloseEdit = useCallback(() => setEditingId(null), []);
+  const handleSavedEdit = useCallback(() => {
+    setEditingId(null);
+    load(search);
+  }, [load, search]);
 
   const remove = async (id: string, company: string) => {
     if (!confirm(`ลบลูกค้า "${company}" ใช่หรือไม่?`)) return;
@@ -73,8 +85,7 @@ export default function CustomersPage() {
         </div>
         {canCreate && (
           <Button onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4" />
-            {t('customer.newCustomer')}
+            <Plus className="h-4 w-4" />{t('customer.newCustomer')}
           </Button>
         )}
       </div>
@@ -95,9 +106,7 @@ export default function CustomersPage() {
 
       {loading ? (
         <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : list.length === 0 ? (
         <Card>
@@ -118,9 +127,7 @@ export default function CustomersPage() {
                   <div className="min-w-0">
                     <div className="font-semibold">{c.company}</div>
                     <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {c.contactName}
-                      {c.email && ` · ${c.email}`}
-                      {c.phone && ` · ${c.phone}`}
+                      {c.contactName}{c.email && ` · ${c.email}`}{c.phone && ` · ${c.phone}`}
                     </div>
                   </div>
                 </div>
@@ -131,19 +138,13 @@ export default function CustomersPage() {
                     </div>
                   )}
                   {canEdit && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setEditingId(c.id)}
-                      title="แก้ไข"
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => setEditingId(c.id)} title="แก้ไข">
                       <Edit2 className="h-4 w-4" />
                     </Button>
                   )}
                   {canDelete && (
                     <Button
-                      variant="ghost"
-                      size="icon"
+                      variant="ghost" size="icon"
                       onClick={() => remove(c.id, c.company)}
                       className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       title="ลบ"
@@ -159,27 +160,17 @@ export default function CustomersPage() {
       )}
 
       {showCreate && (
-        <CustomerModal
-          mode="create"
-          onClose={() => setShowCreate(false)}
-          onSaved={() => { setShowCreate(false); load(search); }}
-        />
+        <CustomerModal mode="create" onClose={handleCloseCreate} onSaved={handleSavedCreate} />
       )}
-
       {editingId && (
-        <CustomerModal
-          mode="edit"
-          id={editingId}
-          onClose={() => setEditingId(null)}
-          onSaved={() => { setEditingId(null); load(search); }}
-        />
+        <CustomerModal mode="edit" id={editingId} onClose={handleCloseEdit} onSaved={handleSavedEdit} />
       )}
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Customer Modal
+// Customer Modal — fixed: remove onClose from deps, use functional state updates
 // ════════════════════════════════════════════════════════════════════════════
 function CustomerModal({ mode, id, onClose, onSaved }: {
   mode: 'create' | 'edit';
@@ -201,33 +192,45 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (mode === 'edit' && id) {
-      (async () => {
-        try {
-          const res = await api.get<ApiResponse<Customer>>(`/customers/${id}`);
-          const c = res.data.data;
-          if (c) {
-            setForm({
-              contactName: c.contactName,
-              company: c.company,
-              taxId: c.taxId || '',
-              email: c.email || '',
-              phone: c.phone || '',
-              billingAddress: c.billingAddress || '',
-              shippingAddress: c.shippingAddress || '',
-            });
-          }
-        } catch (err) {
-          toast.error(getApiErrorMessage(err));
-          onClose();
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }
-  }, [mode, id, onClose]);
+    if (mode !== 'edit' || !id) return;
 
-  const update = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }));
+    let cancelled = false;
+    setLoading(true);
+
+    api.get<ApiResponse<Customer>>(`/customers/${id}`)
+      .then((res) => {
+        if (cancelled) return;
+        const c = res.data.data;
+        if (c) {
+          setForm({
+            contactName: c.contactName,
+            company: c.company,
+            taxId: c.taxId || '',
+            email: c.email || '',
+            phone: c.phone || '',
+            billingAddress: c.billingAddress || '',
+            shippingAddress: c.shippingAddress || '',
+          });
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        toast.error(getApiErrorMessage(err));
+        onClose();
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    // Cleanup: cancel the update if component unmounts or id changes
+    return () => { cancelled = true; };
+    // ✅ ไม่ใส่ onClose ใน deps — ป้องกัน re-fetch เมื่อ parent re-render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, id]);
+
+  // ✅ ใช้ functional update ป้องกัน stale closure
+  const update = (k: keyof typeof form, v: string) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
 
   const submit = async () => {
     if (!form.contactName || !form.company) {
@@ -258,10 +261,9 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
           <h2 className="text-xl font-bold">
             {mode === 'create' ? t('customer.newCustomer') : 'แก้ไขลูกค้า'}
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md">
-            <X className="h-5 w-5" />
-          </button>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
         </div>
+
         {loading ? (
           <CardContent className="pt-6 space-y-4">
             <Skeleton className="h-10 w-full" />
@@ -302,6 +304,7 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
             </div>
           </CardContent>
         )}
+
         <div className="flex justify-end gap-2 p-6 border-t">
           <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={submitting || loading}>
