@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { customersController } from './customers.controller';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/permission';
+import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
 import {
@@ -14,9 +15,7 @@ const router = Router();
 
 router.use(authenticate);
 
-// ============================================================
-// VIEW — anyone can view (Customer is shared master data)
-// ============================================================
+// ─── VIEW — ทุก role ที่มี customer:view:ALL ────────────────────────────────
 router.get(
   '/',
   requirePermission('customer', 'view', 'ALL'),
@@ -30,32 +29,26 @@ router.get(
   asyncHandler(customersController.getById),
 );
 
-// ============================================================
-// CREATE — Admin/CEO only (per Phase 1 seed)
-// ============================================================
+// ─── CREATE — Admin, CEO ────────────────────────────────────────────────────
 router.post(
   '/',
-  requirePermission('customer', 'create', 'ALL'),
+  requireRole('ADMIN', 'CEO'),
   validate(createCustomerSchema),
   asyncHandler(customersController.create),
 );
 
-// ============================================================
-// UPDATE — All roles (Officer/Manager/Admin/CEO) per Q4.1
-// ============================================================
+// ─── UPDATE — Admin, CEO, Manager ──────────────────────────────────────────
 router.patch(
   '/:id',
-  requirePermission('customer', 'update', 'ALL'),
+  requireRole('ADMIN', 'CEO', 'MANAGER'),
   validate(updateCustomerSchema),
   asyncHandler(customersController.update),
 );
 
-// ============================================================
-// DELETE — Admin/CEO only
-// ============================================================
+// ─── DELETE — Admin, CEO เท่านั้น ───────────────────────────────────────────
 router.delete(
   '/:id',
-  requirePermission('customer', 'delete', 'ALL'),
+  requireRole('ADMIN', 'CEO'),
   asyncHandler(customersController.remove),
 );
 

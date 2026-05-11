@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { Building2, Save, Loader2, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,12 +10,16 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { ApiResponse, CompanySettings } from '@/types/api';
 
 export default function CompanyPage() {
   const t = useT();
-  const { data: session } = useSession();
-  const isAdmin = session?.user?.role === 'ADMIN';
+
+  // ─── ใช้ usePermissions แทน session.user.role ────────────────────────────
+  // session.user.role อาจเป็น object ทำให้ === 'ADMIN' fail เสมอ
+  const { role } = usePermissions();
+  const isAdmin = role?.code === 'ADMIN';
 
   const [data, setData] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,41 +190,19 @@ export default function CompanyPage() {
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label className="text-xs">{t('company.phone')}</Label>
-            <Input
-              value={data.phone || ''}
-              onChange={(e) => update('phone', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-            />
+            <Input value={data.phone || ''} onChange={(e) => update('phone', e.target.value)} disabled={!isAdmin} className="mt-1.5" />
           </div>
           <div>
             <Label className="text-xs">{t('company.fax')}</Label>
-            <Input
-              value={data.fax || ''}
-              onChange={(e) => update('fax', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-            />
+            <Input value={data.fax || ''} onChange={(e) => update('fax', e.target.value)} disabled={!isAdmin} className="mt-1.5" />
           </div>
           <div>
             <Label className="text-xs">{t('company.email')}</Label>
-            <Input
-              type="email"
-              value={data.email || ''}
-              onChange={(e) => update('email', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-            />
+            <Input type="email" value={data.email || ''} onChange={(e) => update('email', e.target.value)} disabled={!isAdmin} className="mt-1.5" />
           </div>
           <div>
             <Label className="text-xs">{t('company.website')}</Label>
-            <Input
-              value={data.website || ''}
-              onChange={(e) => update('website', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-              placeholder="https://yourcompany.com"
-            />
+            <Input value={data.website || ''} onChange={(e) => update('website', e.target.value)} disabled={!isAdmin} className="mt-1.5" placeholder="https://yourcompany.com" />
           </div>
         </CardContent>
       </Card>
@@ -236,14 +217,10 @@ export default function CompanyPage() {
           <div>
             <Label className="text-xs">{t('company.defaultVatRate')}</Label>
             <Input
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
+              type="number" min="0" max="100" step="0.01"
               value={Number(data.defaultVatRate)}
               onChange={(e) => update('defaultVatRate', parseFloat(e.target.value) || 0)}
-              disabled={!isAdmin}
-              className="mt-1.5"
+              disabled={!isAdmin} className="mt-1.5"
             />
           </div>
           <div>
@@ -284,33 +261,15 @@ export default function CompanyPage() {
         <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label className="text-xs">{t('company.bankName')}</Label>
-            <Input
-              value={data.bankName || ''}
-              onChange={(e) => update('bankName', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-              placeholder="Kasikorn Bank"
-            />
+            <Input value={data.bankName || ''} onChange={(e) => update('bankName', e.target.value)} disabled={!isAdmin} className="mt-1.5" placeholder="Kasikorn Bank" />
           </div>
           <div>
             <Label className="text-xs">{t('company.bankAccount')}</Label>
-            <Input
-              value={data.bankAccount || ''}
-              onChange={(e) => update('bankAccount', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-              placeholder="123-4-56789-0"
-            />
+            <Input value={data.bankAccount || ''} onChange={(e) => update('bankAccount', e.target.value)} disabled={!isAdmin} className="mt-1.5" placeholder="123-4-56789-0" />
           </div>
           <div>
             <Label className="text-xs">{t('company.bankBranch')}</Label>
-            <Input
-              value={data.bankBranch || ''}
-              onChange={(e) => update('bankBranch', e.target.value)}
-              disabled={!isAdmin}
-              className="mt-1.5"
-              placeholder="Sukhumvit"
-            />
+            <Input value={data.bankBranch || ''} onChange={(e) => update('bankBranch', e.target.value)} disabled={!isAdmin} className="mt-1.5" placeholder="Sukhumvit" />
           </div>
         </CardContent>
       </Card>

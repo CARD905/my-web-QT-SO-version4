@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { Plus, Search, Package, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,13 +11,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatMoney } from '@/lib/utils';
-import type { ApiResponse, Product } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
+import type { ApiResponse, Product } from '@/types/api';
 
 export default function ProductsPage() {
   const t = useT();
-  const { can } = usePermissions();
-  const canManage = can('product', 'create', 'ALL');
+  const { role } = usePermissions();
+
+  // ─── Role-based permissions (Admin, CEO เท่านั้น) ─────────────────────────
+  const roleCode = role?.code ?? '';
+  const canManage = roleCode === 'ADMIN' || roleCode === 'CEO';
 
   const [list, setList] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,32 +114,27 @@ export default function ProductsPage() {
                     <div className="text-xs text-muted-foreground font-mono">{p.sku}</div>
                     <div className="font-semibold truncate">{p.name}</div>
                     {p.description && (
-                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                        {p.description}
-                      </div>
+                      <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{p.description}</div>
                     )}
                     <div className="mt-2 flex items-center justify-between">
                       <div className="text-lg font-bold text-primary">
                         {formatMoney(p.unitPrice)}
-                        <span className="text-xs text-muted-foreground font-normal ml-1">
-                          / {p.unit}
-                        </span>
+                        <span className="text-xs text-muted-foreground font-normal ml-1">/ {p.unit}</span>
                       </div>
                       {canManage && (
                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
+                            variant="ghost" size="icon" className="h-7 w-7"
                             onClick={() => setEditingId(p.id)}
+                            title="แก้ไข"
                           >
                             <Edit2 className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
+                            variant="ghost" size="icon"
                             className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => remove(p.id, p.name)}
+                            title="ลบ"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -153,50 +150,26 @@ export default function ProductsPage() {
       )}
 
       {showCreate && (
-        <ProductModal
-          mode="create"
-          onClose={() => setShowCreate(false)}
-          onSaved={() => {
-            setShowCreate(false);
-            load(search);
-          }}
-        />
+        <ProductModal mode="create" onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); load(search); }} />
       )}
-
       {editingId && (
-        <ProductModal
-          mode="edit"
-          id={editingId}
-          onClose={() => setEditingId(null)}
-          onSaved={() => {
-            setEditingId(null);
-            load(search);
-          }}
-        />
+        <ProductModal mode="edit" id={editingId} onClose={() => setEditingId(null)} onSaved={() => { setEditingId(null); load(search); }} />
       )}
     </div>
   );
 }
 
-function ProductModal({
-  mode,
-  id,
-  onClose,
-  onSaved,
-}: {
+// ════════════════════════════════════════════════════════════════════════════
+// Product Modal
+// ════════════════════════════════════════════════════════════════════════════
+function ProductModal({ mode, id, onClose, onSaved }: {
   mode: 'create' | 'edit';
   id?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const t = useT();
-  const [form, setForm] = useState({
-    sku: '',
-    name: '',
-    description: '',
-    unitPrice: 0,
-    unit: 'pcs',
-  });
+  const [form, setForm] = useState({ sku: '', name: '', description: '', unitPrice: 0, unit: 'pcs' });
   const [loading, setLoading] = useState(mode === 'edit');
   const [submitting, setSubmitting] = useState(false);
 
@@ -206,15 +179,7 @@ function ProductModal({
         try {
           const res = await api.get<ApiResponse<Product>>(`/products/${id}`);
           const p = res.data.data;
-          if (p) {
-            setForm({
-              sku: p.sku,
-              name: p.name,
-              description: p.description || '',
-              unitPrice: Number(p.unitPrice),
-              unit: p.unit,
-            });
-          }
+          if (p) setForm({ sku: p.sku, name: p.name, description: p.description || '', unitPrice: Number(p.unitPrice), unit: p.unit });
         } catch (err) {
           toast.error(getApiErrorMessage(err));
           onClose();
@@ -226,18 +191,15 @@ function ProductModal({
   }, [mode, id, onClose]);
 
   const submit = async () => {
-    if (!form.sku || !form.name) {
-      toast.error('SKU and Name are required');
-      return;
-    }
+    if (!form.sku || !form.name) { toast.error('SKU and Name are required'); return; }
     setSubmitting(true);
     try {
       if (mode === 'create') {
         await api.post('/products', form);
-        toast.success('Product created');
+        toast.success('สร้างสินค้าสำเร็จ');
       } else if (id) {
         await api.patch(`/products/${id}`, form);
-        toast.success('Product updated');
+        toast.success('แก้ไขสินค้าสำเร็จ');
       }
       onSaved();
     } catch (err) {
@@ -251,56 +213,28 @@ function ProductModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
       <Card className="w-full max-w-md shadow-2xl animate-slide-up">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-bold">
-            {mode === 'create' ? t('product.newProduct') : 'แก้ไขสินค้า'}
-          </h2>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md">
-            <X className="h-5 w-5" />
-          </button>
+          <h2 className="text-xl font-bold">{mode === 'create' ? t('product.newProduct') : 'แก้ไขสินค้า'}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
         </div>
         {loading ? (
           <CardContent className="pt-6 space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" />
           </CardContent>
         ) : (
           <CardContent className="pt-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs">
-                  {t('product.sku')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={form.sku}
-                  onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                  className="mt-1.5"
-                  autoFocus
-                  placeholder="PRD-0001"
-                />
+                <Label className="text-xs">{t('product.sku')} <span className="text-destructive">*</span></Label>
+                <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="mt-1.5" autoFocus placeholder="PRD-0001" />
               </div>
               <div>
-                <Label className="text-xs">
-                  {t('product.unitPrice')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.unitPrice}
-                  onChange={(e) => setForm({ ...form, unitPrice: parseFloat(e.target.value) || 0 })}
-                  className="mt-1.5"
-                />
+                <Label className="text-xs">{t('product.unitPrice')} <span className="text-destructive">*</span></Label>
+                <Input type="number" min="0" step="0.01" value={form.unitPrice} onChange={(e) => setForm({ ...form, unitPrice: parseFloat(e.target.value) || 0 })} className="mt-1.5" />
               </div>
             </div>
             <div>
-              <Label className="text-xs">
-                {t('product.name')} <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="mt-1.5"
-              />
+              <Label className="text-xs">{t('product.name')} <span className="text-destructive">*</span></Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5" />
             </div>
             <div>
               <Label className="text-xs">{t('product.description')}</Label>
@@ -308,35 +242,31 @@ function ProductModal({
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={3}
-                className="mt-1.5 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+                className="mt-1.5 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs">หน่วย / Unit</Label>
-                <select
-                  value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                  className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm"
-                >
-                  <option value="pcs">pcs (ชิ้น)</option>
-                  <option value="set">set (ชุด)</option>
-                  <option value="box">box (กล่อง)</option>
-                  <option value="hr">hr (ชั่วโมง)</option>
-                  <option value="day">day (วัน)</option>
-                  <option value="month">month (เดือน)</option>
-                  <option value="lot">lot</option>
-                  <option value="kg">kg</option>
-                  <option value="m">m (เมตร)</option>
-                </select>
-              </div>
+            <div>
+              <Label className="text-xs">หน่วย / Unit</Label>
+              <select
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm"
+              >
+                <option value="pcs">pcs (ชิ้น)</option>
+                <option value="set">set (ชุด)</option>
+                <option value="box">box (กล่อง)</option>
+                <option value="hr">hr (ชั่วโมง)</option>
+                <option value="day">day (วัน)</option>
+                <option value="month">month (เดือน)</option>
+                <option value="lot">lot</option>
+                <option value="kg">kg</option>
+                <option value="m">m (เมตร)</option>
+              </select>
             </div>
           </CardContent>
         )}
         <div className="flex justify-end gap-2 p-6 border-t">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            {t('common.cancel')}
-          </Button>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={submitting || loading}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('common.save')}

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { Plus, Search, Users, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,16 +10,22 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import type { ApiResponse, Customer } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
-
+import type { ApiResponse, Customer } from '@/types/api';
 
 export default function CustomersPage() {
   const t = useT();
-  const { can } = usePermissions();
-  const canCreate = can('customer', 'create', 'ALL');
-  const canEdit = can('customer', 'update', 'ALL');
-  const canDelete = can('customer', 'delete', 'ALL');
+  const { role } = usePermissions();
+
+  // ─── Role-based permissions (ตรงกับ backend requireRole) ─────────────────
+  const roleCode = role?.code ?? '';
+  const isAdmin   = roleCode === 'ADMIN';
+  const isCEO     = roleCode === 'CEO';
+  const isManager = roleCode === 'MANAGER';
+
+  const canCreate = isAdmin || isCEO;
+  const canEdit   = isAdmin || isCEO || isManager;  // Admin, CEO, Manager แก้ไขได้
+  const canDelete = isAdmin || isCEO;                // Admin, CEO ลบได้
 
   const [list, setList] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +118,9 @@ export default function CustomersPage() {
                   <div className="min-w-0">
                     <div className="font-semibold">{c.company}</div>
                     <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {c.contactName} {c.email && `· ${c.email}`} {c.phone && `· ${c.phone}`}
+                      {c.contactName}
+                      {c.email && ` · ${c.email}`}
+                      {c.phone && ` · ${c.phone}`}
                     </div>
                   </div>
                 </div>
@@ -128,7 +135,7 @@ export default function CustomersPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => setEditingId(c.id)}
-                      title="Edit"
+                      title="แก้ไข"
                     >
                       <Edit2 className="h-4 w-4" />
                     </Button>
@@ -139,7 +146,7 @@ export default function CustomersPage() {
                       size="icon"
                       onClick={() => remove(c.id, c.company)}
                       className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      title="Delete"
+                      title="ลบ"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -155,10 +162,7 @@ export default function CustomersPage() {
         <CustomerModal
           mode="create"
           onClose={() => setShowCreate(false)}
-          onSaved={() => {
-            setShowCreate(false);
-            load(search);
-          }}
+          onSaved={() => { setShowCreate(false); load(search); }}
         />
       )}
 
@@ -167,22 +171,17 @@ export default function CustomersPage() {
           mode="edit"
           id={editingId}
           onClose={() => setEditingId(null)}
-          onSaved={() => {
-            setEditingId(null);
-            load(search);
-          }}
+          onSaved={() => { setEditingId(null); load(search); }}
         />
       )}
     </div>
   );
 }
 
-function CustomerModal({
-  mode,
-  id,
-  onClose,
-  onSaved,
-}: {
+// ════════════════════════════════════════════════════════════════════════════
+// Customer Modal
+// ════════════════════════════════════════════════════════════════════════════
+function CustomerModal({ mode, id, onClose, onSaved }: {
   mode: 'create' | 'edit';
   id?: string;
   onClose: () => void;
@@ -239,10 +238,10 @@ function CustomerModal({
     try {
       if (mode === 'create') {
         await api.post('/customers', form);
-        toast.success('Customer created');
+        toast.success('สร้างลูกค้าสำเร็จ');
       } else if (id) {
         await api.patch(`/customers/${id}`, form);
-        toast.success('Customer updated');
+        toast.success('แก้ไขลูกค้าสำเร็จ');
       }
       onSaved();
     } catch (err) {
@@ -273,74 +272,38 @@ function CustomerModal({
           <CardContent className="pt-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label className="text-xs">
-                  {t('customer.contactName')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={form.contactName}
-                  onChange={(e) => update('contactName', e.target.value)}
-                  className="mt-1.5"
-                  autoFocus
-                />
+                <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
+                <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
               </div>
               <div>
-                <Label className="text-xs">
-                  {t('customer.company')} <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  value={form.company}
-                  onChange={(e) => update('company', e.target.value)}
-                  className="mt-1.5"
-                />
+                <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
+                <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
               </div>
               <div>
                 <Label className="text-xs">{t('customer.taxId')}</Label>
-                <Input
-                  value={form.taxId}
-                  onChange={(e) => update('taxId', e.target.value)}
-                  className="mt-1.5"
-                />
+                <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
               </div>
               <div>
                 <Label className="text-xs">{t('customer.email')}</Label>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => update('email', e.target.value)}
-                  className="mt-1.5"
-                />
+                <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" />
               </div>
               <div>
                 <Label className="text-xs">{t('customer.phone')}</Label>
-                <Input
-                  value={form.phone}
-                  onChange={(e) => update('phone', e.target.value)}
-                  className="mt-1.5"
-                />
+                <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
               </div>
             </div>
             <div>
               <Label className="text-xs">{t('customer.billingAddress')}</Label>
-              <Input
-                value={form.billingAddress}
-                onChange={(e) => update('billingAddress', e.target.value)}
-                className="mt-1.5"
-              />
+              <Input value={form.billingAddress} onChange={(e) => update('billingAddress', e.target.value)} className="mt-1.5" />
             </div>
             <div>
               <Label className="text-xs">{t('customer.shippingAddress')}</Label>
-              <Input
-                value={form.shippingAddress}
-                onChange={(e) => update('shippingAddress', e.target.value)}
-                className="mt-1.5"
-              />
+              <Input value={form.shippingAddress} onChange={(e) => update('shippingAddress', e.target.value)} className="mt-1.5" />
             </div>
           </CardContent>
         )}
         <div className="flex justify-end gap-2 p-6 border-t">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            {t('common.cancel')}
-          </Button>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
           <Button onClick={submit} disabled={submitting || loading}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('common.save')}
