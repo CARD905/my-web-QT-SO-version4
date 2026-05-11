@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { quotationsController } from './quotations.controller';
+import { poController } from './po.controller';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission, requireAnyPermission } from '../../middleware/permission';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
+import { uploadPoFile } from '../../middleware/upload';
 import commentsRoutes from './comments.routes';
 import {
   approveQuotationSchema,
@@ -37,6 +39,15 @@ router.post(
 router.delete(
   '/comments/:commentId',
   asyncHandler(quotationsController.deleteComment),
+);
+
+// ════════════════════════════════════════════════════════════
+// CHECKLIST — ต้องอยู่ก่อน /:id (ไม่งั้น "checklist" จะถูก match เป็น :id)
+// GET /quotations/checklist
+// ════════════════════════════════════════════════════════════
+router.get(
+  '/checklist',
+  asyncHandler(poController.checklist),
 );
 
 // ============================================================
@@ -132,6 +143,44 @@ router.get(
     ['quotation', 'view', 'ALL'],
   ),
   asyncHandler(quotationsController.getVersions),
+);
+
+// ════════════════════════════════════════════════════════════
+// PO WORKFLOW — ต้องอยู่หลัง /:id/submit, /:id/approve ฯลฯ
+// แต่ก่อน /:quotationId/comments
+// ════════════════════════════════════════════════════════════
+
+// POST /quotations/:id/po-upload (multipart/form-data, field: file)
+router.post(
+  '/:id/po-upload',
+  uploadPoFile,
+  asyncHandler(poController.upload),
+);
+
+// POST /quotations/:id/po-submit
+router.post(
+  '/:id/po-submit',
+  asyncHandler(poController.submit),
+);
+
+// POST /quotations/:id/po-approve (Manager+)
+router.post(
+  '/:id/po-approve',
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'ALL'],
+  ),
+  asyncHandler(poController.approve),
+);
+
+// POST /quotations/:id/po-reject (Manager+)
+router.post(
+  '/:id/po-reject',
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'ALL'],
+  ),
+  asyncHandler(poController.reject),
 );
 
 // ============================================================
