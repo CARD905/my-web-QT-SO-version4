@@ -1,22 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
-  ArrowLeft,
-  Upload,
-  FileText,
-  Image as ImageIcon,
-  Send,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  AlertTriangle,
-  Download,
-  Trash2,
-  Clock,
+  ArrowLeft, Upload, FileText, Image as ImageIcon,
+  Send, CheckCircle2, XCircle, Loader2, AlertTriangle,
+  Download, Clock, History, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,16 +16,28 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDate, formatMoney, formatNumber, cn } from '@/lib/utils';
+import { formatDate, formatMoney, formatNumber, getStatusClass, cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { CommentThread } from '@/components/comments/comment-thread';
 import type { ApiResponse, Quotation } from '@/types/api';
 
+// ════════════════════════════════════════════════════════════════════════════
+// Types
+// ════════════════════════════════════════════════════════════════════════════
 const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN', 'APPROVER'];
 const ALLOWED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
-interface ChecklistDetail extends Quotation {
+interface PoUploadHistoryEntry {
+  url: string | null;
+  fileName: string | null;
+  uploadedAt: string;
+  rejectedAt?: string;
+  rejectedByName?: string;
+  reason?: string;
+}
+
+interface ChecklistQuotation extends Quotation {
   poFileUrl?: string | null;
   poFileName?: string | null;
   poFileSize?: number | null;
@@ -44,52 +47,103 @@ interface ChecklistDetail extends Quotation {
   poApprovedAt?: string | null;
   poRejectedAt?: string | null;
   poRejectionReason?: string | null;
+  poUploadHistory?: PoUploadHistoryEntry[] | null;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Status banner config
+// ════════════════════════════════════════════════════════════════════════════
+const STATUS_BANNERS: Record<string, { bg: string; icon: React.ElementType; title: string; textColor: string }> = {
+  APPROVED:    { bg: 'border-blue-300 bg-blue-50 dark:bg-blue-900/20',    icon: Upload,        title: 'รออัปโหลดใบ PO',           textColor: 'text-blue-800 dark:text-blue-200' },
+  PO_PENDING:  { bg: 'border-amber-300 bg-amber-50 dark:bg-amber-900/20', icon: Clock,         title: 'PO รอการตรวจสอบจาก Manager', textColor: 'text-amber-800 dark:text-amber-200' },
+  PO_APPROVED: { bg: 'border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2, title: 'PO อนุมัติแล้ว — สร้าง Sale Order เรียบร้อย', textColor: 'text-emerald-800 dark:text-emerald-200' },
+  PO_REJECTED: { bg: 'border-red-300 bg-red-50 dark:bg-red-900/20',      icon: AlertTriangle, title: 'PO ถูกปฏิเสธ — กรุณาอัปโหลดใบ PO ใหม่',     textColor: 'text-red-800 dark:text-red-200' },
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// Reject dialog
+// ════════════════════════════════════════════════════════════════════════════
+function RejectDialog({ onClose, onConfirm, loading }: {
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+  loading: boolean;
+}) {
+  const [reason, setReason] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+      <div className="bg-background rounded-2xl border shadow-2xl w-full max-w-md p-6 animate-scale-in">
+        <h3 className="font-bold text-lg mb-1">ปฏิเสธ PO</h3>
+        <p className="text-sm text-muted-foreground mb-4">ระบุเหตุผลเพื่อให้ Officer ทราบว่าต้องแก้ไขอะไร</p>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          autoFocus
+          placeholder="เช่น ยอดรวมไม่ตรงกับ QT, รายการสินค้าไม่ครบ..."
+          className="w-full border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <div className="flex gap-2 justify-end mt-4">
+          <Button variant="outline" onClick={onClose} disabled={loading}>ยกเลิก</Button>
+          <Button
+            variant="destructive"
+            disabled={loading || reason.trim().length < 3}
+            onClick={() => onConfirm(reason.trim())}
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            <XCircle className="h-4 w-4" />
+            ยืนยันปฏิเสธ
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Main Page
+// ════════════════════════════════════════════════════════════════════════════
 export default function ChecklistDetailPage() {
   const t = useT();
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
   const { data: session } = useSession();
   const { role } = usePermissions();
 
-  const [q, setQ] = useState<ChecklistDetail | null>(null);
+  const [q, setQ] = useState<ChecklistQuotation | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const userId = session?.user?.id;
-  const isOwner = userId && q?.createdById === userId;
-  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code);
+  const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
+  const isOwner = !!(userId && q?.createdById === userId);
 
-  // ─── Load quotation ──────────────────────────────────────────────────────
-  const load = async () => {
+  // ─── Load ────────────────────────────────────────────────────────────────
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<ApiResponse<ChecklistDetail>>(`/quotations/${id}`);
+      const res = await api.get<ApiResponse<ChecklistQuotation>>(`/quotations/${id}`);
       setQ(res.data.data ?? null);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // ─── File upload ────────────────────────────────────────────────────────
+  useEffect(() => { load(); }, [load]);
+
+  // ─── Upload PO file ──────────────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate client-side
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toast.error('รองรับเฉพาะไฟล์ PDF, PNG, JPG, WebP');
+      toast.error('รองรับเฉพาะ PDF, PNG, JPG, WebP');
       e.target.value = '';
       return;
     }
@@ -100,12 +154,19 @@ export default function ChecklistDetailPage() {
     }
 
     setUploading(true);
+    setUploadProgress(0);
+
     try {
       const formData = new FormData();
       formData.append('file', file);
 
       await api.post(`/quotations/${id}/po-upload`, formData, {
+        // ลบ Content-Type ให้ axios set multipart+boundary เอง
         headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          const pct = Math.round((e.loaded * 100) / (e.total ?? 1));
+          setUploadProgress(pct);
+        },
       });
 
       toast.success('อัปโหลด PO สำเร็จ');
@@ -114,13 +175,14 @@ export default function ChecklistDetailPage() {
       toast.error(getApiErrorMessage(err));
     } finally {
       setUploading(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // ─── Officer: submit PO ──────────────────────────────────────────────────
+  // ─── Submit PO ───────────────────────────────────────────────────────────
   const handleSubmitPo = async () => {
-    if (!confirm('ส่ง PO ให้ Manager ตรวจสอบใช่หรือไม่? หลังส่งจะแก้ไขไม่ได้จนกว่าจะถูก reject')) return;
+    if (!confirm('ส่ง PO ให้ Manager ตรวจสอบ?\n\nหลังส่งแล้ว จะแก้ไขหรือเปลี่ยนไฟล์ไม่ได้จนกว่าจะถูก reject')) return;
     setActing('submit');
     try {
       await api.post(`/quotations/${id}/po-submit`);
@@ -133,13 +195,13 @@ export default function ChecklistDetailPage() {
     }
   };
 
-  // ─── Manager: approve PO ─────────────────────────────────────────────────
+  // ─── Approve PO (Manager) ────────────────────────────────────────────────
   const handleApprovePo = async () => {
-    if (!confirm('อนุมัติ PO นี้? ระบบจะสร้าง Sale Order อัตโนมัติ')) return;
+    if (!confirm('อนุมัติ PO?\n\nระบบจะสร้าง Sale Order อัตโนมัติ')) return;
     setActing('approve');
     try {
-      const res = await api.post<ApiResponse<{ saleOrder: { id: string; saleOrderNo: string } }>>(
-        `/quotations/${id}/po-approve`,
+      const res = await api.post<ApiResponse<{ quotation: ChecklistQuotation; saleOrder: { id: string; saleOrderNo: string } }>>(
+        `/quotations/${id}/po-approve`
       );
       const soNo = res.data.data?.saleOrder?.saleOrderNo;
       toast.success(`PO อนุมัติแล้ว — สร้าง Sale Order ${soNo}`);
@@ -151,14 +213,13 @@ export default function ChecklistDetailPage() {
     }
   };
 
-  // ─── Manager: reject PO ──────────────────────────────────────────────────
-  const handleRejectPo = async () => {
-    const reason = prompt('เหตุผลที่ปฏิเสธ PO:');
-    if (!reason || reason.trim().length < 2) return;
+  // ─── Reject PO (Manager) ─────────────────────────────────────────────────
+  const handleRejectPo = async (reason: string) => {
     setActing('reject');
     try {
       await api.post(`/quotations/${id}/po-reject`, { reason });
-      toast.success('ปฏิเสธ PO เรียบร้อย');
+      toast.success('ปฏิเสธ PO เรียบร้อย — Officer จะได้รับแจ้ง');
+      setShowRejectDialog(false);
       await load();
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -167,11 +228,13 @@ export default function ChecklistDetailPage() {
     }
   };
 
+  // ─── Loading ─────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="space-y-4 max-w-6xl">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-32 w-full" />
+      <div className="space-y-4 max-w-5xl">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
         <Skeleton className="h-96 w-full" />
       </div>
     );
@@ -180,7 +243,7 @@ export default function ChecklistDetailPage() {
   if (!q) {
     return (
       <div className="text-center py-20">
-        <p>Not found</p>
+        <p>ไม่พบข้อมูล</p>
         <Button asChild variant="ghost" className="mt-4">
           <Link href="/quotations/checklist">ย้อนกลับ</Link>
         </Button>
@@ -188,47 +251,43 @@ export default function ChecklistDetailPage() {
     );
   }
 
-  // ─── Permission logic ────────────────────────────────────────────────────
-  const canUpload = isOwner && ['APPROVED', 'PO_REJECTED'].includes(q.status);
-  const canSubmitPo = isOwner && ['APPROVED', 'PO_REJECTED'].includes(q.status) && q.poFileUrl;
-  const canApproveReject = isElevated && q.status === 'PO_PENDING';
+  // ─── Computed states ─────────────────────────────────────────────────────
+  const status = q.status as string;
+  const banner = STATUS_BANNERS[status];
+  const BannerIcon = banner?.icon;
 
-  // ─── Status colors ───────────────────────────────────────────────────────
-  const statusBg: Record<string, string> = {
-    APPROVED: 'bg-blue-50 border-blue-200 dark:bg-blue-900/20',
-    PO_PENDING: 'bg-amber-50 border-amber-200 dark:bg-amber-900/20',
-    PO_APPROVED: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20',
-    PO_REJECTED: 'bg-red-50 border-red-200 dark:bg-red-900/20',
-  };
+  const canUpload    = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status);
+  const canSubmitPo  = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status) && !!q.poFileUrl;
+  const canManagerAct = isElevated && status === 'PO_PENDING';
 
   const isImage = q.poFileMimeType?.startsWith('image/');
-  const isPdf = q.poFileMimeType === 'application/pdf';
+  const isPdf   = q.poFileMimeType === 'application/pdf';
+
+  const history = (q.poUploadHistory ?? []) as PoUploadHistoryEntry[];
 
   return (
-    <div className="space-y-5 max-w-6xl">
-      {/* Header */}
-      <div className="flex flex-wrap gap-4 items-start justify-between">
+    <div className="space-y-5 max-w-5xl">
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <Button asChild variant="ghost" size="icon" className="mt-1">
-            <Link href="/quotations/checklist">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
+            <Link href="/quotations/checklist"><ArrowLeft className="h-5 w-5" /></Link>
           </Button>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl font-bold">{q.quotationNo}</h1>
-              <Badge variant="outline" className="text-xs">
-                {q.status}
-              </Badge>
+              <Badge className={getStatusClass(status)} variant="outline">● {status}</Badge>
+              {q.version > 1 && <span className="text-xs text-muted-foreground">v{q.version}</span>}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {q.customerCompany} · อนุมัติแล้วเมื่อ {formatDate(q.approvedAt)}
+              {q.customerCompany} · อนุมัติเมื่อ {formatDate(q.approvedAt)}
             </p>
           </div>
         </div>
 
+        {/* Sale Order link */}
         {q.saleOrder && (
-          <Button asChild variant="success">
+          <Button asChild>
             <Link href={`/sale-orders/${q.saleOrder.id}`}>
               <FileText className="h-4 w-4" />
               {q.saleOrder.saleOrderNo}
@@ -237,202 +296,304 @@ export default function ChecklistDetailPage() {
         )}
       </div>
 
-      {/* Status banner */}
-      <Card className={cn('border-2', statusBg[q.status])}>
-        <CardContent className="pt-4 flex gap-3 items-start">
-          {q.status === 'APPROVED' && (
-            <>
-              <Upload className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-semibold text-blue-900 dark:text-blue-200">รออัปโหลด PO</div>
-                <p className="text-sm mt-1">กรุณาแนบใบ PO ที่ลูกค้าออกให้ (PDF, รูป) แล้วกดส่งให้ Manager ตรวจสอบ</p>
-              </div>
-            </>
-          )}
-          {q.status === 'PO_PENDING' && (
-            <>
-              <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-semibold text-amber-900 dark:text-amber-200">PO รอการตรวจสอบ</div>
-                <p className="text-sm mt-1">
-                  ส่งให้ Manager ตรวจสอบเมื่อ {formatDate(q.poSubmittedAt)} — Officer แก้ไขไม่ได้จนกว่าจะถูก reject
+      {/* ── Status Banner ── */}
+      {banner && (
+        <Card className={cn('border-2', banner.bg)}>
+          <CardContent className="pt-4 pb-4 flex gap-3 items-start">
+            <BannerIcon className={cn('h-5 w-5 shrink-0 mt-0.5', banner.textColor)} />
+            <div className="flex-1">
+              <div className={cn('font-semibold', banner.textColor)}>{banner.title}</div>
+              {status === 'PO_PENDING' && q.poSubmittedAt && (
+                <p className="text-xs text-muted-foreground mt-1">ส่งเมื่อ {formatDate(q.poSubmittedAt)}</p>
+              )}
+              {status === 'PO_REJECTED' && q.poRejectionReason && (
+                <p className={cn('text-sm mt-1 font-medium', banner.textColor)}>
+                  เหตุผล: {q.poRejectionReason}
                 </p>
-              </div>
-            </>
-          )}
-          {q.status === 'PO_APPROVED' && (
-            <>
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-semibold text-emerald-900 dark:text-emerald-200">PO อนุมัติแล้ว</div>
-                <p className="text-sm mt-1">
-                  Manager อนุมัติเมื่อ {formatDate(q.poApprovedAt)} — สร้าง Sale Order {q.saleOrder?.saleOrderNo} แล้ว
+              )}
+              {status === 'PO_APPROVED' && q.poApprovedAt && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  อนุมัติเมื่อ {formatDate(q.poApprovedAt)}
                 </p>
-              </div>
-            </>
-          )}
-          {q.status === 'PO_REJECTED' && (
-            <>
-              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-semibold text-red-900 dark:text-red-200">PO ถูกปฏิเสธ</div>
-                <p className="text-sm mt-1">
-                  เหตุผล: <strong>{q.poRejectionReason}</strong>
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  กรุณาอัปโหลด PO ใหม่ที่ถูกต้อง แล้วส่งให้ Manager ตรวจสอบอีกครั้ง
-                </p>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Two-column: Detail + Comment */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5">
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      {/* TWO-COLUMN LAYOUT                                                   */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5">
+
+        {/* ── LEFT: Full Quotation Detail ── */}
         <div className="space-y-5 min-w-0">
-          {/* PO Upload section */}
+
+          {/* Customer info */}
           <Card>
             <CardContent className="pt-6">
-              <h2 className="font-semibold mb-3 flex items-center gap-2">
+              <h2 className="font-semibold mb-4 text-base flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" />
+                ข้อมูลลูกค้า
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                <InfoRow label={t('customer.company')} value={q.customerCompany} bold />
+                <InfoRow label={t('customer.contactName')} value={q.customerContactName} />
+                {q.customerTaxId && <InfoRow label={t('customer.taxId')} value={q.customerTaxId} />}
+                {q.customerPhone && <InfoRow label={t('customer.phone')} value={q.customerPhone} />}
+                {q.customerEmail && <InfoRow label={t('customer.email')} value={q.customerEmail} span2 />}
+                {q.customerBillingAddress && <InfoRow label={t('customer.billingAddress')} value={q.customerBillingAddress} span2 />}
+                {q.customerShippingAddress && <InfoRow label="ที่อยู่จัดส่ง" value={q.customerShippingAddress} span2 />}
+                <div className="md:col-span-2 pt-2 border-t grid grid-cols-2 gap-4">
+                  <InfoRow label="วันที่ออก" value={formatDate(q.issueDate)} />
+                  <InfoRow label="วันหมดอายุ" value={formatDate(q.expiryDate)} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Items table */}
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="font-semibold mb-4 text-base">รายการสินค้า ({q.items?.length ?? 0} รายการ)</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs uppercase text-muted-foreground">
+                      <th className="text-left py-2 font-medium pr-3">SKU</th>
+                      <th className="text-left py-2 font-medium">ชื่อสินค้า</th>
+                      <th className="text-right py-2 font-medium w-20">จำนวน</th>
+                      <th className="text-center py-2 font-medium w-16">หน่วย</th>
+                      <th className="text-right py-2 font-medium w-28">ราคา/หน่วย</th>
+                      <th className="text-right py-2 font-medium w-24">ส่วนลด</th>
+                      <th className="text-right py-2 font-medium w-28">รวม</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {q.items?.map((it, idx) => (
+                      <tr key={it.id || idx} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-3 text-xs text-muted-foreground pr-3 font-mono">{it.productSku || '-'}</td>
+                        <td className="py-3">
+                          <div className="font-medium">{it.productName}</div>
+                          {it.productDescription && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{it.productDescription}</div>
+                          )}
+                        </td>
+                        <td className="py-3 text-right">{formatNumber(it.quantity)}</td>
+                        <td className="py-3 text-center text-muted-foreground">{it.unit}</td>
+                        <td className="py-3 text-right">{formatNumber(it.unitPrice)}</td>
+                        <td className="py-3 text-right text-muted-foreground">
+                          {Number(it.discount) > 0
+                            ? it.discountType === 'PERCENTAGE'
+                              ? `${formatNumber(it.discount)}%`
+                              : formatNumber(it.discount)
+                            : '-'}
+                        </td>
+                        <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Summary */}
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="font-semibold mb-4 text-base">สรุปยอด</h2>
+              <div className="flex justify-end">
+                <div className="w-full md:w-80 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{t('quotation.subtotal')}</span>
+                    <span className="font-medium">{formatNumber(q.subtotal)}</span>
+                  </div>
+                  {Number(q.discountTotal) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{t('quotation.discount')}</span>
+                      <span className="text-destructive font-medium">-{formatNumber(q.discountTotal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {t('quotation.vat')} ({formatNumber(q.vatRate)}%)
+                    </span>
+                    <span className="font-medium">
+                      {q.vatEnabled ? formatNumber(q.vatAmount) : 'ไม่มี VAT'}
+                    </span>
+                  </div>
+                  <div className="border-t pt-3 flex justify-between items-baseline">
+                    <span className="font-bold text-base">{t('quotation.grandTotal')}</span>
+                    <span className="text-2xl font-bold text-primary">
+                      {formatMoney(q.grandTotal, q.currency)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Conditions */}
+          {(q.paymentTerms || q.conditions) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {q.paymentTerms && (
+                <Card><CardContent className="pt-5">
+                  <div className="text-xs uppercase text-muted-foreground font-semibold mb-2">{t('quotation.paymentTerms')}</div>
+                  <div className="text-sm font-medium">{q.paymentTerms}</div>
+                </CardContent></Card>
+              )}
+              {q.conditions && (
+                <Card><CardContent className="pt-5">
+                  <div className="text-xs uppercase text-muted-foreground font-semibold mb-2">{t('quotation.conditions')}</div>
+                  <div className="text-sm whitespace-pre-wrap">{q.conditions}</div>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── RIGHT: PO Upload + Actions ── */}
+        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+
+          {/* PO Upload Section */}
+          <Card>
+            <CardContent className="pt-5">
+              <h2 className="font-semibold mb-4 text-sm flex items-center gap-2">
                 <Upload className="h-4 w-4 text-primary" />
                 ใบ Purchase Order (PO)
               </h2>
 
+              {/* ── มีไฟล์อยู่แล้ว ── */}
               {q.poFileUrl ? (
                 <div className="space-y-3">
-                  {/* File preview */}
-                  <div className="border rounded-lg p-4 flex items-center gap-3 bg-muted/30">
-                    <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      {isImage ? (
-                        <ImageIcon className="h-6 w-6 text-primary" />
-                      ) : isPdf ? (
-                        <FileText className="h-6 w-6 text-red-600" />
-                      ) : (
-                        <FileText className="h-6 w-6 text-primary" />
-                      )}
+                  {/* File info */}
+                  <div className="border rounded-lg p-3 flex items-center gap-3 bg-muted/20">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      {isImage ? <ImageIcon className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-red-500" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{q.poFileName}</div>
+                      <div className="text-sm font-medium truncate">{q.poFileName}</div>
                       <div className="text-xs text-muted-foreground">
-                        อัปโหลดเมื่อ {formatDate(q.poUploadedAt)}
-                        {q.poFileSize && ` · ${(q.poFileSize / 1024).toFixed(0)} KB`}
+                        {q.poFileSize && `${(q.poFileSize / 1024).toFixed(0)} KB · `}
+                        อัปโหลด {formatDate(q.poUploadedAt)}
                       </div>
                     </div>
-                    <Button asChild variant="outline" size="sm">
+                    <Button asChild variant="outline" size="icon" className="shrink-0 h-8 w-8">
                       <a href={q.poFileUrl} target="_blank" rel="noopener noreferrer">
                         <Download className="h-3.5 w-3.5" />
-                        ดู
                       </a>
                     </Button>
                   </div>
 
-                  {/* Image preview */}
+                  {/* Preview */}
                   {isImage && (
-                    <div className="rounded-lg overflow-hidden border bg-muted/30">
-                      <img
-                        src={q.poFileUrl}
-                        alt={q.poFileName ?? 'PO'}
-                        className="max-w-full max-h-96 mx-auto object-contain"
-                      />
+                    <div className="rounded-lg overflow-hidden border">
+                      <img src={q.poFileUrl} alt="PO" className="w-full max-h-64 object-contain bg-muted/20" />
                     </div>
                   )}
-
-                  {/* PDF preview (iframe) */}
                   {isPdf && (
-                    <div className="rounded-lg overflow-hidden border bg-muted/30">
-                      <iframe
-                        src={q.poFileUrl}
-                        className="w-full h-96"
-                        title="PO PDF Preview"
-                      />
-                    </div>
+                    <iframe src={q.poFileUrl} className="w-full h-56 rounded-lg border" title="PO PDF" />
                   )}
 
-                  {/* Actions for Officer */}
+                  {/* Officer: change file + submit */}
                   {canUpload && (
-                    <div className="flex gap-2 flex-wrap pt-2">
+                    <div className="space-y-2 pt-1">
                       <Button
                         variant="outline"
+                        size="sm"
+                        className="w-full"
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploading}
                       >
-                        {uploading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Upload className="h-4 w-4" />
-                        )}
-                        เปลี่ยนไฟล์
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        เปลี่ยนไฟล์ PO
                       </Button>
+
                       {canSubmitPo && (
-                        <Button onClick={handleSubmitPo} disabled={acting !== null}>
-                          {acting === 'submit' ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="h-4 w-4" />
-                          )}
+                        <Button
+                          className="w-full shine"
+                          onClick={handleSubmitPo}
+                          disabled={acting !== null}
+                        >
+                          {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                           ส่งให้ Manager ตรวจสอบ
                         </Button>
                       )}
                     </div>
                   )}
 
-                  {/* Actions for Manager */}
-                  {canApproveReject && (
-                    <div className="flex gap-2 flex-wrap pt-3 border-t mt-3">
+                  {/* Manager: Approve / Reject */}
+                  {canManagerAct && (
+                    <div className="space-y-2 pt-2 border-t mt-2">
+                      <p className="text-xs text-muted-foreground text-center">
+                        ตรวจสอบ PO ด้านบนแล้วกด อนุมัติ หรือ ปฏิเสธ
+                      </p>
                       <Button
+                        className="w-full bg-emerald-600 hover:bg-emerald-700"
                         onClick={handleApprovePo}
                         disabled={acting !== null}
-                        className="bg-emerald-600 hover:bg-emerald-700"
                       >
-                        {acting === 'approve' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="h-4 w-4" />
-                        )}
-                        อนุมัติ PO + สร้าง Sale Order
+                        {acting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        อนุมัติ PO — สร้าง Sale Order
                       </Button>
                       <Button
+                        className="w-full"
                         variant="destructive"
-                        onClick={handleRejectPo}
+                        onClick={() => setShowRejectDialog(true)}
                         disabled={acting !== null}
                       >
-                        {acting === 'reject' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <XCircle className="h-4 w-4" />
-                        )}
+                        <XCircle className="h-4 w-4" />
                         ปฏิเสธ PO
                       </Button>
                     </div>
                   )}
-                </div>
-              ) : (
-                <div>
-                  {canUpload ? (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-accent/30 transition-all"
-                    >
-                      {uploading ? (
-                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      ) : (
-                        <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-                      )}
-                      <p className="mt-2 font-medium">คลิกเพื่อเลือกไฟล์ PO</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        รองรับ PDF, PNG, JPG, WebP — ขนาดไม่เกิน 10 MB
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      ยังไม่มีไฟล์ PO
+
+                  {/* ข้อความเมื่อรออยู่ (Officer) */}
+                  {status === 'PO_PENDING' && isOwner && (
+                    <p className="text-xs text-center text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
+                      รอ Manager ตรวจสอบ — แก้ไขไม่ได้จนกว่าจะถูก reject
                     </p>
                   )}
                 </div>
+              ) : (
+                /* ── ยังไม่มีไฟล์ ── */
+                canUpload ? (
+                  <div
+                    onClick={() => !uploading && fileInputRef.current?.click()}
+                    className={cn(
+                      'border-2 border-dashed rounded-xl p-8 text-center transition-all',
+                      uploading ? 'border-primary/50 cursor-default' : 'border-border hover:border-primary hover:bg-accent/20 cursor-pointer'
+                    )}
+                  >
+                    {uploading ? (
+                      <div className="space-y-2">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                        <p className="text-sm font-medium">กำลังอัปโหลด... {uploadProgress}%</p>
+                        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all duration-300"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="font-medium text-sm">คลิกเพื่อเลือกไฟล์ PO</p>
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          รองรับ PDF, PNG, JPG, WebP · ขนาดสูงสุด 10 MB
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    ยังไม่มีไฟล์ PO
+                  </div>
+                )
               )}
 
-              {/* Hidden file input */}
+              {/* Hidden input */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -443,75 +604,74 @@ export default function ChecklistDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Quotation summary (read-only) */}
-          <Card>
-            <CardContent className="pt-6">
-              <h2 className="font-semibold mb-3">รายละเอียดใบเสนอราคา</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
-                <div>
-                  <span className="text-muted-foreground">บริษัท:</span>{' '}
-                  <span className="font-medium">{q.customerCompany}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">ผู้ติดต่อ:</span>{' '}
-                  <span className="font-medium">{q.customerContactName}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">วันที่ออก:</span>{' '}
-                  <span className="font-medium">{formatDate(q.issueDate)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">หมดอายุ:</span>{' '}
-                  <span className="font-medium">{formatDate(q.expiryDate)}</span>
-                </div>
-                <div className="md:col-span-2 pt-2 border-t flex justify-between items-baseline">
-                  <span className="font-semibold">มูลค่ารวม</span>
-                  <span className="text-2xl font-bold text-primary">
-                    {formatMoney(q.grandTotal, q.currency)}
+          {/* Upload History */}
+          {history.length > 0 && (
+            <Card>
+              <CardContent className="pt-5">
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="w-full flex items-center justify-between text-sm font-semibold"
+                >
+                  <span className="flex items-center gap-2">
+                    <History className="h-4 w-4 text-muted-foreground" />
+                    ประวัติการอัปโหลด ({history.length})
                   </span>
-                </div>
-              </div>
+                  {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
 
-              {/* Items */}
-              {q.items && q.items.length > 0 && (
-                <div className="mt-4 pt-4 border-t">
-                  <h3 className="text-xs uppercase text-muted-foreground font-semibold mb-2">
-                    รายการ ({q.items.length})
-                  </h3>
-                  <div className="space-y-1.5">
-                    {q.items.map((it, idx) => (
-                      <div key={it.id || idx} className="text-sm flex justify-between gap-3">
-                        <span className="truncate">{it.productName}</span>
-                        <span className="text-muted-foreground shrink-0">
-                          {formatNumber(it.quantity)} {it.unit} ×{' '}
-                          {formatNumber(it.unitPrice)} ={' '}
-                          <span className="font-semibold text-foreground">
-                            {formatNumber(it.lineTotal)}
-                          </span>
-                        </span>
+                {showHistory && (
+                  <div className="mt-3 space-y-2">
+                    {history.map((h, i) => (
+                      <div key={i} className="text-xs border rounded-lg p-3 bg-muted/20">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">{h.fileName || 'ไฟล์'}</span>
+                          {h.url && (
+                            <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">
+                              ดู
+                            </a>
+                          )}
+                        </div>
+                        {h.rejectedAt && (
+                          <div className="mt-1 text-red-600 dark:text-red-400">
+                            ถูกปฏิเสธ: {h.reason}
+                          </div>
+                        )}
+                        <div className="text-muted-foreground mt-0.5">{formatDate(h.uploadedAt)}</div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Comment thread (PO_PENDING only) */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
-          {q.status === 'PO_PENDING' ? (
-            <CommentThread quotationId={id} />
-          ) : (
-            <Card className="bg-muted/30">
-              <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-                <p>การสนทนาเปิดใช้งานเฉพาะตอน</p>
-                <p className="font-medium text-foreground mt-1">PO รอการตรวจสอบ</p>
+                )}
               </CardContent>
             </Card>
           )}
+
+          {/* Comment Thread (PO_PENDING only) */}
+          {status === 'PO_PENDING' && (
+            <CommentThread quotationId={id} />
+          )}
         </div>
       </div>
+
+      {/* Reject Dialog */}
+      {showRejectDialog && (
+        <RejectDialog
+          onClose={() => setShowRejectDialog(false)}
+          onConfirm={handleRejectPo}
+          loading={acting === 'reject'}
+        />
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+function InfoRow({ label, value, bold, span2 }: {
+  label: string; value: string; bold?: boolean; span2?: boolean;
+}) {
+  return (
+    <div className={span2 ? 'md:col-span-2' : ''}>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className={cn('mt-0.5', bold ? 'font-bold text-base' : 'font-medium')}>{value}</div>
     </div>
   );
 }

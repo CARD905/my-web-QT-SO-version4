@@ -12,69 +12,81 @@ export type DashboardFilter = 'self' | 'team' | 'all' | 'user';
 
 interface OverviewOptions {
   filter?: DashboardFilter;
-  userId?: string; // ใช้เมื่อ filter = 'user'
+  userId?: string;
 }
 
-// ─── ตรวจสอบว่า currentUser ดู userId นี้ได้ไหม ─────────────────────────
-async function canViewUser(currentUser: CurrentUser, targetUserId: string): Promise<boolean> {
-  // CEO/Admin เห็นทุกคน
-  if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) return true;
+// ─── Recursive: ดึง subordinate ids ทั้ง tree ────────────────────────────────
+async function getSubordinateIds(managerId: string): Promise<string[]> {
+  const ids: string[] = [];
+  const queue = [managerId];
 
-  // ดูตัวเองได้เสมอ
-  if (currentUser.id === targetUserId) return true;
-
-  // Manager — เห็นเฉพาะลูกน้องตรงสาย (reportsToId = manager.id)
-  if (currentUser.roleCode === 'MANAGER') {
-    const target = await prisma.user.findUnique({
-      where: { id: targetUserId },
-      select: { reportsToId: true },
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const children = await prisma.user.findMany({
+      where: { reportsToId: current, deletedAt: null, isActive: true },
+      select: { id: true },
     });
-    return target?.reportsToId === currentUser.id;
+    for (const c of children) {
+      if (!ids.includes(c.id)) {
+        ids.push(c.id);
+        queue.push(c.id);
+      }
+    }
   }
 
-  // Officer — ดูได้แค่ตัวเอง
+  return ids;
+}
+
+// ─── ตรวจสอบว่า currentUser ดู targetUser ได้ไหม ────────────────────────────
+async function canViewUser(currentUser: CurrentUser, targetUserId: string): Promise<boolean> {
+  if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) return true;
+  if (currentUser.id === targetUserId) return true;
+
+  if (currentUser.roleCode === 'MANAGER') {
+    const subIds = await getSubordinateIds(currentUser.id);
+    return subIds.includes(targetUserId);
+  }
+
   return false;
 }
 
-// ─── สร้าง where clause จาก filter ──────────────────────────────────────
+// ─── สร้าง where clause จาก filter ──────────────────────────────────────────
 async function resolveWhereFromFilter(
   currentUser: CurrentUser,
   options: OverviewOptions,
 ): Promise<Prisma.QuotationWhereInput | null> {
   const filter = options.filter || 'self';
 
-  // ── 'self' — เฉพาะของตัวเอง
   if (filter === 'self') {
     return { createdById: currentUser.id };
   }
 
-  // ── 'user' — ดู user คนใดคนหนึ่ง (ต้อง permission ผ่าน)
   if (filter === 'user') {
-    if (!options.userId) {
-      throw new Error('userId is required when filter=user');
-    }
+    if (!options.userId) throw new Error('userId is required when filter=user');
     const allowed = await canViewUser(currentUser, options.userId);
-    if (!allowed) {
-      throw new Error('FORBIDDEN: You cannot view this user');
-    }
+    if (!allowed) throw new Error('FORBIDDEN: You cannot view this user');
     return { createdById: options.userId };
   }
 
-  // ── 'all' — เฉพาะ CEO/Admin
   if (filter === 'all') {
     if (!['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
       throw new Error('FORBIDDEN: Only CEO/Admin can view all');
     }
-    return {}; // ไม่มี filter
+    return {};
   }
 
-  // ── 'team' — own + ลูกน้องทุกคนในทีม (ใช้ scope filter)
   if (filter === 'team') {
-    const scope = await buildScopeFilter(
-      currentUser, 'quotation', 'view', 'createdById',
-    );
-    if (!scope) return null;
-    return scope;
+    // ใช้ recursive subordinates แทน buildScopeFilter
+    // เพื่อให้ครอบคลุมลูกน้องของลูกน้องด้วย
+    if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
+      return {}; // เห็นทั้งหมด
+    }
+
+    const subIds = await getSubordinateIds(currentUser.id);
+    if (subIds.length === 0) {
+      return { createdById: currentUser.id };
+    }
+    return { createdById: { in: [currentUser.id, ...subIds] } };
   }
 
   return null;
@@ -82,19 +94,19 @@ async function resolveWhereFromFilter(
 
 export const managerDashboardService = {
   // ============================================================
-  // OVERVIEW with role-based filter
+  // OVERVIEW
   // ============================================================
   async overview(currentUser: CurrentUser, options: OverviewOptions = {}) {
     const filterWhere = await resolveWhereFromFilter(currentUser, options);
-
-    if (filterWhere === null) {
-      return emptyDashboard();
-    }
+    if (filterWhere === null) return emptyDashboard();
 
     const baseWhere: Prisma.QuotationWhereInput = {
       deletedAt: null,
       ...filterWhere,
     };
+
+    const todayStart = startOfToday();
+    const monthStart = startOfMonth();
 
     const [
       totalCount,
@@ -104,8 +116,19 @@ export const managerDashboardService = {
       rejectedCount,
       totalValueAgg,
       pendingValueAgg,
+
+      // ─── todayActivity: action ที่ currentUser ทำเอง ─────────────────────
       todayApprovedCount,
       todayRejectedCount,
+
+      // ─── monthActivity: เดือนนี้ที่ currentUser ทำ ───────────────────────
+      monthApprovedCount,
+      monthRejectedCount,
+
+      // ─── allTimeActivity: ทั้งหมดที่ currentUser เคยทำ ───────────────────
+      allTimeApprovedCount,
+      allTimeRejectedCount,
+
       topOfficersData,
       recentEscalatedData,
       statusBreakdownData,
@@ -123,19 +146,57 @@ export const managerDashboardService = {
         where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED'] } },
         _sum: { grandTotal: true },
       }),
+
+      // วันนี้ — approved โดย currentUser
       prisma.quotation.count({
-        where: { ...baseWhere, status: 'APPROVED', approvedAt: { gte: startOfToday() } },
+        where: {
+          deletedAt: null,
+          approvedById: currentUser.id,
+          approvedAt: { gte: todayStart },
+        },
       }),
+      // วันนี้ — rejected โดย currentUser
       prisma.quotation.count({
-        where: { ...baseWhere, status: 'REJECTED', rejectedAt: { gte: startOfToday() } },
+        where: {
+          deletedAt: null,
+          rejectedById: currentUser.id,
+          rejectedAt: { gte: todayStart },
+        },
       }),
+
+      // เดือนนี้ — approved โดย currentUser
+      prisma.quotation.count({
+        where: {
+          deletedAt: null,
+          approvedById: currentUser.id,
+          approvedAt: { gte: monthStart },
+        },
+      }),
+      // เดือนนี้ — rejected โดย currentUser
+      prisma.quotation.count({
+        where: {
+          deletedAt: null,
+          rejectedById: currentUser.id,
+          rejectedAt: { gte: monthStart },
+        },
+      }),
+
+      // ทั้งหมด — approved โดย currentUser
+      prisma.quotation.count({
+        where: { deletedAt: null, approvedById: currentUser.id },
+      }),
+      // ทั้งหมด — rejected โดย currentUser
+      prisma.quotation.count({
+        where: { deletedAt: null, rejectedById: currentUser.id },
+      }),
+
       prisma.quotation.groupBy({
         by: ['createdById'],
         where: baseWhere,
         _count: { id: true },
         _sum: { grandTotal: true },
         orderBy: { _count: { id: 'desc' } },
-        take: 5,
+        take: 10,
       }),
       prisma.quotation.findMany({
         where: { ...baseWhere, status: 'PENDING_ESCALATED' },
@@ -182,8 +243,16 @@ export const managerDashboardService = {
         approved: todayApprovedCount,
         rejected: todayRejectedCount,
       },
+      monthActivity: {
+        approved: monthApprovedCount,
+        rejected: monthRejectedCount,
+      },
+      allTimeActivity: {
+        approved: allTimeApprovedCount,
+        rejected: allTimeRejectedCount,
+      },
       topOfficers,
-      topApprovers: [], // simplified
+      topApprovers: [],
       recentEscalated: recentEscalatedData.map((q) => ({
         id: q.id,
         quotationNo: q.quotationNo,
@@ -200,10 +269,9 @@ export const managerDashboardService = {
   },
 
   // ============================================================
-  // FILTERABLE USERS — list users currentUser can pick from filter
+  // FILTERABLE USERS — รองรับ subordinates ทั้ง tree
   // ============================================================
   async filterableUsers(currentUser: CurrentUser) {
-    // CEO/Admin — เห็นทุกคน
     if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
       const users = await prisma.user.findMany({
         where: { deletedAt: null, isActive: true, id: { not: currentUser.id } },
@@ -211,57 +279,77 @@ export const managerDashboardService = {
         orderBy: [{ role: { level: 'desc' } }, { name: 'asc' }],
       });
       return users.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
+        id: u.id, name: u.name, email: u.email,
         role: { code: u.role.code, nameTh: u.role.nameTh },
       }));
     }
 
-    // Manager — เห็นเฉพาะลูกน้องตรงสาย
     if (currentUser.roleCode === 'MANAGER') {
+      // ดึง subordinates ทั้ง tree (ลูกน้องของลูกน้อง)
+      const subIds = await getSubordinateIds(currentUser.id);
+
+      if (subIds.length === 0) return [];
+
       const users = await prisma.user.findMany({
         where: {
-          reportsToId: currentUser.id,
+          id: { in: subIds },
           deletedAt: null,
           isActive: true,
         },
-        include: { role: { select: { code: true, nameTh: true } } },
+        include: {
+          role: { select: { code: true, nameTh: true } },
+          reportsTo: { select: { id: true, name: true } }, // แสดง hierarchy
+        },
         orderBy: { name: 'asc' },
       });
+
       return users.map((u) => ({
         id: u.id,
         name: u.name,
         email: u.email,
         role: { code: u.role.code, nameTh: u.role.nameTh },
+        reportsTo: u.reportsTo ? { id: u.reportsTo.id, name: u.reportsTo.name } : null,
       }));
     }
 
-    // Officer — ไม่มี filter
     return [];
   },
 
   // ============================================================
-  // (เก็บ usersList และ userDetail แบบเดิม — ไม่แตะ)
+  // USERS LIST
   // ============================================================
   async usersList(currentUser: CurrentUser) {
-    const scope = await buildScopeFilter(currentUser, 'user', 'view', 'id');
-    if (!scope) return [];
+    let userIds: string[] | null = null;
+
+    if (currentUser.roleCode === 'MANAGER') {
+      // ใช้ recursive แทน buildScopeFilter
+      const subIds = await getSubordinateIds(currentUser.id);
+      userIds = [currentUser.id, ...subIds];
+    }
+
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      ...(userIds ? { id: { in: userIds } } : {}),
+    };
+
+    // CEO/ADMIN เห็นทุกคน — ไม่กรอง
+    if (!['CEO', 'ADMIN', 'MANAGER'].includes(currentUser.roleCode)) {
+      return [];
+    }
 
     const users = await prisma.user.findMany({
-      where: { ...scope, deletedAt: null },
+      where,
       include: {
         role: { select: { code: true, nameTh: true, level: true } },
         team: { select: { id: true, name: true } },
-        _count: { select: { createdQuotations: { where: { deletedAt: null } } } },
       },
-      orderBy: [{ isActive: 'desc' }, { role: { level: 'desc' } }, { name: 'asc' }],
+      orderBy: [{ role: { level: 'desc' } }, { name: 'asc' }],
     });
 
-    const userIds = users.map((u) => u.id);
+    const ids = users.map((u) => u.id);
     const statsRaw = await prisma.quotation.groupBy({
       by: ['createdById', 'status'],
-      where: { createdById: { in: userIds }, deletedAt: null },
+      where: { createdById: { in: ids }, deletedAt: null },
       _count: { id: true },
       _sum: { grandTotal: true },
     });
@@ -279,26 +367,25 @@ export const managerDashboardService = {
     }
 
     return users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
+      id: u.id, name: u.name, email: u.email,
       isActive: u.isActive,
       lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
-      role: u.role.code,
-      roleName: u.role.nameTh,
+      role: u.role.code, roleName: u.role.nameTh,
       team: u.team ? { id: u.team.id, name: u.team.name } : null,
       stats: statsByUser.get(u.id) ?? { total: 0, approved: 0, approvedValue: 0 },
     }));
   },
 
+  // ============================================================
+  // USER DETAIL
+  // ============================================================
   async userDetail(userId: string, currentUser: CurrentUser) {
     const allowed = await canViewUser(currentUser, userId);
     if (!allowed) {
       return {
         user: null,
         totals: { quotations: 0, approvedValue: 0, thisMonth: 0 },
-        byStatus: [],
-        recent: [],
+        byStatus: [], recent: [],
       };
     }
 
@@ -307,6 +394,7 @@ export const managerDashboardService = {
       include: {
         role: { select: { code: true, nameTh: true } },
         team: { select: { id: true, name: true } },
+        reportsTo: { select: { id: true, name: true } },
       },
     });
 
@@ -314,14 +402,11 @@ export const managerDashboardService = {
       return {
         user: null,
         totals: { quotations: 0, approvedValue: 0, thisMonth: 0 },
-        byStatus: [],
-        recent: [],
+        byStatus: [], recent: [],
       };
     }
 
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    const monthStart = startOfMonth();
 
     const [totalCount, approvedAgg, thisMonthCount, byStatusRaw, recent] = await Promise.all([
       prisma.quotation.count({ where: { createdById: userId, deletedAt: null } }),
@@ -330,7 +415,7 @@ export const managerDashboardService = {
         _sum: { grandTotal: true },
       }),
       prisma.quotation.count({
-        where: { createdById: userId, createdAt: { gte: startOfMonth }, deletedAt: null },
+        where: { createdById: userId, createdAt: { gte: monthStart }, deletedAt: null },
       }),
       prisma.quotation.groupBy({
         by: ['status'],
@@ -347,11 +432,10 @@ export const managerDashboardService = {
 
     return {
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
+        id: user.id, name: user.name, email: user.email,
         role: { code: user.role.code, nameTh: user.role.nameTh },
         team: user.team,
+        reportsTo: user.reportsTo,
         isActive: user.isActive,
       },
       totals: {
@@ -361,9 +445,7 @@ export const managerDashboardService = {
       },
       byStatus: byStatusRaw.map((s) => ({ status: s.status, count: s._count.id })),
       recent: recent.map((q) => ({
-        id: q.id,
-        quotationNo: q.quotationNo,
-        status: q.status,
+        id: q.id, quotationNo: q.quotationNo, status: q.status,
         grandTotal: Number(q.grandTotal),
         createdAt: q.createdAt.toISOString(),
       })),
@@ -371,8 +453,16 @@ export const managerDashboardService = {
   },
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function startOfToday(): Date {
   const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function startOfMonth(): Date {
+  const d = new Date();
+  d.setDate(1);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -382,10 +472,12 @@ function emptyDashboard() {
     filter: 'self' as DashboardFilter,
     filterUserId: undefined,
     totals: {
-      quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0,
-      totalValue: 0, pendingValue: 0,
+      quotations: 0, pending: 0, escalated: 0,
+      approved: 0, rejected: 0, totalValue: 0, pendingValue: 0,
     },
     todayActivity: { approved: 0, rejected: 0 },
+    monthActivity: { approved: 0, rejected: 0 },
+    allTimeActivity: { approved: 0, rejected: 0 },
     topOfficers: [],
     topApprovers: [],
     recentEscalated: [],
