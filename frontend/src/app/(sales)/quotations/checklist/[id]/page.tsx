@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Upload, FileText, Image as ImageIcon,
-  Send, CheckCircle2, XCircle, Loader2, AlertTriangle,
+  Send, CheckCircle2, Loader2, AlertTriangle,
   Download, Clock, History, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,12 +21,8 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { CommentThread } from '@/components/comments/comment-thread';
 import type { ApiResponse, Quotation } from '@/types/api';
 
-// ════════════════════════════════════════════════════════════════════════════
-// Types
-// ════════════════════════════════════════════════════════════════════════════
-const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN', 'APPROVER'];
 const ALLOWED_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE = 10 * 1024 * 1024;
 
 interface PoUploadHistoryEntry {
   url: string | null;
@@ -50,9 +46,6 @@ interface ChecklistQuotation extends Quotation {
   poUploadHistory?: PoUploadHistoryEntry[] | null;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Status banner config
-// ════════════════════════════════════════════════════════════════════════════
 const STATUS_BANNERS: Record<string, { bg: string; icon: React.ElementType; title: string; textColor: string }> = {
   APPROVED:    { bg: 'border-blue-300 bg-blue-50 dark:bg-blue-900/20',    icon: Upload,        title: 'รออัปโหลดใบ PO',           textColor: 'text-blue-800 dark:text-blue-200' },
   PO_PENDING:  { bg: 'border-amber-300 bg-amber-50 dark:bg-amber-900/20', icon: Clock,         title: 'PO รอการตรวจสอบจาก Manager', textColor: 'text-amber-800 dark:text-amber-200' },
@@ -60,48 +53,6 @@ const STATUS_BANNERS: Record<string, { bg: string; icon: React.ElementType; titl
   PO_REJECTED: { bg: 'border-red-300 bg-red-50 dark:bg-red-900/20',      icon: AlertTriangle, title: 'PO ถูกปฏิเสธ — กรุณาอัปโหลดใบ PO ใหม่',     textColor: 'text-red-800 dark:text-red-200' },
 };
 
-// ════════════════════════════════════════════════════════════════════════════
-// Reject dialog
-// ════════════════════════════════════════════════════════════════════════════
-function RejectDialog({ onClose, onConfirm, loading }: {
-  onClose: () => void;
-  onConfirm: (reason: string) => void;
-  loading: boolean;
-}) {
-  const [reason, setReason] = useState('');
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-background rounded-2xl border shadow-2xl w-full max-w-md p-6 animate-scale-in">
-        <h3 className="font-bold text-lg mb-1">ปฏิเสธ PO</h3>
-        <p className="text-sm text-muted-foreground mb-4">ระบุเหตุผลเพื่อให้ Officer ทราบว่าต้องแก้ไขอะไร</p>
-        <textarea
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={3}
-          autoFocus
-          placeholder="เช่น ยอดรวมไม่ตรงกับ QT, รายการสินค้าไม่ครบ..."
-          className="w-full border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <div className="flex gap-2 justify-end mt-4">
-          <Button variant="outline" onClick={onClose} disabled={loading}>ยกเลิก</Button>
-          <Button
-            variant="destructive"
-            disabled={loading || reason.trim().length < 3}
-            onClick={() => onConfirm(reason.trim())}
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            <XCircle className="h-4 w-4" />
-            ยืนยันปฏิเสธ
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Main Page
-// ════════════════════════════════════════════════════════════════════════════
 export default function ChecklistDetailPage() {
   const t = useT();
   const params = useParams();
@@ -113,16 +64,13 @@ export default function ChecklistDetailPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
-  const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userId = session?.user?.id;
-  const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const isOwner = !!(userId && q?.createdById === userId);
 
-  // ─── Load ────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -137,11 +85,9 @@ export default function ChecklistDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ─── Upload PO file ──────────────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (!ALLOWED_TYPES.includes(file.type)) {
       toast.error('รองรับเฉพาะ PDF, PNG, JPG, WebP');
       e.target.value = '';
@@ -152,23 +98,18 @@ export default function ChecklistDetailPage() {
       e.target.value = '';
       return;
     }
-
     setUploading(true);
     setUploadProgress(0);
-
     try {
       const formData = new FormData();
       formData.append('file', file);
-
       await api.post(`/quotations/${id}/po-upload`, formData, {
-        // ลบ Content-Type ให้ axios set multipart+boundary เอง
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (e) => {
           const pct = Math.round((e.loaded * 100) / (e.total ?? 1));
           setUploadProgress(pct);
         },
       });
-
       toast.success('อัปโหลด PO สำเร็จ');
       await load();
     } catch (err) {
@@ -180,7 +121,6 @@ export default function ChecklistDetailPage() {
     }
   };
 
-  // ─── Submit PO ───────────────────────────────────────────────────────────
   const handleSubmitPo = async () => {
     if (!confirm('ส่ง PO ให้ Manager ตรวจสอบ?\n\nหลังส่งแล้ว จะแก้ไขหรือเปลี่ยนไฟล์ไม่ได้จนกว่าจะถูก reject')) return;
     setActing('submit');
@@ -195,40 +135,6 @@ export default function ChecklistDetailPage() {
     }
   };
 
-  // ─── Approve PO (Manager) ────────────────────────────────────────────────
-  const handleApprovePo = async () => {
-    if (!confirm('อนุมัติ PO?\n\nระบบจะสร้าง Sale Order อัตโนมัติ')) return;
-    setActing('approve');
-    try {
-      const res = await api.post<ApiResponse<{ quotation: ChecklistQuotation; saleOrder: { id: string; saleOrderNo: string } }>>(
-        `/quotations/${id}/po-approve`
-      );
-      const soNo = res.data.data?.saleOrder?.saleOrderNo;
-      toast.success(`PO อนุมัติแล้ว — สร้าง Sale Order ${soNo}`);
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
-
-  // ─── Reject PO (Manager) ─────────────────────────────────────────────────
-  const handleRejectPo = async (reason: string) => {
-    setActing('reject');
-    try {
-      await api.post(`/quotations/${id}/po-reject`, { reason });
-      toast.success('ปฏิเสธ PO เรียบร้อย — Officer จะได้รับแจ้ง');
-      setShowRejectDialog(false);
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
-
-  // ─── Loading ─────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="space-y-4 max-w-5xl">
@@ -251,23 +157,21 @@ export default function ChecklistDetailPage() {
     );
   }
 
-  // ─── Computed states ─────────────────────────────────────────────────────
   const status = q.status as string;
   const banner = STATUS_BANNERS[status];
   const BannerIcon = banner?.icon;
 
-  const canUpload    = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status);
-  const canSubmitPo  = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status) && !!q.poFileUrl;
-  const canManagerAct = isElevated && status === 'PO_PENDING';
+  // ✅ Officer อัปโหลดได้เฉพาะ APPROVED + PO_REJECTED
+  const canUpload   = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status);
+  const canSubmitPo = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status) && !!q.poFileUrl;
 
   const isImage = q.poFileMimeType?.startsWith('image/');
   const isPdf   = q.poFileMimeType === 'application/pdf';
-
   const history = (q.poUploadHistory ?? []) as PoUploadHistoryEntry[];
 
   return (
     <div className="space-y-5 max-w-5xl">
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <Button asChild variant="ghost" size="icon" className="mt-1">
@@ -284,8 +188,6 @@ export default function ChecklistDetailPage() {
             </p>
           </div>
         </div>
-
-        {/* Sale Order link */}
         {q.saleOrder && (
           <Button asChild>
             <Link href={`/sale-orders/${q.saleOrder.id}`}>
@@ -296,7 +198,7 @@ export default function ChecklistDetailPage() {
         )}
       </div>
 
-      {/* ── Status Banner ── */}
+      {/* Status Banner */}
       {banner && (
         <Card className={cn('border-2', banner.bg)}>
           <CardContent className="pt-4 pb-4 flex gap-3 items-start">
@@ -316,25 +218,32 @@ export default function ChecklistDetailPage() {
                   อนุมัติเมื่อ {formatDate(q.poApprovedAt)}
                 </p>
               )}
+              {/* ✅ แจ้ง Officer ว่ารายการนี้อยู่ที่ Pending Sale Order แล้ว */}
+              {status === 'PO_PENDING' && (
+                <div className="mt-2 flex items-center gap-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Manager กำลังตรวจสอบอยู่ที่หน้า Pending Sale Order
+                  </p>
+                  <Link
+                    href={`/quotations/pending-sale-order/${q.id}`}
+                    className="text-xs text-primary underline hover:no-underline"
+                  >
+                    ดูหน้า Pending SO →
+                  </Link>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* TWO-COLUMN LAYOUT                                                   */}
-      {/* ════════════════════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5">
-
-        {/* ── LEFT: Full Quotation Detail ── */}
+        {/* LEFT: Quotation Detail */}
         <div className="space-y-5 min-w-0">
-
-          {/* Customer info */}
           <Card>
             <CardContent className="pt-6">
               <h2 className="font-semibold mb-4 text-base flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
-                ข้อมูลลูกค้า
+                <FileText className="h-4 w-4 text-primary" />ข้อมูลลูกค้า
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-sm">
                 <InfoRow label={t('customer.company')} value={q.customerCompany} bold />
@@ -352,7 +261,6 @@ export default function ChecklistDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Items table */}
           <Card>
             <CardContent className="pt-6">
               <h2 className="font-semibold mb-4 text-base">รายการสินค้า ({q.items?.length ?? 0} รายการ)</h2>
@@ -375,18 +283,14 @@ export default function ChecklistDetailPage() {
                         <td className="py-3 text-xs text-muted-foreground pr-3 font-mono">{it.productSku || '-'}</td>
                         <td className="py-3">
                           <div className="font-medium">{it.productName}</div>
-                          {it.productDescription && (
-                            <div className="text-xs text-muted-foreground mt-0.5">{it.productDescription}</div>
-                          )}
+                          {it.productDescription && <div className="text-xs text-muted-foreground mt-0.5">{it.productDescription}</div>}
                         </td>
                         <td className="py-3 text-right">{formatNumber(it.quantity)}</td>
                         <td className="py-3 text-center text-muted-foreground">{it.unit}</td>
                         <td className="py-3 text-right">{formatNumber(it.unitPrice)}</td>
                         <td className="py-3 text-right text-muted-foreground">
                           {Number(it.discount) > 0
-                            ? it.discountType === 'PERCENTAGE'
-                              ? `${formatNumber(it.discount)}%`
-                              : formatNumber(it.discount)
+                            ? it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)
                             : '-'}
                         </td>
                         <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
@@ -398,7 +302,6 @@ export default function ChecklistDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Summary */}
           <Card>
             <CardContent className="pt-6">
               <h2 className="font-semibold mb-4 text-base">สรุปยอด</h2>
@@ -415,25 +318,18 @@ export default function ChecklistDetailPage() {
                     </div>
                   )}
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      {t('quotation.vat')} ({formatNumber(q.vatRate)}%)
-                    </span>
-                    <span className="font-medium">
-                      {q.vatEnabled ? formatNumber(q.vatAmount) : 'ไม่มี VAT'}
-                    </span>
+                    <span className="text-muted-foreground">{t('quotation.vat')} ({formatNumber(q.vatRate)}%)</span>
+                    <span className="font-medium">{q.vatEnabled ? formatNumber(q.vatAmount) : 'ไม่มี VAT'}</span>
                   </div>
                   <div className="border-t pt-3 flex justify-between items-baseline">
                     <span className="font-bold text-base">{t('quotation.grandTotal')}</span>
-                    <span className="text-2xl font-bold text-primary">
-                      {formatMoney(q.grandTotal, q.currency)}
-                    </span>
+                    <span className="text-2xl font-bold text-primary">{formatMoney(q.grandTotal, q.currency)}</span>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Conditions */}
           {(q.paymentTerms || q.conditions) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {q.paymentTerms && (
@@ -452,21 +348,16 @@ export default function ChecklistDetailPage() {
           )}
         </div>
 
-        {/* ── RIGHT: PO Upload + Actions ── */}
+        {/* RIGHT: PO Upload (Officer only) */}
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-
-          {/* PO Upload Section */}
           <Card>
             <CardContent className="pt-5">
               <h2 className="font-semibold mb-4 text-sm flex items-center gap-2">
-                <Upload className="h-4 w-4 text-primary" />
-                ใบ Purchase Order (PO)
+                <Upload className="h-4 w-4 text-primary" />ใบ Purchase Order (PO)
               </h2>
 
-              {/* ── มีไฟล์อยู่แล้ว ── */}
               {q.poFileUrl ? (
                 <div className="space-y-3">
-                  {/* File info */}
                   <div className="border rounded-lg p-3 flex items-center gap-3 bg-muted/20">
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                       {isImage ? <ImageIcon className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-red-500" />}
@@ -485,36 +376,23 @@ export default function ChecklistDetailPage() {
                     </Button>
                   </div>
 
-                  {/* Preview */}
                   {isImage && (
                     <div className="rounded-lg overflow-hidden border">
                       <img src={q.poFileUrl} alt="PO" className="w-full max-h-64 object-contain bg-muted/20" />
                     </div>
                   )}
-                  {isPdf && (
-                    <iframe src={q.poFileUrl} className="w-full h-56 rounded-lg border" title="PO PDF" />
-                  )}
+                  {isPdf && <iframe src={q.poFileUrl} className="w-full h-56 rounded-lg border" title="PO PDF" />}
 
-                  {/* Officer: change file + submit */}
+                  {/* ✅ Officer: upload + submit — เฉพาะ APPROVED + PO_REJECTED */}
                   {canUpload && (
                     <div className="space-y-2 pt-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploading}
-                      >
+                      <Button variant="outline" size="sm" className="w-full"
+                        onClick={() => fileInputRef.current?.click()} disabled={uploading}>
                         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                         เปลี่ยนไฟล์ PO
                       </Button>
-
                       {canSubmitPo && (
-                        <Button
-                          className="w-full shine"
-                          onClick={handleSubmitPo}
-                          disabled={acting !== null}
-                        >
+                        <Button className="w-full shine" onClick={handleSubmitPo} disabled={acting !== null}>
                           {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                           ส่งให้ Manager ตรวจสอบ
                         </Button>
@@ -522,33 +400,7 @@ export default function ChecklistDetailPage() {
                     </div>
                   )}
 
-                  {/* Manager: Approve / Reject */}
-                  {canManagerAct && (
-                    <div className="space-y-2 pt-2 border-t mt-2">
-                      <p className="text-xs text-muted-foreground text-center">
-                        ตรวจสอบ PO ด้านบนแล้วกด อนุมัติ หรือ ปฏิเสธ
-                      </p>
-                      <Button
-                        className="w-full bg-emerald-600 hover:bg-emerald-700"
-                        onClick={handleApprovePo}
-                        disabled={acting !== null}
-                      >
-                        {acting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        อนุมัติ PO — สร้าง Sale Order
-                      </Button>
-                      <Button
-                        className="w-full"
-                        variant="destructive"
-                        onClick={() => setShowRejectDialog(true)}
-                        disabled={acting !== null}
-                      >
-                        <XCircle className="h-4 w-4" />
-                        ปฏิเสธ PO
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* ข้อความเมื่อรออยู่ (Officer) */}
+                  {/* ✅ ข้อความเมื่อรออยู่ (Officer) — ไม่มีปุ่ม Manager แล้ว */}
                   {status === 'PO_PENDING' && isOwner && (
                     <p className="text-xs text-center text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
                       รอ Manager ตรวจสอบ — แก้ไขไม่ได้จนกว่าจะถูก reject
@@ -556,7 +408,6 @@ export default function ChecklistDetailPage() {
                   )}
                 </div>
               ) : (
-                /* ── ยังไม่มีไฟล์ ── */
                 canUpload ? (
                   <div
                     onClick={() => !uploading && fileInputRef.current?.click()}
@@ -570,72 +421,47 @@ export default function ChecklistDetailPage() {
                         <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                         <p className="text-sm font-medium">กำลังอัปโหลด... {uploadProgress}%</p>
                         <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all duration-300"
-                            style={{ width: `${uploadProgress}%` }}
-                          />
+                          <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
                         </div>
                       </div>
                     ) : (
                       <>
                         <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
                         <p className="font-medium text-sm">คลิกเพื่อเลือกไฟล์ PO</p>
-                        <p className="text-xs text-muted-foreground mt-1.5">
-                          รองรับ PDF, PNG, JPG, WebP · ขนาดสูงสุด 10 MB
-                        </p>
+                        <p className="text-xs text-muted-foreground mt-1.5">รองรับ PDF, PNG, JPG, WebP · ขนาดสูงสุด 10 MB</p>
                       </>
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-6 text-sm text-muted-foreground">
-                    ยังไม่มีไฟล์ PO
-                  </div>
+                  <div className="text-center py-6 text-sm text-muted-foreground">ยังไม่มีไฟล์ PO</div>
                 )
               )}
 
-              {/* Hidden input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.webp"
-                onChange={handleFileChange}
-                className="hidden"
-              />
+              <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={handleFileChange} className="hidden" />
             </CardContent>
           </Card>
 
-          {/* Upload History */}
           {history.length > 0 && (
             <Card>
               <CardContent className="pt-5">
-                <button
-                  onClick={() => setShowHistory(!showHistory)}
-                  className="w-full flex items-center justify-between text-sm font-semibold"
-                >
+                <button onClick={() => setShowHistory(!showHistory)}
+                  className="w-full flex items-center justify-between text-sm font-semibold">
                   <span className="flex items-center gap-2">
                     <History className="h-4 w-4 text-muted-foreground" />
                     ประวัติการอัปโหลด ({history.length})
                   </span>
                   {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
-
                 {showHistory && (
                   <div className="mt-3 space-y-2">
                     {history.map((h, i) => (
                       <div key={i} className="text-xs border rounded-lg p-3 bg-muted/20">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium truncate">{h.fileName || 'ไฟล์'}</span>
-                          {h.url && (
-                            <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">
-                              ดู
-                            </a>
-                          )}
+                          {h.url && <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline shrink-0">ดู</a>}
                         </div>
-                        {h.rejectedAt && (
-                          <div className="mt-1 text-red-600 dark:text-red-400">
-                            ถูกปฏิเสธ: {h.reason}
-                          </div>
-                        )}
+                        {h.rejectedAt && <div className="mt-1 text-red-600 dark:text-red-400">ถูกปฏิเสธ: {h.reason}</div>}
                         <div className="text-muted-foreground mt-0.5">{formatDate(h.uploadedAt)}</div>
                       </div>
                     ))}
@@ -645,26 +471,15 @@ export default function ChecklistDetailPage() {
             </Card>
           )}
 
-          {/* Comment Thread (PO_PENDING only) */}
           {status === 'PO_PENDING' && (
             <CommentThread quotationId={id} />
           )}
         </div>
       </div>
-
-      {/* Reject Dialog */}
-      {showRejectDialog && (
-        <RejectDialog
-          onClose={() => setShowRejectDialog(false)}
-          onConfirm={handleRejectPo}
-          loading={acting === 'reject'}
-        />
-      )}
     </div>
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
 function InfoRow({ label, value, bold, span2 }: {
   label: string; value: string; bold?: boolean; span2?: boolean;
 }) {

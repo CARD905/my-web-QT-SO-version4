@@ -64,4 +64,14 @@ export const poController = {
     });
     return success(res, data);
   },
+  async cancel(req: Request, res: Response) {
+  const user = requireUser(req);
+  const data = await poService.cancelPo(
+    req.params.id,
+    user,
+    req.body.reason,
+    req,
+  );
+  return success(res, data);
+},
 };

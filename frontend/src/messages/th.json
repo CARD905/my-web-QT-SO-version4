@@ -56,7 +56,8 @@
     "teamOverview": "ภาพรวมทีม",
     "userDrillDown": "ดูข้อมูลรายบุคคล",
     "quotationList": "รายการใบเสนอราคา",
-    "quotationChecklist": "Checklist (รอ PO)"
+    "quotationChecklist": "Checklist (รอ PO)",
+    "pendingSaleOrder": "Pending Sale Order"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

@@ -172,6 +172,14 @@ router.post(
   ),
   asyncHandler(poController.approve),
 );
+router.post(
+  '/:id/po-cancel',
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'ALL'],
+  ),
+  asyncHandler(poController.cancel),
+);
 
 // POST /quotations/:id/po-reject (Manager+)
 router.post(
@@ -182,6 +190,7 @@ router.post(
   ),
   asyncHandler(poController.reject),
 );
+
 
 // ============================================================
 // COMMENTS — mount ที่ /:quotationId/comments
