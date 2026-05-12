@@ -385,6 +385,68 @@ export const poService = {
 
     return updated;
   },
+  // ═══════════════════════════════════════════════════════════════════════
+// 6) CANCEL PO (Manager+ — PO_PENDING → CANCELLED)
+//    ใช้กรณีลูกค้าต้องการยกเลิก ขณะรอ Manager ตรวจสอบ PO
+// ═══════════════════════════════════════════════════════════════════════
+async cancelPo(
+  quotationId: string,
+  user: CurrentUser,
+  reason: string,
+  req?: Request,
+) {
+  if (!isElevated(user.roleCode)) {
+    throw new AppError(403, 'FORBIDDEN', 'Only Manager+ can cancel a pending PO');
+  }
+
+  if (!reason || reason.trim().length < 2) {
+    throw new AppError(400, 'BAD_REQUEST', 'Cancellation reason is required');
+  }
+
+  const q = await prisma.quotation.findUnique({
+    where: { id: quotationId },
+    select: {
+      id: true, quotationNo: true, status: true,
+      createdById: true, deletedAt: true,
+    },
+  });
+  if (!q || q.deletedAt) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
+
+  if (q.status !== 'PO_PENDING') {
+    throw new AppError(400, 'BAD_REQUEST', `Cannot cancel when status is ${q.status}`);
+  }
+
+  const updated = await prisma.quotation.update({
+    where: { id: quotationId },
+    data: {
+      status: 'CANCELLED',
+      cancelledAt: new Date(),
+      cancelledReason: reason.trim(),
+    },
+  });
+
+  // Notify Officer
+  await prisma.notification.create({
+    data: {
+      userId: q.createdById,
+      type: 'QUOTATION_CANCELLED' as any,
+      title: 'ใบเสนอราคาถูกยกเลิก',
+      message: `${q.quotationNo} ถูกยกเลิก: ${reason}`,
+      link: `/quotations/${quotationId}`,
+    },
+  });
+
+  await logActivity(prisma, {
+    userId: user.id,
+    action: 'quotation.cancelPo',
+    entityType: 'Quotation',
+    entityId: q.id,
+    description: `Cancelled PO of ${q.quotationNo}: ${reason}`,
+    req,
+  });
+
+  return updated;
+},
 
   // ═══════════════════════════════════════════════════════════════════════
   // 5) GET CHECKLIST (list of approved + PO_* quotations)

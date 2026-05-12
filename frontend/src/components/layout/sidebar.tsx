@@ -6,16 +6,13 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
-  CheckSquare,
+  CheckSquare, Clock,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { usePermissions } from '@/hooks/use-permissions';
 
-// ════════════════════════════════════════════════════════════════════════════
-// NAV STRUCTURE
-// ════════════════════════════════════════════════════════════════════════════
 interface NavItem {
   href?: string;
   labelKey: string;
@@ -48,6 +45,12 @@ const NAV_ITEMS: NavItem[] = [
         icon: CheckSquare,
         requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
       },
+      {
+        href: '/quotations/pending-sale-order',
+        labelKey: 'nav.pendingSaleOrder',
+        icon: Clock,
+        requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
+      },
     ],
   },
   {
@@ -77,9 +80,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/permissions', labelKey: 'nav.permissions', icon: Shield },
 ];
 
-// ════════════════════════════════════════════════════════════════════════════
-// ROLE THEMES
-// ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
   brandLabel: string;
   tagline: string;
@@ -96,9 +96,6 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
   CEO:      { brandLabel: 'WISDOM', tagline: 'CEO',      accentColor: '#d4a574', gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'] },
 };
 
-// ════════════════════════════════════════════════════════════════════════════
-// AURORA RING LOGO
-// ════════════════════════════════════════════════════════════════════════════
 function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size?: number; uniqueId: string }) {
   const gradId = `aurora-${uniqueId}`;
   const [s1, s2, s3, s4] = theme.gradientStops;
@@ -130,9 +127,6 @@ function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// SHARED PROPS TYPE
-// ════════════════════════════════════════════════════════════════════════════
 interface NavItemViewProps {
   item: NavItem;
   pathname: string;
@@ -143,9 +137,6 @@ interface NavItemViewProps {
   level?: number;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// NAV GROUP ITEM — แยก component เพื่อให้ useState/useEffect อยู่ top-level
-// ════════════════════════════════════════════════════════════════════════════
 function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
   const Icon = item.icon;
   const children = item.children!;
@@ -157,14 +148,12 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
       : false,
   );
 
-  // Hooks อยู่ top-level เสมอ ไม่มี condition ครอบ
   const [open, setOpen] = useState(anyChildActive);
 
   useEffect(() => {
     if (anyChildActive) setOpen(true);
   }, [anyChildActive]);
 
-  // Collapsed → แสดง icon ลิงก์ไป child ตัวแรก
   if (collapsed) {
     const firstChild = children[0];
     if (!firstChild?.href) return null;
@@ -193,7 +182,6 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
 
   return (
     <div>
-      {/* Group header */}
       <button
         onClick={() => setOpen((v) => !v)}
         className={cn(
@@ -222,7 +210,6 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
         />
       </button>
 
-      {/* Children — animated collapse */}
       <div
         className={cn(
           'overflow-hidden transition-all duration-300 ease-out',
@@ -248,9 +235,6 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// NAV ITEM VIEW — leaf หรือ delegate ไป NavGroupItem
-// ════════════════════════════════════════════════════════════════════════════
 function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
   const Icon = item.icon;
 
@@ -259,7 +243,6 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
       (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
     : false;
 
-  // มี children → delegate ไป NavGroupItem (hooks อยู่ใน component นั้น)
   if (item.children && item.children.length > 0) {
     return (
       <NavGroupItem
@@ -314,9 +297,6 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// MAIN SIDEBAR
-// ════════════════════════════════════════════════════════════════════════════
 interface SidebarProps {
   role?: string;
   mobileOpen?: boolean;
@@ -437,7 +417,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
   return (
     <>
-      {/* DESKTOP sidebar */}
       <aside
         className={cn(
           'hidden lg:flex sticky top-0 h-screen flex-col border-r border-border/40 backdrop-blur-2xl transition-all duration-300 z-20',
@@ -453,7 +432,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         {navContent}
       </aside>
 
-      {/* MOBILE drawer */}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r border-border/40 bg-card/95 backdrop-blur-2xl transition-transform duration-300 lg:hidden shadow-2xl',

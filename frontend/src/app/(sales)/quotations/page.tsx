@@ -43,20 +43,24 @@ export default function QuotationsPage() {
   const canApproveAll = can('quotation', 'approve', 'ALL');
 
   const fetchList = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (statusFilter) params.set('status', statusFilter);
-      params.set('limit', '50');
-      const res = await api.get<ApiResponse<Quotation[]>>(`/quotations?${params}`);
-      setList(res.data.data ?? []);
-    } catch (err) {
-      console.error(getApiErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+  setLoading(true);
+  try {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (statusFilter) params.set('status', statusFilter);
+    params.set('limit', '50');
+    const res = await api.get<ApiResponse<Quotation[]>>(`/quotations?${params}`);
+
+    const PO_STATUSES = ['PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'];
+    const data = res.data.data ?? [];
+    setList(statusFilter ? data : data.filter((q) => !PO_STATUSES.includes(q.status)));
+
+  } catch (err) {
+    console.error(getApiErrorMessage(err));
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
     let cancelled = false;

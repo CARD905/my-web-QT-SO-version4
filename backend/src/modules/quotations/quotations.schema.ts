@@ -57,9 +57,24 @@ export const addCommentSchema = z.object({
 });
 
 export const listQuotationsSchema = paginationSchema.extend({
-  status: z
-    .enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED'])
-    .optional(),
+  // ใหม่ ✅
+status: z
+  .enum([
+    'DRAFT',
+    'PENDING',
+    'PENDING_BACKUP',
+    'PENDING_ESCALATED',
+    'APPROVED',
+    'REJECTED',
+    'CANCELLED',
+    'EXPIRED',
+    'SENT',
+    'SIGNED',
+    'PO_PENDING',
+    'PO_APPROVED',
+    'PO_REJECTED',
+  ])
+  .optional(),
   customerId: z.string().uuid().optional(),
   createdById: z.string().uuid().optional(),
   expiringSoon: z.coerce.boolean().optional(), // expires within 7 days
