@@ -122,18 +122,17 @@ export default function ChecklistDetailPage() {
   };
 
   const handleSubmitPo = async () => {
-    if (!confirm('ส่ง PO ให้ Manager ตรวจสอบ?\n\nหลังส่งแล้ว จะแก้ไขหรือเปลี่ยนไฟล์ไม่ได้จนกว่าจะถูก reject')) return;
-    setActing('submit');
-    try {
-      await api.post(`/quotations/${id}/po-submit`);
-      toast.success('ส่ง PO ให้ Manager ตรวจสอบเรียบร้อย');
-      await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
-  };
+  if (!confirm('ส่ง PO ให้ Manager ตรวจสอบ?\n\nหลังส่งแล้ว จะแก้ไขหรือเปลี่ยนไฟล์ไม่ได้จนกว่าจะถูก reject')) return;
+  setActing('submit');
+  try {
+    await api.post(`/quotations/${id}/po-submit`);
+    toast.success('ส่ง PO ให้ Manager ตรวจสอบเรียบร้อย');
+    setTimeout(() => window.location.reload(), 1000);
+  } catch (err) {
+    toast.error(getApiErrorMessage(err));
+    setActing(null);
+  }
+};
 
   if (loading) {
     return (
