@@ -1,325 +1,331 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import {
-  MessageSquare,
-  Lock,
-  Send,
-  Loader2,
-  Trash2,
-  AlertCircle,
-} from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { MessageCircle, Send, X, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { usePermissions } from '@/hooks/use-permissions';
-import { formatRelativeTime } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import type { ApiResponse } from '@/types/api';
-
-const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN', 'APPROVER'];
-
-interface Comment {
-  id: string;
-  message: string;
-  isInternal: boolean;
-  createdAt: string;
-  user: {
-    id: string;
-    name: string;
-    role: { code: string; nameTh: string };
-  };
-}
+import { formatDate } from '@/lib/utils';
+import type { ApiResponse, QuotationComment } from '@/types/api';
 
 interface CommentThreadProps {
   quotationId: string;
 }
 
 export function CommentThread({ quotationId }: CommentThreadProps) {
-  const { data: session } = useSession();
-  const { role } = usePermissions();
-
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [posting, setPosting] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // ─── State ───────────────────────────────────────────────────────────────
+  const [open, setOpen] = useState(false);
+  const [comments, setComments] = useState<QuotationComment[]>([]);
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [isInternal, setIsInternal] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [unread, setUnread] = useState(0);
 
-  const userId = session?.user?.id;
-  const isElevated = role?.code && ELEVATED_ROLES.includes(role.code);
+  // ─── Drag state ──────────────────────────────────────────────────────────
+  const [pos, setPos] = useState({ x: 24, y: 24 }); // bottom-right offset
+  const dragging = useRef(false);
+  const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
 
-  // ─── Fetch comments ──────────────────────────────────────────────────────
-  const fetchComments = useCallback(async () => {
-    setLoading(true);
+  // ─── Refs ─────────────────────────────────────────────────────────────────
+  const popupRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevCountRef = useRef(0);
+
+  // ─── Fetch comments ───────────────────────────────────────────────────────
+  const fetchComments = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const res = await api.get<ApiResponse<Comment[]>>(
+      const res = await api.get<ApiResponse<QuotationComment[]>>(
         `/quotations/${quotationId}/comments`,
       );
-      setComments(res.data.data ?? []);
-    } catch (err) {
-      console.error(getApiErrorMessage(err));
+      const data = res.data.data ?? [];
+      setComments(data);
+      if (!open && data.length > prevCountRef.current) {
+        setUnread((u) => u + (data.length - prevCountRef.current));
+      }
+      prevCountRef.current = data.length;
+    } catch {
+      // silent fail
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [quotationId]);
+  }, [quotationId, open]);
 
   useEffect(() => {
     fetchComments();
+    const iv = setInterval(() => fetchComments(true), 15000);
+    return () => clearInterval(iv);
   }, [fetchComments]);
 
-  // ─── Post new comment ────────────────────────────────────────────────────
-  const handlePost = async () => {
-    const text = message.trim();
-    if (!text) {
-      toast.error('กรุณาพิมพ์ข้อความ');
-      return;
+  // scroll to bottom when open or new messages
+  useEffect(() => {
+    if (open) {
+      setUnread(0);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
     }
+  }, [open, comments]);
 
-    setPosting(true);
+  // ─── Click outside to close ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: MouseEvent) => {
+      if (
+        popupRef.current && !popupRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  // ─── Drag handlers ────────────────────────────────────────────────────────
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragging.current = false;
+    dragStart.current = { mx: e.clientX, my: e.clientY, bx: pos.x, by: pos.y };
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = Math.abs(ev.clientX - dragStart.current.mx);
+      const dy = Math.abs(ev.clientY - dragStart.current.my);
+      if (dx > 4 || dy > 4) dragging.current = true;
+
+      const newX = Math.max(8, Math.min(
+        window.innerWidth - 64,
+        dragStart.current.bx + (ev.clientX - dragStart.current.mx),
+      ));
+      const newY = Math.max(8, Math.min(
+        window.innerHeight - 64,
+        dragStart.current.by + (ev.clientY - dragStart.current.my),
+      ));
+      setPos({ x: newX, y: newY });
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const handleBtnClick = () => {
+    if (!dragging.current) setOpen((v) => !v);
+  };
+
+  // ─── Send message ─────────────────────────────────────────────────────────
+  const handleSend = async () => {
+    const msg = message.trim();
+    if (!msg) return;
+    setSending(true);
     try {
-      await api.post(`/quotations/${quotationId}/comments`, {
-        message: text,
-        isInternal: isElevated ? isInternal : false,
-      });
+      await api.post(`/quotations/${quotationId}/comments`, { message: msg, isInternal: false });
       setMessage('');
-      setIsInternal(false);
-      await fetchComments();
+      await fetchComments(true);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
-      setPosting(false);
+      setSending(false);
+      textareaRef.current?.focus();
     }
   };
 
-  // ─── Delete comment ──────────────────────────────────────────────────────
-  const handleDelete = async (commentId: string) => {
-    if (!confirm('ลบความเห็นนี้ใช่ไหม?')) return;
-    setDeletingId(commentId);
-    try {
-      await api.delete(`/comments/${commentId}`);
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  // ─── Submit on Cmd/Ctrl+Enter ───────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handlePost();
+      handleSend();
     }
+  };
+
+  // ─── Popup position ───────────────────────────────────────────────────────
+  // popup opens upward-left from the button
+  const popupStyle: React.CSSProperties = {
+    position: 'fixed',
+    left: pos.x + 56 + 8 > window.innerWidth / 2
+      ? pos.x - 320 - 8
+      : pos.x + 56 + 8,
+    top: pos.y + 420 > window.innerHeight
+      ? pos.y - 420 + 56
+      : pos.y,
+    width: 320,
+    zIndex: 9999,
+  };
+
+  const btnStyle: React.CSSProperties = {
+    position: 'fixed',
+    left: pos.x,
+    top: pos.y,
+    zIndex: 10000,
+    cursor: 'grab',
+    userSelect: 'none',
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border/60 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between bg-gradient-to-r from-accent/30 to-transparent">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-sm">การสนทนา</span>
-          {!loading && (
-            <Badge variant="outline" className="text-xs">
-              {comments.length}
-            </Badge>
-          )}
-        </div>
-        {isElevated && (
-          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <Lock className="h-2.5 w-2.5" />
-            คุณเห็น Internal comments
+    <>
+      {/* ── Floating Button ── */}
+      <button
+        ref={btnRef}
+        style={btnStyle}
+        onMouseDown={onMouseDown}
+        onClick={handleBtnClick}
+        className={`
+          relative w-14 h-14 rounded-full shadow-2xl
+          flex items-center justify-center
+          transition-all duration-200 active:scale-95
+          ${open
+            ? 'bg-primary text-primary-foreground shadow-primary/40'
+            : 'bg-background border-2 border-primary/30 text-primary hover:border-primary hover:shadow-primary/20'
+          }
+        `}
+        title="แชทงาน"
+      >
+        {open
+          ? <X className="h-6 w-6" />
+          : <MessageCircle className="h-6 w-6" />
+        }
+
+        {/* unread badge */}
+        {!open && unread > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center animate-bounce">
+            {unread > 9 ? '9+' : unread}
           </span>
         )}
-      </div>
 
-      {/* Comments list */}
-      <div className="max-h-[420px] overflow-y-auto px-5 py-4 space-y-3">
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-3/4" />
-          </div>
-        ) : comments.length === 0 ? (
-          <div className="py-8 flex flex-col items-center text-center gap-2 text-muted-foreground">
-            <MessageSquare className="h-8 w-8 opacity-30" />
-            <p className="text-sm">ยังไม่มีความเห็น เป็นคนแรกได้!</p>
-          </div>
-        ) : (
-          comments.map((c) => {
-            const isMine = c.user.id === userId;
-            const canDelete = isMine || role?.code === 'CEO' || role?.code === 'ADMIN';
-
-            return (
-              <CommentItem
-                key={c.id}
-                comment={c}
-                isMine={isMine}
-                canDelete={canDelete}
-                deleting={deletingId === c.id}
-                onDelete={() => handleDelete(c.id)}
-              />
-            );
-          })
+        {/* pulse ring เมื่อมีข้อความใหม่ */}
+        {!open && unread > 0 && (
+          <span className="absolute inset-0 rounded-full border-2 border-destructive animate-ping opacity-40" />
         )}
-      </div>
+      </button>
 
-      {/* Compose */}
-      <div className="border-t border-border/50 bg-muted/20 p-4">
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="พิมพ์ข้อความ... (Ctrl+Enter ส่ง)"
-          rows={3}
-          disabled={posting}
-          className="w-full bg-background border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-        />
-
-        <div className="flex items-center justify-between mt-2 gap-2 flex-wrap">
-          {/* Internal toggle — Manager+ only */}
-          {isElevated ? (
-            <label className="flex items-center gap-2 cursor-pointer text-sm select-none">
-              <input
-                type="checkbox"
-                checked={isInternal}
-                onChange={(e) => setIsInternal(e.target.checked)}
-                disabled={posting}
-                className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-              />
-              <span className={cn(
-                'flex items-center gap-1 transition-colors',
-                isInternal ? 'text-amber-600 font-medium' : 'text-muted-foreground'
-              )}>
-                <Lock className="h-3 w-3" />
-                Internal — Officer มองไม่เห็น
-              </span>
-            </label>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              ความเห็นของคุณจะแสดงให้ทีมงานทุกคนเห็น
-            </span>
-          )}
-
-          <Button
-            size="sm"
-            onClick={handlePost}
-            disabled={posting || !message.trim()}
-          >
-            {posting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-            ส่ง
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// COMMENT ITEM
-// ════════════════════════════════════════════════════════════════════════════
-function CommentItem({
-  comment,
-  isMine,
-  canDelete,
-  deleting,
-  onDelete,
-}: {
-  comment: Comment;
-  isMine: boolean;
-  canDelete: boolean;
-  deleting: boolean;
-  onDelete: () => void;
-}) {
-  const { isInternal, user, message, createdAt } = comment;
-
-  // Avatar initial
-  const initial = user.name?.charAt(0)?.toUpperCase() ?? '?';
-
-  // Avatar color based on role
-  const avatarBg = (() => {
-    switch (user.role.code) {
-      case 'CEO': return 'bg-amber-500';
-      case 'ADMIN': return 'bg-rose-500';
-      case 'MANAGER': return 'bg-orange-500';
-      case 'APPROVER': return 'bg-purple-500';
-      default: return 'bg-blue-500';
-    }
-  })();
-
-  return (
-    <div className={cn('flex gap-3 group', isMine && 'flex-row-reverse')}>
-      {/* Avatar */}
-      <div
-        className={cn(
-          'h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0',
-          avatarBg,
-        )}
-        title={`${user.name} (${user.role.nameTh})`}
-      >
-        {initial}
-      </div>
-
-      {/* Bubble */}
-      <div className={cn('flex-1 min-w-0', isMine && 'text-right')}>
-        <div className="flex items-center gap-2 text-xs mb-1 flex-wrap">
-          <span className="font-semibold">{user.name}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-muted-foreground">{user.role.nameTh}</span>
-          <span className="text-muted-foreground">·</span>
-          <span className="text-muted-foreground">{formatRelativeTime(createdAt)}</span>
-
-          {isInternal && (
-            <Badge
-              variant="outline"
-              className="text-[9px] h-4 px-1.5 bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400"
-            >
-              <Lock className="h-2 w-2 mr-0.5" />
-              INTERNAL
-            </Badge>
-          )}
-        </div>
-
+      {/* ── Popup Chat ── */}
+      {open && (
         <div
-          className={cn(
-            'inline-block max-w-full px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words text-left',
-            isInternal
-              ? 'bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/40'
-              : isMine
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted',
-          )}
+          ref={popupRef}
+          style={popupStyle}
+          className="bg-background border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
-          {message}
-        </div>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-primary/5">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-primary" />
+              <span className="font-semibold text-sm">แชทงาน</span>
+              {comments.length > 0 && (
+                <span className="text-xs text-muted-foreground">({comments.length})</span>
+              )}
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="h-6 w-6 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
 
-        {canDelete && (
-          <button
-            onClick={onDelete}
-            disabled={deleting}
-            className={cn(
-              'opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity ml-2 text-xs text-muted-foreground hover:text-destructive disabled:opacity-30',
-              isMine && 'mr-2 ml-0',
-            )}
-            title="ลบความเห็น"
-          >
-            {deleting ? (
-              <Loader2 className="h-3 w-3 animate-spin inline" />
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[240px] max-h-[320px]">
+            {loading ? (
+              <div className="flex items-center justify-center h-full py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full py-8 gap-2">
+                <MessageCircle className="h-8 w-8 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground">ยังไม่มีข้อความ</p>
+                <p className="text-xs text-muted-foreground/60">เริ่มการสนทนาได้เลย</p>
+              </div>
             ) : (
-              <Trash2 className="h-3 w-3 inline" />
+              comments.map((c, i) => {
+                const isMe = false; // TODO: compare c.user.id with session userId ถ้าต้องการ
+                return (
+                  <div key={c.id || i} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
+                    {/* Avatar */}
+                    <div className={`
+                      w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold
+                      ${isMe
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground border border-border'
+                      }
+                    `}>
+                      {c.user.name.slice(0, 1).toUpperCase()}
+                    </div>
+
+                    <div className={`flex flex-col gap-0.5 max-w-[72%] ${isMe ? 'items-end' : ''}`}>
+                      <div className={`flex items-baseline gap-1.5 ${isMe ? 'flex-row-reverse' : ''}`}>
+                        <span className="text-[10px] font-semibold text-foreground leading-none">
+                          {c.user.name}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground leading-none">
+                          {c.user.role?.nameTh || c.user.role?.code || ''}
+                        </span>
+                      </div>
+                      <div className={`
+                        px-3 py-2 rounded-2xl text-xs leading-relaxed
+                        ${isMe
+                          ? 'bg-primary text-primary-foreground rounded-tr-sm'
+                          : 'bg-muted text-foreground rounded-tl-sm'
+                        }
+                      `}>
+                        {c.message}
+                      </div>
+                      <span className="text-[9px] text-muted-foreground px-1">
+                        {formatDate(c.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
             )}
-          </button>
-        )}
-      </div>
-    </div>
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="border-t p-3">
+            <div className="flex gap-2 items-end">
+              <textarea
+                ref={textareaRef}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="พิมพ์ข้อความ... (Enter ส่ง)"
+                rows={1}
+                className="
+                  flex-1 resize-none rounded-xl border border-input bg-muted/40
+                  px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring
+                  placeholder:text-muted-foreground/60
+                  max-h-24 overflow-y-auto
+                "
+                style={{ lineHeight: '1.5' }}
+                onInput={(e) => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = Math.min(el.scrollHeight, 96) + 'px';
+                }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={sending || !message.trim()}
+                className="
+                  w-9 h-9 rounded-xl bg-primary text-primary-foreground
+                  flex items-center justify-center shrink-0
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  hover:bg-primary/90 active:scale-95 transition-all
+                "
+              >
+                {sending
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <Send className="h-4 w-4" />
+                }
+              </button>
+            </div>
+            <p className="text-[9px] text-muted-foreground/50 mt-1.5 text-center">
+              Enter ส่ง · Shift+Enter ขึ้นบรรทัดใหม่
+            </p>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

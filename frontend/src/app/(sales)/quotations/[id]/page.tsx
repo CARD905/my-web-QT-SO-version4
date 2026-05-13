@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Send, X, Check, Loader2, FileText,
-  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink,
+  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -19,12 +19,43 @@ import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { CommentThread } from '@/components/comments/comment-thread';
-import type { ApiResponse, Quotation } from '@/types/api';
+import type { ApiResponse, CompanySettings, Quotation } from '@/types/api';
 
 const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
-
-// ─── Statuses ที่เปิดให้ comment ─────────────────────────────────────────────
 const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING'];
+
+// สถานะที่สามารถ Save PDF ได้ (หลัง approved แล้ว)
+const PDF_ALLOWED_STATUSES = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED', 'SENT', 'SIGNED'];
+
+// ════════════════════════════════════════════════════════════════════════════
+// Thai baht text
+// ════════════════════════════════════════════════════════════════════════════
+function toThaiBahtText(num: number): string {
+  const txtNum = ['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
+  const txtDigit = ['','สิบ','ร้อย','พัน','หมื่น','แสน','ล้าน'];
+  function readNum(s: string): string {
+    let r = ''; const l = s.length;
+    for (let i = 0; i < l; i++) {
+      const d = parseInt(s[i], 10); if (d === 0) continue;
+      const p = l - i - 1;
+      if (p === 0 && d === 1 && l > 1) r += 'เอ็ด';
+      else if (p === 1 && d === 2) r += 'ยี่สิบ';
+      else if (p === 1 && d === 1) r += 'สิบ';
+      else r += txtNum[d] + txtDigit[p];
+    }
+    return r;
+  }
+  const fixed = Math.round(num * 100) / 100;
+  const [bahtStr, satStr = '0'] = fixed.toFixed(2).split('.');
+  let bahtText = parseInt(bahtStr) === 0 ? 'ศูนย์บาท' : '';
+  if (parseInt(bahtStr) > 0) {
+    let s = bahtStr;
+    while (s.length > 6) { bahtText += readNum(s.slice(0, s.length - 6)) + 'ล้าน'; s = s.slice(s.length - 6); }
+    bahtText += readNum(s) + 'บาท';
+  }
+  bahtText += parseInt(satStr) === 0 ? 'ถ้วน' : readNum(satStr.padEnd(2,'0').slice(0,2)) + 'สตางค์';
+  return bahtText;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Confirm Popover
@@ -33,14 +64,9 @@ function ConfirmPopover({
   title, description, confirmLabel, confirmVariant = 'default',
   requireComment = false, onClose, onConfirm, loading,
 }: {
-  title: string;
-  description: string;
-  confirmLabel: string;
-  confirmVariant?: 'default' | 'destructive';
-  requireComment?: boolean;
-  onClose: () => void;
-  onConfirm: (comment: string) => void;
-  loading: boolean;
+  title: string; description: string; confirmLabel: string;
+  confirmVariant?: 'default' | 'destructive'; requireComment?: boolean;
+  onClose: () => void; onConfirm: (comment: string) => void; loading: boolean;
 }) {
   const [comment, setComment] = useState('');
   return (
@@ -59,25 +85,205 @@ function ConfirmPopover({
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              rows={2}
-              autoFocus
+              rows={2} autoFocus
               placeholder={requireComment ? 'ระบุเหตุผลที่ปฏิเสธ...' : 'เพิ่มหมายเหตุ...'}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
             />
           </div>
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={onClose} disabled={loading}>ยกเลิก</Button>
-            <Button
-              size="sm"
-              variant={confirmVariant}
+            <Button size="sm" variant={confirmVariant}
               onClick={() => onConfirm(comment)}
               disabled={loading || (requireComment && !comment.trim())}
-              className={confirmVariant === 'default' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-            >
+              className={confirmVariant === 'default' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}>
               {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {confirmLabel}
             </Button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Quotation Document (พิมพ์ / Save PDF)
+// ════════════════════════════════════════════════════════════════════════════
+function QuotationDocument({ q, company }: { q: Quotation; company: CompanySettings | null }) {
+  const grandTotalNum = Number(q.grandTotal);
+  const afterDiscount = Number(q.subtotal) - Number(q.discountTotal);
+  const bahtText = q.currency === 'THB' ? toThaiBahtText(grandTotalNum) : '';
+  const minRows = 8;
+  const padCount = Math.max(0, minRows - (q.items?.length ?? 0));
+
+  return (
+    <div id="qt-printable" className="bg-white text-black" style={{ fontFamily: 'Sarabun, sans-serif' }}>
+      {/* Header */}
+      <div className="border-2 border-black">
+        <div className="grid grid-cols-[1fr_280px]">
+          <div className="px-4 py-3 border-r-2 border-black">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0">
+                {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-base">{company?.companyNameTh || company?.companyName}</div>
+                {company?.companyNameTh && company?.companyName && (
+                  <div className="text-xs text-gray-700">{company.companyName}</div>
+                )}
+                <div className="text-[11px] text-gray-800 mt-1">
+                  {company?.addressTh || company?.address}
+                  {company?.phone && <div>โทร. {company.phone}{company?.fax && `  แฟกซ์ ${company.fax}`}</div>}
+                  {company?.email && <div>อีเมล {company.email}</div>}
+                  {company?.taxId && <div>เลขประจำตัวผู้เสียภาษี: {company.taxId}</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <div className="text-center py-2 border-b-2 border-black">
+              <div className="text-xl font-bold tracking-widest">QUOTATION</div>
+              <div className="text-xs text-gray-700">ใบเสนอราคา</div>
+            </div>
+            <table className="w-full text-[11px]">
+              <tbody>
+                <tr className="border-b border-black">
+                  <td className="px-2 py-1 border-r border-black w-[42%] text-gray-700">เลขที่ / No.</td>
+                  <td className="px-2 py-1 font-semibold text-right">{q.quotationNo}</td>
+                </tr>
+                <tr className="border-b border-black">
+                  <td className="px-2 py-1 border-r border-black text-gray-700">วันที่ / Date</td>
+                  <td className="px-2 py-1 font-semibold text-right">{formatDate(q.issueDate)}</td>
+                </tr>
+                <tr className="border-b border-black">
+                  <td className="px-2 py-1 border-r border-black text-gray-700">หมดอายุ / Expiry</td>
+                  <td className="px-2 py-1 font-semibold text-right">{formatDate(q.expiryDate)}</td>
+                </tr>
+                <tr>
+                  <td className="px-2 py-1 border-r border-black text-gray-700">สกุลเงิน</td>
+                  <td className="px-2 py-1 font-semibold text-right">{q.currency}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Customer */}
+      <div className="border-2 border-t-0 border-black grid grid-cols-2">
+        <div className="px-4 py-2 border-r-2 border-black">
+          <div className="text-[10px] text-gray-500 uppercase font-semibold mb-1">เสนอราคาให้แก่ / To</div>
+          <DocRow label="บริษัท" value={q.customerCompany} bold />
+          <DocRow label="ผู้ติดต่อ" value={q.customerContactName} />
+          {q.customerTaxId && <DocRow label="เลขผู้เสียภาษี" value={q.customerTaxId} />}
+          {q.customerPhone && <DocRow label="โทรศัพท์" value={q.customerPhone} />}
+          {q.customerEmail && <DocRow label="Email" value={q.customerEmail} />}
+          {q.customerBillingAddress && <DocRow label="ที่อยู่" value={q.customerBillingAddress} />}
+        </div>
+        <div className="px-4 py-2">
+          <div className="text-[10px] text-gray-500 uppercase font-semibold mb-1">รายละเอียด</div>
+          {q.paymentTerms && <DocRow label="เงื่อนไขชำระเงิน" value={q.paymentTerms} />}
+          {q.conditions && <DocRow label="เงื่อนไข" value={q.conditions} />}
+          {q.customerShippingAddress && <DocRow label="ที่อยู่จัดส่ง" value={q.customerShippingAddress} />}
+        </div>
+      </div>
+
+      {/* Items */}
+      <table className="w-full border-2 border-t-0 border-black border-collapse text-[11px]">
+        <thead>
+          <tr className="bg-black text-white">
+            <th className="border-r border-gray-700 px-2 py-2 text-left w-[70px]">รหัส / SKU</th>
+            <th className="border-r border-gray-700 px-2 py-2 text-left">รายการ / Description</th>
+            <th className="border-r border-gray-700 px-2 py-2 text-right w-[55px]">จำนวน</th>
+            <th className="border-r border-gray-700 px-2 py-2 text-center w-[45px]">หน่วย</th>
+            <th className="border-r border-gray-700 px-2 py-2 text-right w-[80px]">ราคา/หน่วย</th>
+            <th className="border-r border-gray-700 px-2 py-2 text-right w-[55px]">ส่วนลด</th>
+            <th className="px-2 py-2 text-right w-[85px]">จำนวนเงิน</th>
+          </tr>
+        </thead>
+        <tbody>
+          {q.items?.map((it, idx) => (
+            <tr key={it.id || idx} className="border-b border-gray-300">
+              <td className="border-r border-gray-300 px-2 py-2 align-top font-mono text-[10px]">{it.productSku || '-'}</td>
+              <td className="border-r border-gray-300 px-2 py-2 align-top">
+                <div className="font-semibold">{it.productName}</div>
+                {it.productDescription && <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>}
+              </td>
+              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">{formatNumber(it.quantity)}</td>
+              <td className="border-r border-gray-300 px-2 py-2 align-top text-center">{it.unit}</td>
+              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">{formatNumber(it.unitPrice)}</td>
+              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">
+                {Number(it.discount) > 0
+                  ? it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)
+                  : '-'}
+              </td>
+              <td className="px-2 py-2 align-top text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+            </tr>
+          ))}
+          {Array.from({ length: padCount }).map((_, i) => (
+            <tr key={`pad-${i}`} className="border-b border-gray-300">
+              {Array.from({ length: 7 }).map((__, j) => (
+                <td key={j} className={`px-2 py-2 ${j < 6 ? 'border-r border-gray-300' : ''}`}>&nbsp;</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Summary */}
+      <div className="border-2 border-t-0 border-black grid grid-cols-[1fr_300px]">
+        <div className="px-4 py-3 border-r-2 border-black flex flex-col justify-between">
+          {bahtText && (
+            <div>
+              <div className="text-[10px] text-gray-700 mb-1">จำนวนเงินตัวอักษร</div>
+              <div className="text-[12px] italic font-semibold">( {bahtText} )</div>
+            </div>
+          )}
+          {company?.bankName && (
+            <div className="mt-3 pt-3 border-t border-gray-300">
+              <div className="text-[10px] text-gray-700 mb-1">โอนเงินเข้าบัญชี</div>
+              <div className="text-[11px] font-semibold">
+                {company.bankName}{company.bankAccount && `   ${company.bankAccount}`}
+                {company.bankBranch && ` (${company.bankBranch})`}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="text-[11px]">
+          <SummaryRow label="รวมเงิน (Subtotal)" value={formatNumber(q.subtotal)} />
+          {Number(q.discountTotal) > 0 && (
+            <SummaryRow label="ส่วนลด (Discount)" value={`-${formatNumber(q.discountTotal)}`} />
+          )}
+          <SummaryRow label="หลังหักส่วนลด" value={formatNumber(afterDiscount)} />
+          {q.vatEnabled
+            ? <SummaryRow label={`ภาษีมูลค่าเพิ่ม ${formatNumber(q.vatRate)}%`} value={formatNumber(q.vatAmount)} />
+            : <SummaryRow label="ภาษีมูลค่าเพิ่ม" value="ไม่มี VAT" />}
+          <div className="bg-black text-white px-3 py-2 flex justify-between items-baseline">
+            <span className="font-bold">จำนวนเงินทั้งสิ้น</span>
+            <span className="font-bold text-base">{formatNumber(q.grandTotal)} {q.currency}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Signatures */}
+      <div className="border-2 border-t-0 border-black">
+        <div className="grid grid-cols-3 gap-6 py-10 px-6">
+          {[
+            { th: 'ผู้เสนอราคา', en: 'Sales Representative' },
+            { th: 'ผู้ตรวจสอบ', en: 'Reviewed By' },
+            { th: 'ผู้มีอำนาจอนุมัติ', en: 'Authorized Signatory' },
+          ].map((s, i) => (
+            <div key={i} className="text-center">
+              <div className="border-t border-black mt-10 mx-4 pt-1.5">
+                <div className="text-[11px] font-medium">{s.th}</div>
+                <div className="text-[10px] text-gray-700">{s.en}</div>
+                <div className="text-[10px] text-gray-700 mt-2">วันที่ / Date: ____________</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 pb-3 text-[9px] text-gray-500 text-center border-t border-gray-200">
+          เอกสารนี้ออกโดยระบบอัตโนมัติ · ใบเสนอราคามีอายุถึง {formatDate(q.expiryDate)}
         </div>
       </div>
     </div>
@@ -95,16 +301,22 @@ export default function QuotationDetailPage() {
   const { role, can } = usePermissions();
 
   const [q, setQ] = useState<Quotation | null>(null);
+  const [company, setCompany] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
   const [showApprovePopover, setShowApprovePopover] = useState(false);
   const [showRejectPopover, setShowRejectPopover] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get<ApiResponse<Quotation>>(`/quotations/${id}`);
-      setQ(res.data.data ?? null);
+      const [qRes, cRes] = await Promise.all([
+        api.get<ApiResponse<Quotation>>(`/quotations/${id}`),
+        api.get<ApiResponse<CompanySettings>>('/company'),
+      ]);
+      setQ(qRes.data.data ?? null);
+      setCompany(cRes.data.data ?? null);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -120,28 +332,19 @@ export default function QuotationDetailPage() {
       await api.post(`/quotations/${id}/submit`, {});
       toast.success('ส่งขออนุมัติเรียบร้อย');
       await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setActing(null); }
   };
 
-  // ─── Cancel — เฉพาะ DRAFT เท่านั้น (ตาม backend logic ใหม่) ────────────
   const cancel = async () => {
     if (!confirm('ยืนยันการยกเลิกใบเสนอราคา DRAFT นี้?')) return;
     setActing('cancel');
     try {
-      await api.post(`/quotations/${id}/cancel`, {
-        reason: 'Cancelled by ' + (role?.code || 'user'),
-      });
+      await api.post(`/quotations/${id}/cancel`, { reason: 'Cancelled by ' + (role?.code || 'user') });
       toast.success('ยกเลิกเรียบร้อย');
       await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setActing(null); }
   };
 
   const handleApprove = async (comment: string) => {
@@ -151,11 +354,8 @@ export default function QuotationDetailPage() {
       toast.success('อนุมัติแล้ว — Officer ได้รับแจ้งให้อัปโหลด PO ที่หน้า Checklist');
       setShowApprovePopover(false);
       await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setActing(null); }
   };
 
   const handleReject = async (reason: string) => {
@@ -165,11 +365,8 @@ export default function QuotationDetailPage() {
       toast.success('ปฏิเสธเรียบร้อย');
       setShowRejectPopover(false);
       await load();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setActing(null);
-    }
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setActing(null); }
   };
 
   if (loading) {
@@ -193,16 +390,14 @@ export default function QuotationDetailPage() {
     );
   }
 
-  // ─── Permissions ─────────────────────────────────────────────────────────
   const userId = session?.user?.id;
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
 
   const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
   const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-
-  // ─── NEW: Officer ยกเลิกได้เฉพาะ DRAFT เท่านั้น ─────────────────────────
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
+  const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
 
   const canApproveThis = (() => {
     if (!isElevated) return false;
@@ -213,6 +408,42 @@ export default function QuotationDetailPage() {
 
   const showCommentThread = COMMENT_ALLOWED_STATUSES.includes(q.status as string);
 
+  // ─── Print View ────────────────────────────────────────────────────────────
+  if (showPrintView) {
+    return (
+      <>
+        <style>{`
+          @media print {
+            body * { visibility: hidden !important; }
+            #qt-printable, #qt-printable * { visibility: visible !important; }
+            #qt-printable { position: fixed; inset: 0; padding: 0; margin: 0; }
+            .no-print { display: none !important; }
+            @page { size: A4; margin: 10mm; }
+          }
+        `}</style>
+        <div className="max-w-4xl mx-auto">
+          {/* Toolbar */}
+          <div className="no-print flex items-center justify-between mb-4 gap-3 flex-wrap">
+            <Button variant="ghost" size="sm" onClick={() => setShowPrintView(false)}>
+              <ArrowLeft className="h-4 w-4" />กลับ
+            </Button>
+            <div className="flex gap-2 items-center">
+              <Badge className={getStatusClass(q.status)} variant="outline">● {q.status}</Badge>
+              <Button onClick={() => window.print()}>
+                <Printer className="h-4 w-4" />พิมพ์ / Save PDF
+              </Button>
+            </div>
+          </div>
+          {/* Document */}
+          <div className="shadow-lg rounded overflow-hidden">
+            <QuotationDocument q={q} company={company} />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ─── Normal View ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5 max-w-6xl">
       {/* Header */}
@@ -241,7 +472,6 @@ export default function QuotationDetailPage() {
               </Link>
             </Button>
           )}
-          {/* ─── Cancel: เฉพาะ DRAFT ─── */}
           {canCancel && (
             <Button variant="outline" onClick={cancel} disabled={acting !== null}>
               {acting === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
@@ -254,7 +484,13 @@ export default function QuotationDetailPage() {
               {t('quotation.submitForApproval')}
             </Button>
           )}
-          {/* ─── ลิงก์ Sale Order (เมื่อ PO_APPROVED) ─── */}
+          {/* ✅ ปุ่ม Save PDF — แสดงเมื่อ APPROVED แล้ว */}
+          {canPdf && (
+            <Button variant="outline" onClick={() => setShowPrintView(true)}>
+              <Printer className="h-4 w-4" />
+              Save PDF
+            </Button>
+          )}
           {q.saleOrder && (
             <Button asChild variant="success">
               <Link href={`/sale-orders/${q.saleOrder.id}`}>
@@ -265,8 +501,7 @@ export default function QuotationDetailPage() {
         </div>
       </div>
 
-      {/* ─── Status Banners ──────────────────────────────────────────────────── */}
-
+      {/* Status Banners */}
       {q.status === 'REJECTED' && q.rejectionReason && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="pt-4 flex gap-3">
@@ -286,9 +521,7 @@ export default function QuotationDetailPage() {
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div>
-              <p className="text-sm mt-1">
-                ส่งเมื่อ {formatDate(q.submittedAt)} · รอ Manager ตรวจสอบ
-              </p>
+              <p className="text-sm mt-1">ส่งเมื่อ {formatDate(q.submittedAt)} · รอ Manager ตรวจสอบ</p>
               {!isElevated && (
                 <p className="text-xs text-muted-foreground mt-2">
                   ⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก
@@ -299,33 +532,26 @@ export default function QuotationDetailPage() {
         </Card>
       )}
 
-      {/* ─── APPROVED banner → ไปหน้า Checklist ─────────────────────────────── */}
       {q.status === 'APPROVED' && (
         <Card className="border-blue-500/50 bg-blue-500/5">
           <CardContent className="pt-4 flex gap-3 items-start">
             <Upload className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold text-blue-900 dark:text-blue-200">
-                อนุมัติแล้ว — กรุณาแนบใบ PO
-              </div>
-              <p className="text-sm mt-1">
-                อนุมัติเมื่อ {formatDate(q.approvedAt)} โดย {q.approvedBy?.name || '-'}
-              </p>
+              <div className="font-semibold text-blue-900 dark:text-blue-200">อนุมัติแล้ว — กรุณาแนบใบ PO</div>
+              <p className="text-sm mt-1">อนุมัติเมื่อ {formatDate(q.approvedAt)} โดย {q.approvedBy?.name || '-'}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                กรุณาไปที่หน้า Checklist เพื่ออัปโหลดใบ PO และส่งให้ Manager ตรวจสอบ
+                💡 กด "Save PDF" เพื่อบันทึกใบเสนอราคาส่งให้ลูกค้า แล้วนำใบ PO ที่ได้รับมาอัปโหลดที่ Checklist
               </p>
             </div>
             <Button asChild size="sm" className="shrink-0 mt-1">
               <Link href={`/quotations/checklist/${id}`}>
-                <ExternalLink className="h-3.5 w-3.5" />
-                ไปหน้า Checklist
+                <ExternalLink className="h-3.5 w-3.5" />ไปหน้า Checklist
               </Link>
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* ─── PO_PENDING banner ────────────────────────────────────────────────── */}
       {q.status === 'PO_PENDING' && (
         <Card className="border-amber-500/50 bg-amber-500/5">
           <CardContent className="pt-4 flex gap-3 items-start">
@@ -336,32 +562,25 @@ export default function QuotationDetailPage() {
             </div>
             <Button asChild size="sm" variant="outline" className="shrink-0 mt-1">
               <Link href={`/quotations/checklist/${id}`}>
-                <ExternalLink className="h-3.5 w-3.5" />
-                ดูหน้า Checklist
+                <ExternalLink className="h-3.5 w-3.5" />ดูหน้า Checklist
               </Link>
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* ─── PO_APPROVED banner ───────────────────────────────────────────────── */}
       {q.status === 'PO_APPROVED' && (
         <Card className="border-emerald-500/50 bg-emerald-500/5">
           <CardContent className="pt-4 flex gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <div className="font-semibold text-emerald-700 dark:text-emerald-300">
-                PO อนุมัติแล้ว — เสร็จสิ้น
-              </div>
-              <p className="text-sm mt-1">
-                Sale Order {q.saleOrder?.saleOrderNo} ถูกสร้างแล้ว
-              </p>
+              <div className="font-semibold text-emerald-700 dark:text-emerald-300">PO อนุมัติแล้ว — เสร็จสิ้น</div>
+              <p className="text-sm mt-1">Sale Order {q.saleOrder?.saleOrderNo} ถูกสร้างแล้ว</p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* ─── PO_REJECTED banner ───────────────────────────────────────────────── */}
       {(q.status as string) === 'PO_REJECTED' && (
         <Card className="border-red-500/50 bg-red-500/5">
           <CardContent className="pt-4 flex gap-3 items-start">
@@ -372,19 +591,17 @@ export default function QuotationDetailPage() {
             </div>
             <Button asChild size="sm" variant="outline" className="shrink-0 mt-1">
               <Link href={`/quotations/checklist/${id}`}>
-                <Upload className="h-3.5 w-3.5" />
-                อัปโหลด PO ใหม่
+                <Upload className="h-3.5 w-3.5" />อัปโหลด PO ใหม่
               </Link>
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* ─── Main content ─────────────────────────────────────────────────────── */}
+      {/* Main content */}
       <div className={showCommentThread ? 'grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-5' : ''}>
         <div className="space-y-5 min-w-0">
-
-          {/* Customer info */}
+          {/* Customer */}
           <Card>
             <CardContent className="pt-6">
               <h2 className="font-semibold mb-3">{t('quotation.customerInfo')}</h2>
@@ -455,7 +672,6 @@ export default function QuotationDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Conditions */}
           {(q.paymentTerms || q.conditions) && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {q.paymentTerms && (
@@ -473,7 +689,6 @@ export default function QuotationDetailPage() {
             </div>
           )}
 
-          {/* Approve / Reject bar */}
           {canApproveThis && (
             <div className="flex justify-end gap-3 pb-2">
               <Button variant="destructive" onClick={() => { setShowApprovePopover(false); setShowRejectPopover(true); }} disabled={acting !== null}>
@@ -486,7 +701,6 @@ export default function QuotationDetailPage() {
           )}
         </div>
 
-        {/* Comment Thread — เฉพาะ PENDING states */}
         {showCommentThread && (
           <div className="lg:sticky lg:top-20 lg:self-start">
             <CommentThread quotationId={id} />
@@ -494,7 +708,6 @@ export default function QuotationDetailPage() {
         )}
       </div>
 
-      {/* Popovers */}
       {showApprovePopover && (
         <ConfirmPopover
           title={`อนุมัติ ${q.quotationNo}?`}
@@ -517,6 +730,23 @@ export default function QuotationDetailPage() {
           loading={acting === 'reject'}
         />
       )}
+    </div>
+  );
+}
+
+function DocRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div className="flex gap-2 text-[11px] py-0.5">
+      <span className="text-gray-700 w-[110px] shrink-0">{label}</span>
+      <span className={`flex-1 ${bold ? 'font-bold text-[12px]' : 'font-semibold'}`}>{value}</span>
+    </div>
+  );
+}
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] px-3 py-1.5 border-b border-gray-300">
+      <span className="text-gray-700">{label}</span>
+      <span className="font-semibold min-w-[90px] text-right">{value}</span>
     </div>
   );
 }

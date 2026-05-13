@@ -44,13 +44,7 @@ const NAV_ITEMS: NavItem[] = [
         labelKey: 'nav.quotationChecklist',
         icon: CheckSquare,
         requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
-      },
-      {
-        href: '/quotations/pending-sale-order',
-        labelKey: 'nav.pendingSaleOrder',
-        icon: Clock,
-        requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
-      },
+      },  
     ],
   },
   {

@@ -423,9 +423,7 @@ export default function SaleOrderDetailPage() {
                     {savingDeadline ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                     บันทึกวันกำหนดส่ง
                   </Button>
-                  <p className="text-xs text-muted-foreground text-center">
-                    แก้ไขแล้วกด "ส่งให้ Manager ใหม่" ด้านบนได้เลย
-                  </p>
+                 
                 </div>
               ) : (
                 <div>
