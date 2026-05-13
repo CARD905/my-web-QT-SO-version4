@@ -323,7 +323,6 @@ model Quotation {
   specialDiscountFinalPct  Decimal?  @map("special_discount_final_pct") @db.Decimal(5, 2)
   specialDiscountById      String?   @map("special_discount_by_id")
   specialDiscountAt        DateTime? @map("special_discount_at")
-
   // ─── NEW: PO workflow fields ───────────────────────────────────────────
   poFileUrl          String?   @map("po_file_url")
   poFileName         String?   @map("po_file_name")

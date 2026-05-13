@@ -230,7 +230,7 @@ export const quotationsService = {
         type: 'QUOTATION_SUBMITTED',
         title: `⭐ ขออนุมัติ Special Discount ${maxPctDiscount}%`,
         message: `${quotation.quotationNo} จาก ${quotation.customerCompany} — ${(input as any).specialDiscountReason}`,
-        link: `/special-discount/${quotation.id}`,
+        link: `/manager/special-discount/${quotation.id}`,
         metadata: { quotationId: quotation.id, requestedPct: maxPctDiscount },
       });
     }
@@ -249,6 +249,14 @@ export const quotationsService = {
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only edit your own quotations');
     if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot edit quotation with status ${existing.status}`);
+    // ✅ Block submit ถ้า Special Discount ยัง PENDING_CEO
+    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING_CEO') {
+      throw new AppError(
+        409,
+        'SPECIAL_DISCOUNT_PENDING',
+        'ไม่สามารถส่งขออนุมัติได้ — รอ CEO ตอบกลับคำขอ Special Discount ก่อน',
+      );
+    }
     }
 
     const customer = await prisma.customer.findFirst({ where: { id: input.customerId, deletedAt: null } });

@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Send, X, Check, Loader2, FileText,
-  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer,
+  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer,Star, XCircle, 
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -284,7 +284,8 @@ export default function QuotationDetailPage() {
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner
+  && !((q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO');
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
   const canApproveThis = (() => {
@@ -357,6 +358,71 @@ export default function QuotationDetailPage() {
       )}
       {(q.status as string) === 'PO_REJECTED' && (
         <Card className="border-red-500/50 bg-red-500/5"><CardContent className="pt-4 flex gap-3 items-start"><AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" /><div className="flex-1"><div className="font-semibold text-red-700 dark:text-red-300">PO ถูกปฏิเสธ</div><p className="text-xs text-muted-foreground mt-1">กรุณาอัปโหลดใบ PO ใหม่</p></div><Button asChild size="sm" variant="outline" className="shrink-0 mt-1"><Link href={`/quotations/checklist/${id}`}><Upload className="h-3.5 w-3.5" />อัปโหลด PO ใหม่</Link></Button></CardContent></Card>
+      )}
+      {/* ✅ Special Discount Pending Banner */}
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO' && (
+        <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
+          <CardContent className="pt-4 pb-4 flex gap-3 items-start">
+            <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+              <Star className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-amber-800 dark:text-amber-200">
+                รอ CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}%
+              </div>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                ไม่สามารถส่งขออนุมัติ Quotation นี้ได้ จนกว่า CEO จะตอบกลับคำขอ Special Discount
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                เหตุผล: {(q as any).specialDiscountReason}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* ✅ Special Discount Resolved Banners */}
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'APPROVED' && (
+        <Card className="border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20">
+          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-emerald-800 dark:text-emerald-200">
+                CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% แล้ว
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'MODIFIED' && (
+        <Card className="border-blue-400 bg-blue-50 dark:bg-blue-900/20">
+          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
+            <Star className="h-5 w-5 text-blue-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-blue-800 dark:text-blue-200">
+                CEO ปรับ Special Discount เป็น {(q as any).specialDiscountFinalPct}%
+                <span className="text-muted-foreground font-normal text-xs ml-2">(ขอ {(q as any).specialDiscountPercent}%)</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'REJECTED' && (
+        <Card className="border-red-400 bg-red-50 dark:bg-red-900/20">
+          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
+            <XCircle className="h-5 w-5 text-red-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-red-800 dark:text-red-200">
+                CEO ปฏิเสธ Special Discount — ส่วนลดถูกปรับเหลือ 20% อัตโนมัติ
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* ✅ Content — ไม่ใช้ grid แล้ว ปุ่มแชทจะ float เอง */}
