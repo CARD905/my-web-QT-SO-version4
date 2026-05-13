@@ -12,11 +12,20 @@ import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, getStatusClass } from '@/lib/utils';
 import type { ApiResponse, SaleOrder } from '@/types/api';
 
+const STATUS_FILTERS = [
+  { value: '', label: 'ทั้งหมด' },
+  { value: 'DRAFT', label: 'DRAFT' },
+  { value: 'PENDING_REVIEW', label: 'รออนุมัติ' },
+  { value: 'CONFIRMED', label: 'อนุมัติแล้ว' },
+  { value: 'REJECTED', label: 'ถูกปฏิเสธ' },
+];
+
 export default function SaleOrdersPage() {
   const t = useT();
   const [list, setList] = useState<SaleOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +34,7 @@ export default function SaleOrdersPage() {
       try {
         const params = new URLSearchParams();
         if (search) params.set('search', search);
+        if (statusFilter) params.set('status', statusFilter);
         params.set('limit', '50');
         const res = await api.get<ApiResponse<SaleOrder[]>>(`/sale-orders?${params}`);
         if (!cancelled) setList(res.data.data ?? []);
@@ -34,11 +44,8 @@ export default function SaleOrdersPage() {
         if (!cancelled) setLoading(false);
       }
     }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(handler);
-    };
-  }, [search]);
+    return () => { cancelled = true; clearTimeout(handler); };
+  }, [search, statusFilter]);
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -49,9 +56,10 @@ export default function SaleOrdersPage() {
         </p>
       </div>
 
+      {/* Filters */}
       <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
+        <CardContent className="pt-6 flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={`${t('common.search')}... (SO no, customer)`}
@@ -60,9 +68,25 @@ export default function SaleOrdersPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="flex gap-1 flex-wrap">
+            {STATUS_FILTERS.map((s) => (
+              <button
+                key={s.value || 'all'}
+                onClick={() => setStatusFilter(s.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  statusFilter === s.value
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
+      {/* List */}
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -75,7 +99,7 @@ export default function SaleOrdersPage() {
             <ClipboardList className="h-12 w-12 text-muted-foreground/50" />
             <p className="text-muted-foreground">{t('common.noData')}</p>
             <p className="text-xs text-muted-foreground">
-              Sale Orders are created automatically when a Quotation is approved
+              Sale Orders สร้างจากการ Submit PO ใน Checklist
             </p>
           </CardContent>
         </Card>

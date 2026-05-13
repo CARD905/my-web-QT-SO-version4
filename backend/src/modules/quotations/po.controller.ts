@@ -36,10 +36,15 @@ export const poController = {
 
   // POST /quotations/:id/po-submit
   async submit(req: Request, res: Response) {
-    const user = requireUser(req);
-    const data = await poService.submitPo(req.params.id, user, req);
-    return success(res, data);
-  },
+  const user = requireUser(req);
+  const data = await poService.submitPo(
+    req.params.id,
+    user,
+    req.body.poNumber,   // ← เพิ่มบรรทัดนี้
+    req,
+  );
+  return success(res, data);
+},
 
   // POST /quotations/:id/po-approve
   async approve(req: Request, res: Response) {

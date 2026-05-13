@@ -4,12 +4,7 @@ import { AppError, success } from '../../utils/response';
 
 function requireUser(req: Request) {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-  const u = req.user as {
-    id: string;
-    role?: string;
-    roleCode?: string;
-    roleId?: string;
-  };
+  const u = req.user as { id: string; role?: string; roleCode?: string; roleId?: string };
   return {
     id: u.id,
     roleCode: u.roleCode || u.role || 'OFFICER',
@@ -22,6 +17,16 @@ export const saleOrdersController = {
     const user = requireUser(req);
     const result = await saleOrdersService.list(req.query as never, user);
     return success(res, result.data, undefined, result.meta);
+  },
+  async updateDeadline(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.updateDeadline(
+      req.params.id,
+      req.body.deadlineDate,
+      user,
+      req,
+    );
+    return success(res, so, 'Deadline updated');
   },
 
   async getById(req: Request, res: Response) {
@@ -39,9 +44,34 @@ export const saleOrdersController = {
   async submit(req: Request, res: Response) {
     const user = requireUser(req);
     const so = await saleOrdersService.submit(req.params.id, req.body, user, req);
-    return success(res, so, 'Sale Order submitted for review');
+    return success(res, so, 'Submitted for manager approval');
   },
 
+  // ✅ NEW — Manager Approve → CONFIRMED
+  async approve(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.approve(
+      req.params.id,
+      user,
+      req.body?.comment,
+      req,
+    );
+    return success(res, so, 'Sale Order approved → CONFIRMED');
+  },
+
+  // ✅ NEW — Manager Reject → REJECTED
+  async reject(req: Request, res: Response) {
+    const user = requireUser(req);
+    const so = await saleOrdersService.reject(
+      req.params.id,
+      user,
+      req.body?.reason,
+      req,
+    );
+    return success(res, so, 'Sale Order rejected');
+  },
+
+  // Legacy
   async reviewApprove(req: Request, res: Response) {
     const user = requireUser(req);
     const so = await saleOrdersService.reviewApprove(req.params.id, req.body, user, req);
@@ -51,21 +81,13 @@ export const saleOrdersController = {
   async confirm(req: Request, res: Response) {
     const user = requireUser(req);
     const so = await saleOrdersService.confirm(req.params.id, user, req);
-    return success(res, so, 'Sale Order confirmed (locked)');
+    return success(res, so, 'Sale Order confirmed');
   },
 
   async generatePdf(req: Request, res: Response) {
     const user = requireUser(req);
     const result = await saleOrdersService.generatePdf(req.params.id, user, req);
-    return success(
-      res,
-      {
-        url: result.url,
-        fileName: result.fileName,
-        generatedAt: new Date().toISOString(),
-      },
-      'PDF generated',
-    );
+    return success(res, { url: result.url, fileName: result.fileName, generatedAt: new Date().toISOString() }, 'PDF generated');
   },
 
   async downloadPdf(req: Request, res: Response) {

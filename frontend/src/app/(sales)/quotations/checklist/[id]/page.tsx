@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Upload, FileText, Image as ImageIcon,
   Send, CheckCircle2, Loader2, AlertTriangle,
-  Download, Clock, History, ChevronDown, ChevronUp,
+  Download, Clock, History, ChevronDown, ChevronUp, Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
@@ -44,21 +46,22 @@ interface ChecklistQuotation extends Quotation {
   poRejectedAt?: string | null;
   poRejectionReason?: string | null;
   poUploadHistory?: PoUploadHistoryEntry[] | null;
+  poNumber?: string | null;
 }
 
 const STATUS_BANNERS: Record<string, { bg: string; icon: React.ElementType; title: string; textColor: string }> = {
-  APPROVED:    { bg: 'border-blue-300 bg-blue-50 dark:bg-blue-900/20',    icon: Upload,        title: 'รออัปโหลดใบ PO',           textColor: 'text-blue-800 dark:text-blue-200' },
-  PO_PENDING:  { bg: 'border-amber-300 bg-amber-50 dark:bg-amber-900/20', icon: Clock,         title: 'PO รอการตรวจสอบจาก Manager', textColor: 'text-amber-800 dark:text-amber-200' },
-  PO_APPROVED: { bg: 'border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2, title: 'PO อนุมัติแล้ว — สร้าง Sale Order เรียบร้อย', textColor: 'text-emerald-800 dark:text-emerald-200' },
-  PO_REJECTED: { bg: 'border-red-300 bg-red-50 dark:bg-red-900/20',      icon: AlertTriangle, title: 'PO ถูกปฏิเสธ — กรุณาอัปโหลดใบ PO ใหม่',     textColor: 'text-red-800 dark:text-red-200' },
+  APPROVED:    { bg: 'border-blue-300 bg-blue-50 dark:bg-blue-900/20',    icon: Upload,        title: 'รออัปโหลดใบ PO และกรอกหมายเลขใบสั่งซื้อ', textColor: 'text-blue-800 dark:text-blue-200' },
+  PO_PENDING:  { bg: 'border-amber-300 bg-amber-50 dark:bg-amber-900/20', icon: Clock,         title: 'รอ Manager ตรวจสอบ Sale Order',            textColor: 'text-amber-800 dark:text-amber-200' },
+  PO_APPROVED: { bg: 'border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20', icon: CheckCircle2, title: 'ดำเนินการเรียบร้อย — ดู Sale Order ได้เลย', textColor: 'text-emerald-800 dark:text-emerald-200' },
+  PO_REJECTED: { bg: 'border-red-300 bg-red-50 dark:bg-red-900/20',      icon: AlertTriangle, title: 'PO ถูกปฏิเสธ — กรุณาอัปโหลดใหม่',          textColor: 'text-red-800 dark:text-red-200' },
 };
 
 export default function ChecklistDetailPage() {
   const t = useT();
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const { data: session } = useSession();
-  const { role } = usePermissions();
 
   const [q, setQ] = useState<ChecklistQuotation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +69,7 @@ export default function ChecklistDetailPage() {
   const [acting, setActing] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [poNumber, setPoNumber] = useState('');    // ← PO Number input
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userId = session?.user?.id;
@@ -75,7 +79,10 @@ export default function ChecklistDetailPage() {
     setLoading(true);
     try {
       const res = await api.get<ApiResponse<ChecklistQuotation>>(`/quotations/${id}`);
-      setQ(res.data.data ?? null);
+      const data = res.data.data ?? null;
+      setQ(data);
+      // Pre-fill PO number ถ้ามีอยู่แล้ว (กรณี PO_REJECTED กลับมาแก้)
+      if (data?.poNumber) setPoNumber(data.poNumber);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -85,62 +92,57 @@ export default function ChecklistDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ─── Upload PO file ──────────────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      toast.error('รองรับเฉพาะ PDF, PNG, JPG, WebP');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_SIZE) {
-      toast.error('ไฟล์ใหญ่เกิน 10 MB');
-      e.target.value = '';
-      return;
-    }
-    setUploading(true);
-    setUploadProgress(0);
+    if (!ALLOWED_TYPES.includes(file.type)) { toast.error('รองรับเฉพาะ PDF, PNG, JPG, WebP'); e.target.value = ''; return; }
+    if (file.size > MAX_SIZE) { toast.error('ไฟล์ใหญ่เกิน 10 MB'); e.target.value = ''; return; }
+
+    setUploading(true); setUploadProgress(0);
     try {
       const formData = new FormData();
       formData.append('file', file);
       await api.post(`/quotations/${id}/po-upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (e) => {
-          const pct = Math.round((e.loaded * 100) / (e.total ?? 1));
-          setUploadProgress(pct);
-        },
+        onUploadProgress: (e) => setUploadProgress(Math.round((e.loaded * 100) / (e.total ?? 1))),
       });
       toast.success('อัปโหลด PO สำเร็จ');
       await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setUploading(false); setUploadProgress(0); if (fileInputRef.current) fileInputRef.current.value = ''; }
+  };
+
+  // ─── Submit PO + PO Number ────────────────────────────────────────────────
+  const handleSubmitPo = async () => {
+    if (!poNumber.trim()) { toast.error('กรุณากรอกหมายเลขใบสั่งซื้อ (PO Number)'); return; }
+    if (!q?.poFileUrl) { toast.error('กรุณาอัปโหลดไฟล์ PO ก่อน'); return; }
+    if (!confirm('ยืนยันส่ง PO?\n\nระบบจะสร้าง Sale Order และส่งให้ Manager ตรวจสอบ')) return;
+
+    setActing('submit');
+    try {
+      const res = await api.post<ApiResponse<{ quotation: ChecklistQuotation; saleOrder: { id: string; saleOrderNo: string } }>>(
+        `/quotations/${id}/po-submit`,
+        { poNumber: poNumber.trim() },
+      );
+      const soId = res.data.data?.saleOrder?.id;
+      const soNo = res.data.data?.saleOrder?.saleOrderNo;
+      toast.success(`สร้าง Sale Order ${soNo} เรียบร้อย`);
+      // ✅ redirect ไปหน้า Sale Order ทันที
+      if (soId) router.push(`/sale-orders/${soId}`);
+      else await load();
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
-      setUploading(false);
-      setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setActing(null);
     }
   };
-
-  const handleSubmitPo = async () => {
-  if (!confirm('ส่ง PO ให้ Manager ตรวจสอบ?\n\nหลังส่งแล้ว จะแก้ไขหรือเปลี่ยนไฟล์ไม่ได้จนกว่าจะถูก reject')) return;
-  setActing('submit');
-  try {
-    await api.post(`/quotations/${id}/po-submit`);
-    toast.success('ส่ง PO ให้ Manager ตรวจสอบเรียบร้อย');
-    setTimeout(() => window.location.reload(), 1000);
-  } catch (err) {
-    toast.error(getApiErrorMessage(err));
-    setActing(null);
-  }
-};
 
   if (loading) {
     return (
       <div className="space-y-4 max-w-5xl">
-        <Skeleton className="h-10 w-72" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-96 w-full" />
+        <Skeleton className="h-10 w-72" /><Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" /><Skeleton className="h-96 w-full" />
       </div>
     );
   }
@@ -149,9 +151,7 @@ export default function ChecklistDetailPage() {
     return (
       <div className="text-center py-20">
         <p>ไม่พบข้อมูล</p>
-        <Button asChild variant="ghost" className="mt-4">
-          <Link href="/quotations/checklist">ย้อนกลับ</Link>
-        </Button>
+        <Button asChild variant="ghost" className="mt-4"><Link href="/quotations/checklist">ย้อนกลับ</Link></Button>
       </div>
     );
   }
@@ -159,11 +159,8 @@ export default function ChecklistDetailPage() {
   const status = q.status as string;
   const banner = STATUS_BANNERS[status];
   const BannerIcon = banner?.icon;
-
-  // ✅ Officer อัปโหลดได้เฉพาะ APPROVED + PO_REJECTED
   const canUpload   = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status);
-  const canSubmitPo = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status) && !!q.poFileUrl;
-
+  const canSubmitPo = isOwner && ['APPROVED', 'PO_REJECTED'].includes(status) && !!q.poFileUrl && !!poNumber.trim();
   const isImage = q.poFileMimeType?.startsWith('image/');
   const isPdf   = q.poFileMimeType === 'application/pdf';
   const history = (q.poUploadHistory ?? []) as PoUploadHistoryEntry[];
@@ -190,8 +187,7 @@ export default function ChecklistDetailPage() {
         {q.saleOrder && (
           <Button asChild>
             <Link href={`/sale-orders/${q.saleOrder.id}`}>
-              <FileText className="h-4 w-4" />
-              {q.saleOrder.saleOrderNo}
+              <FileText className="h-4 w-4" />{q.saleOrder.saleOrderNo}
             </Link>
           </Button>
         )}
@@ -208,36 +204,19 @@ export default function ChecklistDetailPage() {
                 <p className="text-xs text-muted-foreground mt-1">ส่งเมื่อ {formatDate(q.poSubmittedAt)}</p>
               )}
               {status === 'PO_REJECTED' && q.poRejectionReason && (
-                <p className={cn('text-sm mt-1 font-medium', banner.textColor)}>
-                  เหตุผล: {q.poRejectionReason}
-                </p>
+                <p className={cn('text-sm mt-1 font-medium', banner.textColor)}>เหตุผล: {q.poRejectionReason}</p>
               )}
               {status === 'PO_APPROVED' && q.poApprovedAt && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  อนุมัติเมื่อ {formatDate(q.poApprovedAt)}
-                </p>
-              )}
-              {/* ✅ แจ้ง Officer ว่ารายการนี้อยู่ที่ Pending Sale Order แล้ว */}
-              {status === 'PO_PENDING' && (
-                <div className="mt-2 flex items-center gap-2">
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Manager กำลังตรวจสอบอยู่ที่หน้า Pending Sale Order
-                  </p>
-                  <Link
-                    href={`/quotations/pending-sale-order/${q.id}`}
-                    className="text-xs text-primary underline hover:no-underline"
-                  >
-                    ดูหน้า Pending SO →
-                  </Link>
-                </div>
+                <p className="text-xs text-muted-foreground mt-1">อนุมัติเมื่อ {formatDate(q.poApprovedAt)}</p>
               )}
             </div>
           </CardContent>
         </Card>
       )}
 
+      {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5">
-        {/* LEFT: Quotation Detail */}
+        {/* LEFT */}
         <div className="space-y-5 min-w-0">
           <Card>
             <CardContent className="pt-6">
@@ -278,7 +257,7 @@ export default function ChecklistDetailPage() {
                   </thead>
                   <tbody className="divide-y">
                     {q.items?.map((it, idx) => (
-                      <tr key={it.id || idx} className="hover:bg-muted/30 transition-colors">
+                      <tr key={it.id || idx} className="hover:bg-muted/30">
                         <td className="py-3 text-xs text-muted-foreground pr-3 font-mono">{it.productSku || '-'}</td>
                         <td className="py-3">
                           <div className="font-medium">{it.productName}</div>
@@ -288,9 +267,7 @@ export default function ChecklistDetailPage() {
                         <td className="py-3 text-center text-muted-foreground">{it.unit}</td>
                         <td className="py-3 text-right">{formatNumber(it.unitPrice)}</td>
                         <td className="py-3 text-right text-muted-foreground">
-                          {Number(it.discount) > 0
-                            ? it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)
-                            : '-'}
+                          {Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '-'}
                         </td>
                         <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
                       </tr>
@@ -347,7 +324,7 @@ export default function ChecklistDetailPage() {
           )}
         </div>
 
-        {/* RIGHT: PO Upload (Officer only) */}
+        {/* RIGHT: PO Upload */}
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           <Card>
             <CardContent className="pt-5">
@@ -355,6 +332,34 @@ export default function ChecklistDetailPage() {
                 <Upload className="h-4 w-4 text-primary" />ใบ Purchase Order (PO)
               </h2>
 
+              {/* ✅ PO Number Input */}
+              {canUpload && (
+                <div className="mb-4">
+                  <Label htmlFor="poNumber" className="text-xs font-semibold flex items-center gap-1.5 mb-1.5">
+                    <Hash className="h-3.5 w-3.5" />
+                    หมายเลขใบสั่งซื้อ (PO Number) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="poNumber"
+                    value={poNumber}
+                    onChange={(e) => setPoNumber(e.target.value)}
+                    placeholder="เช่น PO-2026-0001"
+                    className="text-sm"
+                  />
+                </div>
+              )}
+
+              {/* PO Number แสดงอย่างเดียว (หลัง submit) */}
+              {!canUpload && q.poNumber && (
+                <div className="mb-4 p-3 rounded-lg bg-muted/40 border">
+                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    <Hash className="h-3 w-3" />หมายเลขใบสั่งซื้อ
+                  </div>
+                  <div className="font-semibold text-base">{q.poNumber}</div>
+                </div>
+              )}
+
+              {/* มีไฟล์แล้ว */}
               {q.poFileUrl ? (
                 <div className="space-y-3">
                   <div className="border rounded-lg p-3 flex items-center gap-3 bg-muted/20">
@@ -382,7 +387,6 @@ export default function ChecklistDetailPage() {
                   )}
                   {isPdf && <iframe src={q.poFileUrl} className="w-full h-56 rounded-lg border" title="PO PDF" />}
 
-                  {/* ✅ Officer: upload + submit — เฉพาะ APPROVED + PO_REJECTED */}
                   {canUpload && (
                     <div className="space-y-2 pt-1">
                       <Button variant="outline" size="sm" className="w-full"
@@ -390,31 +394,32 @@ export default function ChecklistDetailPage() {
                         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                         เปลี่ยนไฟล์ PO
                       </Button>
-                      {canSubmitPo && (
-                        <Button className="w-full shine" onClick={handleSubmitPo} disabled={acting !== null}>
-                          {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                          ส่งให้ Manager ตรวจสอบ
-                        </Button>
+
+                      {/* ✅ Submit button — ต้องมีทั้งไฟล์ + PO Number */}
+                      <Button className="w-full shine" onClick={handleSubmitPo}
+                        disabled={acting !== null || !poNumber.trim()}>
+                        {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                        ส่ง PO และสร้าง Sale Order
+                      </Button>
+                      {!poNumber.trim() && (
+                        <p className="text-xs text-center text-destructive">กรุณากรอก PO Number ก่อน</p>
                       )}
                     </div>
                   )}
 
-                  {/* ✅ ข้อความเมื่อรออยู่ (Officer) — ไม่มีปุ่ม Manager แล้ว */}
                   {status === 'PO_PENDING' && isOwner && (
                     <p className="text-xs text-center text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-2">
-                      รอ Manager ตรวจสอบ — แก้ไขไม่ได้จนกว่าจะถูก reject
+                      รอ Manager ตรวจสอบ Sale Order — ไม่สามารถแก้ไขได้
                     </p>
                   )}
                 </div>
               ) : (
                 canUpload ? (
-                  <div
-                    onClick={() => !uploading && fileInputRef.current?.click()}
+                  <div onClick={() => !uploading && fileInputRef.current?.click()}
                     className={cn(
                       'border-2 border-dashed rounded-xl p-8 text-center transition-all',
                       uploading ? 'border-primary/50 cursor-default' : 'border-border hover:border-primary hover:bg-accent/20 cursor-pointer'
-                    )}
-                  >
+                    )}>
                     {uploading ? (
                       <div className="space-y-2">
                         <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -427,7 +432,7 @@ export default function ChecklistDetailPage() {
                       <>
                         <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
                         <p className="font-medium text-sm">คลิกเพื่อเลือกไฟล์ PO</p>
-                        <p className="text-xs text-muted-foreground mt-1.5">รองรับ PDF, PNG, JPG, WebP · ขนาดสูงสุด 10 MB</p>
+                        <p className="text-xs text-muted-foreground mt-1.5">PDF, PNG, JPG, WebP · สูงสุด 10 MB</p>
                       </>
                     )}
                   </div>
@@ -479,9 +484,7 @@ export default function ChecklistDetailPage() {
   );
 }
 
-function InfoRow({ label, value, bold, span2 }: {
-  label: string; value: string; bold?: boolean; span2?: boolean;
-}) {
+function InfoRow({ label, value, bold, span2 }: { label: string; value: string; bold?: boolean; span2?: boolean }) {
   return (
     <div className={span2 ? 'md:col-span-2' : ''}>
       <span className="text-xs text-muted-foreground">{label}</span>

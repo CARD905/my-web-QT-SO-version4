@@ -27,7 +27,8 @@ export type SaleOrderStatus =
   | 'PENDING_REVIEW'
   | 'CONFIRMED'
   | 'COMPLETED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'REJECTED';
 
 export type ApprovalAction =
   | 'PENDING'
@@ -221,6 +222,7 @@ export interface Quotation {
   poRejectedById?: string | null;
   poRejectionReason?: string | null;
   poUploadHistory?: unknown;
+  poNumber?: string | null;
 }
 
 export interface QuotationComment {
@@ -292,7 +294,10 @@ export interface SaleOrder {
   paymentTerms?: string | null;
   conditions?: string | null;
   status: SaleOrderStatus;
+  poNumber?: string | null;
+  deadlineDate?: string | Date | null;
   items?: SaleOrderItem[];
+  
 }
 
 // ============================================================

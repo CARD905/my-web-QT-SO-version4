@@ -25,7 +25,7 @@ interface CurrentUser {
 const saleOrderInclude = {
   items: { orderBy: { sortOrder: 'asc' as const } },
   customer: { select: { id: true, company: true, contactName: true } },
-  quotation: { select: { id: true, quotationNo: true, expiryDate: true, createdById: true } },
+  quotation: { select: { id: true, quotationNo: true, expiryDate: true, createdById: true, poFileUrl: true } },
 } satisfies Prisma.SaleOrderInclude;
 
 function isOfficer(roleCode: string): boolean {
@@ -33,7 +33,7 @@ function isOfficer(roleCode: string): boolean {
 }
 
 function isManagerOrAbove(roleCode: string): boolean {
-  return ['MANAGER', 'ADMIN', 'CEO'].includes(roleCode);
+  return ['MANAGER', 'ADMIN', 'CEO', 'APPROVER'].includes(roleCode);
 }
 
 export const saleOrdersService = {
@@ -99,127 +99,48 @@ export const saleOrdersService = {
 
     return so;
   },
-
-  // ============================================================
-  // UPDATE — Officer (creator) only, status = DRAFT
-  // ============================================================
-  async update(id: string, input: UpdateSaleOrderInput, currentUser: CurrentUser, req?: Request) {
+    async updateDeadline(id: string, deadlineDate: string, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
-
-    if (so.status !== 'DRAFT') {
-      throw new AppError(
-        409,
-        'INVALID_STATUS',
-        `Can only edit DRAFT sale orders (current: ${so.status})`,
-      );
+ 
+    if (so.status !== 'REJECTED') {
+      throw new AppError(409, 'INVALID_STATUS', `Can only edit deadline when status is REJECTED (current: ${so.status})`);
     }
-
-    // Only the quotation creator (Officer) can edit
+ 
     if (so.quotation.createdById !== currentUser.id) {
-      throw new AppError(
-        403,
-        'FORBIDDEN',
-        'Only the original officer can edit this sale order',
-      );
+      throw new AppError(403, 'FORBIDDEN', 'Only the original officer can edit deadline');
     }
-
-    // Build update data
-    const updateData: Prisma.SaleOrderUpdateInput = {};
-
-    if (input.customerCompany !== undefined) updateData.customerCompany = input.customerCompany;
-    if (input.customerContactName !== undefined) updateData.customerContactName = input.customerContactName;
-    if (input.customerTaxId !== undefined) updateData.customerTaxId = input.customerTaxId;
-    if (input.customerEmail !== undefined) updateData.customerEmail = input.customerEmail || null;
-    if (input.customerPhone !== undefined) updateData.customerPhone = input.customerPhone;
-    if (input.customerBillingAddress !== undefined) updateData.customerBillingAddress = input.customerBillingAddress;
-    if (input.customerShippingAddress !== undefined) updateData.customerShippingAddress = input.customerShippingAddress;
-    if (input.paymentTerms !== undefined) updateData.paymentTerms = input.paymentTerms;
-    if (input.conditions !== undefined) updateData.conditions = input.conditions;
-
-    // If items provided — recalculate totals
-    if (input.items && input.items.length > 0) {
-      const { subtotal, discountTotal, vatAmount, grandTotal, itemTotals } = calcQuotation(
-        input.items.map((i) => ({
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          discount: i.discount,
-          discountType: i.discountType,
-        })),
-        so.vatEnabled,
-        Number(so.vatRate),
-      );
-
-      updateData.subtotal = subtotal;
-      updateData.discountTotal = discountTotal;
-      updateData.vatAmount = vatAmount;
-      updateData.grandTotal = grandTotal;
+ 
+    const parsed = new Date(deadlineDate);
+    if (isNaN(parsed.getTime())) {
+      throw new AppError(400, 'BAD_REQUEST', 'Invalid date format');
     }
-
-    const updated = await prisma.$transaction(async (tx) => {
-      // Replace items if provided
-      if (input.items && input.items.length > 0) {
-        await tx.saleOrderItem.deleteMany({ where: { saleOrderId: id } });
-
-        const { itemTotals } = calcQuotation(
-          input.items.map((i) => ({
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            discount: i.discount,
-            discountType: i.discountType,
-          })),
-          so.vatEnabled,
-          Number(so.vatRate),
-        );
-
-        await tx.saleOrderItem.createMany({
-          data: input.items.map((item, idx) => ({
-            saleOrderId: id,
-            productId: item.productId || null,
-            productSku: item.productSku || null,
-            productName: item.productName,
-            productDescription: item.productDescription || null,
-            quantity: new Prisma.Decimal(item.quantity),
-            unit: item.unit,
-            unitPrice: new Prisma.Decimal(item.unitPrice),
-            discount: new Prisma.Decimal(item.discount),
-            discountType: item.discountType,
-            lineTotal: new Prisma.Decimal(itemTotals[idx]),
-            sortOrder: item.sortOrder ?? idx,
-          })),
-        });
-      }
-
-      return tx.saleOrder.update({
-        where: { id },
-        data: updateData,
-        include: saleOrderInclude,
-      });
+ 
+    const updated = await prisma.saleOrder.update({
+      where: { id },
+      data: { deadlineDate: parsed },
+      include: saleOrderInclude,
     });
-
+ 
     await logActivity(prisma, {
       userId: currentUser.id,
-      action: 'saleOrder.update',
+      action: 'saleOrder.updateDeadline',
       entityType: 'SaleOrder',
       entityId: id,
-      description: `Updated DRAFT sale order ${updated.saleOrderNo}`,
+      description: `Updated deadline for ${updated.saleOrderNo} to ${deadlineDate}`,
       req,
     });
-
+ 
     return updated;
   },
 
-  // ============================================================
-  // SUBMIT — Officer submits for Manager review
-  // ============================================================
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUBMIT — Officer กด "ส่งให้ Manager อนุมัติ" → PENDING_REVIEW
+  // ═══════════════════════════════════════════════════════════════════════
   async submit(id: string, input: SubmitSaleOrderInput, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
 
     if (so.status !== 'DRAFT') {
-      throw new AppError(
-        409,
-        'INVALID_STATUS',
-        `Can only submit DRAFT sale orders (current: ${so.status})`,
-      );
+      throw new AppError(409, 'INVALID_STATUS', `Can only submit DRAFT sale orders (current: ${so.status})`);
     }
 
     if (so.quotation.createdById !== currentUser.id) {
@@ -235,8 +156,8 @@ export const saleOrdersService = {
     // Notify Manager
     await notifyByRole(prisma, 'MANAGER', {
       type: 'SALE_ORDER_CREATED',
-      title: 'Sale Order รอ review',
-      message: `${updated.saleOrderNo} จาก ${updated.customerCompany} รอการตรวจสอบ${input.comment ? ` — ${input.comment}` : ''}`,
+      title: 'Sale Order รอ อนุมัติ',
+      message: `${updated.saleOrderNo} จาก ${updated.customerCompany} รอการอนุมัติ`,
       link: `/sale-orders/${updated.id}`,
       metadata: { saleOrderId: updated.id },
     });
@@ -246,17 +167,21 @@ export const saleOrdersService = {
       action: 'saleOrder.submit',
       entityType: 'SaleOrder',
       entityId: id,
-      description: `Submitted sale order ${updated.saleOrderNo} for review`,
+      description: `Submitted sale order ${updated.saleOrderNo} for manager approval`,
       req,
     });
 
     return updated;
   },
 
-  // ============================================================
-  // REVIEW APPROVE — Manager approves the review → back to DRAFT
-  // ============================================================
-  async reviewApprove(id: string, input: ReviewSaleOrderInput, currentUser: CurrentUser, req?: Request) {
+  // ═══════════════════════════════════════════════════════════════════════
+  // APPROVE — Manager อนุมัติ PENDING_REVIEW → CONFIRMED
+  // ═══════════════════════════════════════════════════════════════════════
+  async approve(id: string, currentUser: CurrentUser, comment?: string, req?: Request) {
+    if (!isManagerOrAbove(currentUser.roleCode)) {
+      throw new AppError(403, 'FORBIDDEN', 'Only Manager+ can approve sale orders');
+    }
+
     const so = await prisma.saleOrder.findFirst({
       where: { id, deletedAt: null },
       include: saleOrderInclude,
@@ -264,61 +189,7 @@ export const saleOrdersService = {
     if (!so) throw new AppError(404, 'NOT_FOUND', 'Sale Order not found');
 
     if (so.status !== 'PENDING_REVIEW') {
-      throw new AppError(
-        409,
-        'INVALID_STATUS',
-        `Can only review PENDING_REVIEW sale orders (current: ${so.status})`,
-      );
-    }
-
-    if (!isManagerOrAbove(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only Manager+ can review sale orders');
-    }
-
-    const updated = await prisma.saleOrder.update({
-      where: { id },
-      data: { status: 'DRAFT' },
-      include: saleOrderInclude,
-    });
-
-    // Notify the officer
-    await createNotification(prisma, {
-      userId: so.quotation.createdById,
-      type: 'SALE_ORDER_CREATED',
-      title: 'Sale Order ผ่าน review แล้ว',
-      message: `${updated.saleOrderNo} ผ่าน review สามารถ confirm เพื่อทำใบทางการได้${input.comment ? ` — ${input.comment}` : ''}`,
-      link: `/sale-orders/${updated.id}`,
-      metadata: { saleOrderId: updated.id },
-    });
-
-    await logActivity(prisma, {
-      userId: currentUser.id,
-      action: 'saleOrder.reviewApprove',
-      entityType: 'SaleOrder',
-      entityId: id,
-      description: `Approved review for ${updated.saleOrderNo}`,
-      req,
-    });
-
-    return updated;
-  },
-
-  // ============================================================
-  // CONFIRM — Officer confirms → CONFIRMED (locked)
-  // ============================================================
-  async confirm(id: string, currentUser: CurrentUser, req?: Request) {
-    const so = await this.getById(id, currentUser);
-
-    if (so.status !== 'DRAFT') {
-      throw new AppError(
-        409,
-        'INVALID_STATUS',
-        `Can only confirm DRAFT sale orders (current: ${so.status})`,
-      );
-    }
-
-    if (so.quotation.createdById !== currentUser.id) {
-      throw new AppError(403, 'FORBIDDEN', 'Only the original officer can confirm');
+      throw new AppError(409, 'INVALID_STATUS', `Can only approve PENDING_REVIEW orders (current: ${so.status})`);
     }
 
     const updated = await prisma.saleOrder.update({
@@ -327,45 +198,125 @@ export const saleOrdersService = {
       include: saleOrderInclude,
     });
 
-    await notifyByRole(prisma, 'MANAGER', {
+    // Notify Officer
+    await createNotification(prisma, {
+      userId: so.quotation.createdById,
       type: 'SALE_ORDER_CREATED',
-      title: 'Sale Order ยืนยันแล้ว',
-      message: `${updated.saleOrderNo} ได้รับการยืนยันเป็นใบทางการ`,
+      title: 'Sale Order อนุมัติแล้ว',
+      message: `${updated.saleOrderNo} ได้รับการอนุมัติ${comment ? ` — ${comment}` : ''} สามารถ Save PDF ได้เลย`,
       link: `/sale-orders/${updated.id}`,
       metadata: { saleOrderId: updated.id },
     });
 
     await logActivity(prisma, {
       userId: currentUser.id,
-      action: 'saleOrder.confirm',
+      action: 'saleOrder.approve',
       entityType: 'SaleOrder',
       entityId: id,
-      description: `Confirmed sale order ${updated.saleOrderNo} (locked)`,
+      description: `Approved sale order ${updated.saleOrderNo} → CONFIRMED`,
       req,
     });
 
     return updated;
   },
 
-  // ============================================================
-  // PDF generation (existing)
-  // ============================================================
+  // ═══════════════════════════════════════════════════════════════════════
+  // REJECT — Manager ปฏิเสธ PENDING_REVIEW → REJECTED
+  // ═══════════════════════════════════════════════════════════════════════
+  async reject(id: string, currentUser: CurrentUser, reason: string, req?: Request) {
+    if (!isManagerOrAbove(currentUser.roleCode)) {
+      throw new AppError(403, 'FORBIDDEN', 'Only Manager+ can reject sale orders');
+    }
+    if (!reason || reason.trim().length < 2) {
+      throw new AppError(400, 'BAD_REQUEST', 'Rejection reason is required');
+    }
+
+    const so = await prisma.saleOrder.findFirst({
+      where: { id, deletedAt: null },
+      include: saleOrderInclude,
+    });
+    if (!so) throw new AppError(404, 'NOT_FOUND', 'Sale Order not found');
+
+    if (so.status !== 'PENDING_REVIEW') {
+      throw new AppError(409, 'INVALID_STATUS', `Can only reject PENDING_REVIEW orders (current: ${so.status})`);
+    }
+
+    const updated = await prisma.saleOrder.update({
+      where: { id },
+      data: { status: 'REJECTED' },
+      include: saleOrderInclude,
+    });
+
+    // Notify Officer
+    await createNotification(prisma, {
+      userId: so.quotation.createdById,
+      type: 'SALE_ORDER_CREATED',
+      title: 'Sale Order ถูกปฏิเสธ',
+      message: `${updated.saleOrderNo} ถูกปฏิเสธ: ${reason}`,
+      link: `/sale-orders/${updated.id}`,
+      metadata: { saleOrderId: updated.id, reason },
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: 'saleOrder.reject',
+      entityType: 'SaleOrder',
+      entityId: id,
+      description: `Rejected sale order ${updated.saleOrderNo}: ${reason}`,
+      req,
+    });
+
+    return updated;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // UPDATE — Officer แก้ DRAFT (ยังคงไว้ใช้ถ้าต้องการ)
+  // ═══════════════════════════════════════════════════════════════════════
+  async update(id: string, input: UpdateSaleOrderInput, currentUser: CurrentUser, req?: Request) {
+    const so = await this.getById(id, currentUser);
+
+    if (so.status !== 'DRAFT') {
+      throw new AppError(409, 'INVALID_STATUS', `Can only edit DRAFT sale orders (current: ${so.status})`);
+    }
+
+    if (so.quotation.createdById !== currentUser.id) {
+      throw new AppError(403, 'FORBIDDEN', 'Only the original officer can edit this sale order');
+    }
+
+    const updateData: Prisma.SaleOrderUpdateInput = {};
+    if (input.paymentTerms !== undefined) updateData.paymentTerms = input.paymentTerms;
+    if (input.conditions !== undefined) updateData.conditions = input.conditions;
+
+    const updated = await prisma.saleOrder.update({
+      where: { id },
+      data: updateData,
+      include: saleOrderInclude,
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: 'saleOrder.update',
+      entityType: 'SaleOrder',
+      entityId: id,
+      description: `Updated DRAFT sale order ${updated.saleOrderNo}`,
+      req,
+    });
+
+    return updated;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PDF
+  // ═══════════════════════════════════════════════════════════════════════
   async generatePdf(id: string, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
     const company = await prisma.companySettings.findFirst();
 
-    if (!company) {
-      throw new AppError(
-        500,
-        'COMPANY_NOT_CONFIGURED',
-        'Company settings not configured. Please contact admin.',
-      );
-    }
+    if (!company) throw new AppError(500, 'COMPANY_NOT_CONFIGURED', 'Company settings not configured');
 
     const fileName = `${so.saleOrderNo}.pdf`;
     const html = buildSaleOrderHtml(so, company);
     const filePath = await generatePdfFromHtml(html, fileName);
-
     const fileUrl = `/uploads/pdfs/${fileName}`;
 
     await logActivity(prisma, {
@@ -382,7 +333,6 @@ export const saleOrdersService = {
 
   async getPdfFile(id: string, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
-
     const fileName = `${so.saleOrderNo}.pdf`;
     const expectedPath = path.resolve(`./uploads/pdfs/${fileName}`);
 
@@ -393,5 +343,13 @@ export const saleOrdersService = {
       const result = await this.generatePdf(id, currentUser, req);
       return { filePath: path.resolve(result.filePath), fileName: result.fileName };
     }
+  },
+
+  // ─── Legacy (ไม่ได้ใช้แล้ว) ──────────────────────────────────────────────
+  async reviewApprove(id: string, input: ReviewSaleOrderInput, currentUser: CurrentUser, req?: Request) {
+    return this.approve(id, currentUser, input.comment, req);
+  },
+  async confirm(id: string, currentUser: CurrentUser, req?: Request) {
+    throw new AppError(400, 'BAD_REQUEST', 'Please use /approve endpoint instead');
   },
 };
