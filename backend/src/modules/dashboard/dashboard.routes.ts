@@ -10,7 +10,7 @@ router.use(authenticate);
 
 router.get(
   '/sales',
-  requireRole('SALES', 'ADMIN'),
+  requireRole('OFFICER', 'SALES', 'ADMIN'),
   asyncHandler(dashboardController.sales),
 );
 

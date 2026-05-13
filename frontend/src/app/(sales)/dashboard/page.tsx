@@ -109,46 +109,48 @@ export default function SalesDashboardPage() {
 
   // ✅ Fetch Sale Orders ที่ต้องทำ (DRAFT + REJECTED)
   useEffect(() => {
-    if (permLoading || redirecting) return;
-    if (role?.code && MANAGER_ROLES.includes(role.code)) return;
+  if (permLoading || redirecting) return;
+  if (role?.code && MANAGER_ROLES.includes(role.code)) return;
 
-    let cancelled = false;
-    (async () => {
-      setSoLoading(true);
-      try {
-        const [draftRes, rejectedRes] = await Promise.all([
-          api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=DRAFT&limit=10'),
-          api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=REJECTED&limit=10'),
+  let cancelled = false;
+  (async () => {
+    setSoLoading(true);
+    try {
+      const [draftRes, rejectedRes] = await Promise.all([
+        api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=DRAFT&limit=20'),
+        api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=REJECTED&limit=20'),
+      ]);
+      if (!cancelled) {
+        const toArray = (raw: any): SaleOrder[] => {
+          if (!raw) return [];
+          if (Array.isArray(raw)) return raw;
+          if (Array.isArray(raw.data)) return raw.data;
+          return [];
+        };
+
+        const toTask = (so: SaleOrder): SoTask => ({
+          id: so.id,
+          saleOrderNo: so.saleOrderNo,
+          customerCompany: so.customerCompany,
+          status: so.status,
+          grandTotal: so.grandTotal,
+          currency: so.currency,
+          issueDate: so.issueDate,
+        });
+
+        setSoTasks([
+          ...toArray(rejectedRes.data.data).map(toTask),
+          ...toArray(draftRes.data.data).map(toTask),
         ]);
-        if (!cancelled) {
-          const drafts = (draftRes.data.data ?? []).map((so) => ({
-            id: so.id,
-            saleOrderNo: so.saleOrderNo,
-            customerCompany: so.customerCompany,
-            status: so.status,
-            grandTotal: so.grandTotal,
-            currency: so.currency,
-            issueDate: so.issueDate,
-          }));
-          const rejected = (rejectedRes.data.data ?? []).map((so) => ({
-            id: so.id,
-            saleOrderNo: so.saleOrderNo,
-            customerCompany: so.customerCompany,
-            status: so.status,
-            grandTotal: so.grandTotal,
-            currency: so.currency,
-            issueDate: so.issueDate,
-          }));
-          setSoTasks([...rejected, ...drafts]); // REJECTED ขึ้นก่อน (สำคัญกว่า)
-        }
-      } catch {
-        // silent
-      } finally {
-        if (!cancelled) setSoLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [permLoading, redirecting, role]);
+    } catch (err) {
+      console.error('SO fetch error:', err);
+    } finally {
+      if (!cancelled) setSoLoading(false);
+    }
+  })();
+  return () => { cancelled = true; };
+},[permLoading, redirecting, role]);
 
   if (permLoading || redirecting) {
     return (
@@ -291,24 +293,6 @@ export default function SalesDashboardPage() {
           )}
         </SectionCard>
       )}
-
-      {/* Rejected / Need Revision */}
-      {(loading || (stats?.byStatus.rejected ?? 0) > 0) && (
-        <SectionCard title="ถูกปฏิเสธ — ต้องแก้ไข" icon={<XCircle className="h-4 w-4 text-red-500" />} badge={stats?.byStatus.rejected} badgeVariant="destructive">
-          {loading ? <TaskSkeleton count={2} /> : stats?.rejectedItems && stats.rejectedItems.length > 0 ? (
-            <div className="divide-y divide-border">
-              {stats.rejectedItems.map((item) => <RejectedRow key={item.id} task={item} />)}
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {stats?.recent.filter((q) => q.status === 'REJECTED').slice(0, 5).map((q) => (
-                <RejectedRow key={q.id} task={{ id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany, status: q.status, updatedAt: '', priority: 'high', actionLabel: 'แก้ไขและส่งใหม่', rejectionReason: q.rejectionReason ?? undefined }} />
-              ))}
-            </div>
-          )}
-        </SectionCard>
-      )}
-
       {/* Waiting on Others */}
       <SectionCard title="รออยู่ที่คนอื่น" icon={<Hourglass className="h-4 w-4 text-amber-500" />} badge={stats?.waitingItems?.length}>
         {loading ? <TaskSkeleton count={3} /> : !stats?.waitingItems || stats.waitingItems.length === 0 ? (
