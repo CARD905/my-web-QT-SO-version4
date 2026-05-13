@@ -21,7 +21,14 @@ export function CommentThread({ quotationId }: CommentThreadProps) {
   const [unread, setUnread] = useState(0);
 
   // ─── Drag state ──────────────────────────────────────────────────────────
-  const [pos, setPos] = useState({ x: 24, y: 24 }); // bottom-right offset
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+// เพิ่ม useEffect นี้หลัง useState
+  useEffect(() => {
+    setPos({
+      x: window.innerWidth - 80,
+      y: window.innerHeight - 80,
+    });
+  }, []);// bottom-right offset
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
 
