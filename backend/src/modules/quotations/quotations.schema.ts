@@ -28,6 +28,7 @@ export const createQuotationSchema = z.object({
   vatRate: z.coerce.number().min(0).max(100).default(7),
   paymentTerms: z.string().max(100).optional().nullable(),
   conditions: z.string().max(5000).optional().nullable(),
+  specialDiscountReason: z.string().max(500).optional(),
   items: z.array(itemSchema).min(1, 'At least one item required'),
 });
 

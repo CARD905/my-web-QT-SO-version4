@@ -316,6 +316,13 @@ model Quotation {
   deletedAt               DateTime?             @map("deleted_at")
   createdAt               DateTime              @default(now()) @map("created_at")
   updatedAt               DateTime              @updatedAt @map("updated_at")
+  specialDiscountRequested Boolean   @default(false) @map("special_discount_requested")
+  specialDiscountPercent   Decimal?  @map("special_discount_percent") @db.Decimal(5, 2)
+  specialDiscountReason    String?   @map("special_discount_reason")
+  specialDiscountStatus    String?   @map("special_discount_status")
+  specialDiscountFinalPct  Decimal?  @map("special_discount_final_pct") @db.Decimal(5, 2)
+  specialDiscountById      String?   @map("special_discount_by_id")
+  specialDiscountAt        DateTime? @map("special_discount_at")
 
   // ─── NEW: PO workflow fields ───────────────────────────────────────────
   poFileUrl          String?   @map("po_file_url")

@@ -18,41 +18,29 @@ import {
 } from './quotations.schema';
 
 const router = Router();
-
 router.use(authenticate);
 
-// ============================================================
-// STATIC routes — ต้องอยู่ก่อน /:id เสมอ
-// ============================================================
+// ─── STATIC routes ก่อน /:id เสมอ ──────────────────────────────────────────
 
-// POST /bulk-approve
 router.post(
   '/bulk-approve',
-  requireAnyPermission(
-    ['quotation', 'approve', 'TEAM'],
-    ['quotation', 'approve', 'ALL'],
-  ),
+  requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(quotationsController.bulkApprove),
 );
 
-// DELETE /comments/:commentId
-router.delete(
-  '/comments/:commentId',
-  asyncHandler(quotationsController.deleteComment),
-);
+router.delete('/comments/:commentId', asyncHandler(quotationsController.deleteComment));
 
-// ════════════════════════════════════════════════════════════
-// CHECKLIST — ต้องอยู่ก่อน /:id (ไม่งั้น "checklist" จะถูก match เป็น :id)
-// GET /quotations/checklist
-// ════════════════════════════════════════════════════════════
+router.get('/checklist', asyncHandler(poController.checklist));
+
+// ✅ Special Discount — CEO only (ต้องอยู่ก่อน /:id)
 router.get(
-  '/checklist',
-  asyncHandler(poController.checklist),
+  '/special-discount/pending',
+  requireAnyPermission(['quotation', 'approve', 'ALL']),
+  asyncHandler(quotationsController.listSpecialDiscountRequests),
 );
 
-// ============================================================
-// VIEW
-// ============================================================
+// ─── LIST / GET ──────────────────────────────────────────────────────────────
+
 router.get(
   '/',
   requireAnyPermission(
@@ -76,9 +64,8 @@ router.get(
   asyncHandler(quotationsController.getById),
 );
 
-// ============================================================
-// CREATE / UPDATE / SUBMIT / CANCEL
-// ============================================================
+// ─── CREATE / UPDATE / SUBMIT / CANCEL ──────────────────────────────────────
+
 router.post(
   '/',
   requirePermission('quotation', 'create', 'OWN'),
@@ -107,9 +94,8 @@ router.post(
   asyncHandler(quotationsController.cancel),
 );
 
-// ============================================================
-// APPROVE / REJECT
-// ============================================================
+// ─── APPROVE / REJECT ────────────────────────────────────────────────────────
+
 router.post(
   '/:id/approve',
   requireAnyPermission(
@@ -132,9 +118,8 @@ router.post(
   asyncHandler(quotationsController.reject),
 );
 
-// ============================================================
-// VERSIONS
-// ============================================================
+// ─── VERSIONS ────────────────────────────────────────────────────────────────
+
 router.get(
   '/:id/versions',
   requireAnyPermission(
@@ -145,57 +130,45 @@ router.get(
   asyncHandler(quotationsController.getVersions),
 );
 
-// ════════════════════════════════════════════════════════════
-// PO WORKFLOW — ต้องอยู่หลัง /:id/submit, /:id/approve ฯลฯ
-// แต่ก่อน /:quotationId/comments
-// ════════════════════════════════════════════════════════════
+// ─── PO WORKFLOW ─────────────────────────────────────────────────────────────
 
-// POST /quotations/:id/po-upload (multipart/form-data, field: file)
-router.post(
-  '/:id/po-upload',
-  uploadPoFile,
-  asyncHandler(poController.upload),
-);
-
-// POST /quotations/:id/po-submit
-router.post(
-  '/:id/po-submit',
-  asyncHandler(poController.submit),
-);
-
-// POST /quotations/:id/po-approve (Manager+)
+router.post('/:id/po-upload', uploadPoFile, asyncHandler(poController.upload));
+router.post('/:id/po-submit', asyncHandler(poController.submit));
 router.post(
   '/:id/po-approve',
-  requireAnyPermission(
-    ['quotation', 'approve', 'TEAM'],
-    ['quotation', 'approve', 'ALL'],
-  ),
+  requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(poController.approve),
 );
 router.post(
   '/:id/po-cancel',
-  requireAnyPermission(
-    ['quotation', 'approve', 'TEAM'],
-    ['quotation', 'approve', 'ALL'],
-  ),
+  requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(poController.cancel),
 );
-
-// POST /quotations/:id/po-reject (Manager+)
 router.post(
   '/:id/po-reject',
-  requireAnyPermission(
-    ['quotation', 'approve', 'TEAM'],
-    ['quotation', 'approve', 'ALL'],
-  ),
+  requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(poController.reject),
 );
 
+// ✅ SPECIAL DISCOUNT — CEO/Admin เท่านั้น
+router.post(
+  '/:id/special-discount/approve',
+  requireAnyPermission(['quotation', 'approve', 'ALL']),
+  asyncHandler(quotationsController.approveSpecialDiscount),
+);
+router.post(
+  '/:id/special-discount/reject',
+  requireAnyPermission(['quotation', 'approve', 'ALL']),
+  asyncHandler(quotationsController.rejectSpecialDiscount),
+);
+router.post(
+  '/:id/special-discount/modify',
+  requireAnyPermission(['quotation', 'approve', 'ALL']),
+  asyncHandler(quotationsController.modifySpecialDiscount),
+);
 
-// ============================================================
-// COMMENTS — mount ที่ /:quotationId/comments
-// commentsRoutes ใช้ mergeParams: true จึงเข้าถึง :quotationId ได้
-// ============================================================
+// ─── COMMENTS ────────────────────────────────────────────────────────────────
+
 router.use('/:quotationId/comments', commentsRoutes);
 
 export default router;

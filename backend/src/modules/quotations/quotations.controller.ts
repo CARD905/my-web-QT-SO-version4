@@ -4,18 +4,11 @@ import { AppError, created, success } from '../../utils/response';
 
 function requireUser(req: Request): CurrentUser {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-
   const u = req.user as {
-    id: string;
-    name?: string;
-    email?: string;
-    role?: string;
-    roleCode?: string;
-    roleId?: string;
+    id: string; name?: string; email?: string;
+    role?: string; roleCode?: string; roleId?: string;
   };
-
   if (!u.roleId) throw new AppError(401, 'INVALID_TOKEN', 'Token missing role info');
-
   return {
     id: u.id,
     roleCode: u.roleCode || u.role || 'OFFICER',
@@ -59,7 +52,7 @@ export const quotationsController = {
   async approve(req: Request, res: Response) {
     const user = requireUser(req);
     const result = await quotationsService.approve(req.params.id, req.body, user.id, req);
-    return success(res, result, 'Quotation approved and Sale Order created');
+    return success(res, result, 'Quotation approved');
   },
 
   async reject(req: Request, res: Response) {
@@ -101,15 +94,36 @@ export const quotationsController = {
   async bulkApprove(req: Request, res: Response) {
     const user = requireUser(req);
     const { ids } = req.body as { ids: string[] };
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      throw new AppError(400, 'BAD_REQUEST', 'ids array required');
-    }
-    if (ids.length > 50) {
-      throw new AppError(400, 'BAD_REQUEST', 'Maximum 50 quotations per batch');
-    }
-
+    if (!Array.isArray(ids) || ids.length === 0) throw new AppError(400, 'BAD_REQUEST', 'ids array required');
+    if (ids.length > 50) throw new AppError(400, 'BAD_REQUEST', 'Maximum 50 quotations per batch');
     const data = await quotationsService.bulkApprove(ids, user);
     return success(res, data);
+  },
+
+  // ✅ Special Discount handlers
+  async listSpecialDiscountRequests(req: Request, res: Response) {
+    const user = requireUser(req);
+    const result = await quotationsService.listSpecialDiscountRequests(user);
+    return success(res, result);
+  },
+
+  async approveSpecialDiscount(req: Request, res: Response) {
+    const user = requireUser(req);
+    const result = await quotationsService.approveSpecialDiscount(req.params.id, user, req);
+    return success(res, result, 'Special discount approved ✅');
+  },
+
+  async rejectSpecialDiscount(req: Request, res: Response) {
+    const user = requireUser(req);
+    const result = await quotationsService.rejectSpecialDiscount(req.params.id, user, req);
+    return success(res, result, 'Special discount rejected — discounts auto-reduced to 20%');
+  },
+
+  async modifySpecialDiscount(req: Request, res: Response) {
+    const user = requireUser(req);
+    const { finalPercent } = req.body as { finalPercent: number };
+    if (typeof finalPercent !== 'number') throw new AppError(400, 'BAD_REQUEST', 'finalPercent is required');
+    const result = await quotationsService.modifySpecialDiscount(req.params.id, finalPercent, user, req);
+    return success(res, result, `Special discount modified to ${finalPercent}%`);
   },
 };
