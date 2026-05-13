@@ -57,7 +57,8 @@
     "userDrillDown": "ดูข้อมูลรายบุคคล",
     "quotationList": "รายการใบเสนอราคา",
     "quotationChecklist": "Checklist (รอ PO)",
-    "pendingSaleOrder": "Pending Sale Order"
+    "pendingSaleOrder": "Pending Sale Order",
+    "specialDiscount": "Special Discount"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

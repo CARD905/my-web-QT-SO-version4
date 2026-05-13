@@ -56,7 +56,8 @@
     "teamOverview": "Team Overview",
     "userDrillDown": "Drill-down Users",
     "quotationList": "Quotation List",
-    "quotationChecklist": "Checklist (Awaiting PO)"
+    "quotationChecklist": "Checklist (Awaiting PO)",
+    "specialDiscount": "Special Discount"
   },
   "login": {
     "title": "Sign In",

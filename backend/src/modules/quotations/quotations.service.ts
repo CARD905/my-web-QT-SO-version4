@@ -230,7 +230,7 @@ export const quotationsService = {
         type: 'QUOTATION_SUBMITTED',
         title: `⭐ ขออนุมัติ Special Discount ${maxPctDiscount}%`,
         message: `${quotation.quotationNo} จาก ${quotation.customerCompany} — ${(input as any).specialDiscountReason}`,
-        link: `/manager/special-discount/${quotation.id}`,
+        link: `/special-discount/${quotation.id}`,
         metadata: { quotationId: quotation.id, requestedPct: maxPctDiscount },
       });
     }
