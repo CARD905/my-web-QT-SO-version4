@@ -330,7 +330,7 @@ model Quotation {
   poFileMimeType     String?   @map("po_file_mime_type")
   poUploadedAt       DateTime? @map("po_uploaded_at")
   poUploadedById     String?   @map("po_uploaded_by_id")
-  poSubmittedAt      DateTime? @map("po_submitted_at")+
+  poSubmittedAt      DateTime? @map("po_submitted_at")
   poApprovedAt       DateTime? @map("po_approved_at")
   poApprovedById     String?   @map("po_approved_by_id")
   poRejectedAt       DateTime? @map("po_rejected_at")
