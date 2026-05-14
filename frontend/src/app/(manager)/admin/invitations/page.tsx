@@ -49,13 +49,6 @@ interface Invitation {
   invitedBy: { id: string; name: string; email: string };
 }
 
-interface RoleOption {
-  id: string;
-  code: string;
-  nameTh: string;
-  level: number;
-}
-
 interface TeamOption {
   id: string;
   name: string;
@@ -77,7 +70,6 @@ export default function AdminInvitationsPage() {
   const canInvite = can('user', 'invite', 'TEAM') || can('user', 'invite', 'ALL');
 
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -92,13 +84,12 @@ export default function AdminInvitationsPage() {
       if (filterStatus !== 'all') params.set('status', filterStatus);
       params.set('limit', '100');
 
-      const [iRes, rRes, tRes] = await Promise.all([
+      // ✅ ลบ /admin/users/_roles ออก — ADMIN ไม่มีสิทธิ์ และไม่ต้องใช้แล้ว
+      const [iRes, tRes] = await Promise.all([
         api.get<ApiResponse<Invitation[]>>(`/invitations?${params}`),
-        api.get<ApiResponse<RoleOption[]>>('/admin/users/_roles'),
         api.get<ApiResponse<TeamOption[]>>('/admin/users/_teams'),
       ]);
       setInvitations(iRes.data.data ?? []);
-      setRoles(rRes.data.data ?? []);
       setTeams(tRes.data.data ?? []);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -149,7 +140,7 @@ export default function AdminInvitationsPage() {
             Invitations
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            เชิญผู้ใช้ใหม่เข้าสู่ระบบผ่านลิงก์
+            เชิญ Manager ใหม่เข้าสู่ระบบผ่านลิงก์
           </p>
         </div>
         <Button onClick={() => setCreating(true)}>
@@ -259,7 +250,6 @@ export default function AdminInvitationsPage() {
       {/* Create Invitation Dialog */}
       {creating && (
         <CreateInvitationDialog
-          roles={roles}
           teams={teams}
           onClose={() => setCreating(false)}
           onCreated={(url, email) => {
@@ -311,42 +301,39 @@ export default function AdminInvitationsPage() {
 // Create Invitation Dialog
 // ===========================
 function CreateInvitationDialog({
-  roles,
   teams,
   onClose,
   onCreated,
 }: {
-  roles: RoleOption[];
   teams: TeamOption[];
   onClose: () => void;
   onCreated: (url: string, email: string) => void;
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [roleId, setRoleId] = useState(roles.find((r) => r.code === 'OFFICER')?.id || '');
   const [teamId, setTeamId] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(3);
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    if (!email.trim() || !roleId) {
-      toast.error('Please fill in email and role');
+    if (!email.trim()) {
+      toast.error('กรุณากรอก Email');
       return;
     }
     setSubmitting(true);
     try {
+      // ✅ ไม่ส่ง roleId — backend auto-set เป็น MANAGER ให้เอง
       const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>(
         '/invitations',
         {
           email,
           name: name || undefined,
-          roleId,
-          teamId: teamId || null,
+          teamId: teamId || undefined,
           channel: 'MANUAL',
           expiresInDays,
         },
       );
-      const url = res.data.data?.invitationUrl || '';
+      const url = res.data.data?.invitationUrl || `${window.location.origin}/invite/${res.data.data?.token}`;
       toast.success('Invitation created');
       onCreated(url, email);
     } catch (err) {
@@ -360,53 +347,39 @@ function CreateInvitationDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Invitation</DialogTitle>
-          <DialogDescription>เชิญผู้ใช้ใหม่เข้าระบบ</DialogDescription>
+          <DialogTitle>เชิญ Manager ใหม่</DialogTitle>
+          <DialogDescription>Manager จะได้รับ Invitation Link เพื่อสร้าง Account</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">Email *</Label>
+            <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
             <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@example.com"
+              placeholder="manager@example.com"
               className="mt-1.5"
               autoFocus
             />
           </div>
           <div>
-            <Label className="text-xs">Name (optional)</Label>
+            <Label className="text-xs">ชื่อ (optional)</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
+              placeholder="ชื่อ-นามสกุล"
               className="mt-1.5"
             />
           </div>
           <div>
-            <Label className="text-xs">Role *</Label>
-            <select
-              value={roleId}
-              onChange={(e) => setRoleId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nameTh} (L{r.level})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label className="text-xs">Team</Label>
+            <Label className="text-xs">ทีม (optional)</Label>
             <select
               value={teamId}
               onChange={(e) => setTeamId(e.target.value)}
               className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
-              <option value="">— No team —</option>
+              <option value="">— ไม่ระบุทีม —</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.department?.name} / {t.name}
@@ -415,7 +388,7 @@ function CreateInvitationDialog({
             </select>
           </div>
           <div>
-            <Label className="text-xs">Expires in (days)</Label>
+            <Label className="text-xs">Link หมดอายุใน (วัน)</Label>
             <Input
               type="number"
               min={1}
@@ -429,11 +402,12 @@ function CreateInvitationDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            ยกเลิก
           </Button>
           <Button onClick={submit} disabled={submitting}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create Invitation
+            <Mail className="h-4 w-4" />
+            สร้าง Invitation
           </Button>
         </DialogFooter>
       </DialogContent>
