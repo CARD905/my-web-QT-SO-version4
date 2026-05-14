@@ -18,6 +18,7 @@ interface NavItem {
   labelKey: string;
   icon: LucideIcon;
   requires?: { resource: string; action: string; scope?: 'OWN' | 'TEAM' | 'DEPARTMENT' | 'ALL' };
+  onlyRoles?: string[];
   children?: NavItem[];
 }
 
@@ -77,6 +78,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: 'nav.myTeam',
     icon: Users,
     requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
+    onlyRoles: ['MANAGER'],
   },
   // ✅ ADMIN เห็น Invitations (invite:ALL)
   {
@@ -84,6 +86,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: 'nav.invitations',
     icon: Mail,
     requires: { resource: 'user', action: 'invite', scope: 'ALL' },
+    onlyRoles: ['ADMIN', 'CEO']
   },
   {
     href: '/company',
@@ -234,6 +237,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const filterItems = (items: NavItem[]): NavItem[] => {
     return items
       .filter((item) => {
+        if (item.onlyRoles && !item.onlyRoles.includes(roleCode)) return false;
         if (!item.requires) return true;
         if (loading) return true;
         if (!permissions || permissions.length === 0) return true;
