@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
-  CheckSquare, Star,
+  CheckSquare, Star, Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -53,7 +53,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     requires: { resource: 'saleOrder', action: 'view', scope: 'OWN' },
   },
-  // ✅ Special Discount — เห็นเฉพาะ CEO/Admin (approve ALL)
   {
     href: '/special-discount',
     labelKey: 'nav.specialDiscount',
@@ -72,12 +71,20 @@ const NAV_ITEMS: NavItem[] = [
     icon: Package,
     requires: { resource: 'product', action: 'view', scope: 'ALL' },
   },
+  // ✅ MANAGER เห็น My Team (invite:TEAM)
   {
-  href: '/manager/team',
-  labelKey: 'nav.myTeam',
-  icon: Users,
-  requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
-},
+    href: '/manager/team',
+    labelKey: 'nav.myTeam',
+    icon: Users,
+    requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
+  },
+  // ✅ ADMIN เห็น Invitations (invite:ALL)
+  {
+    href: '/admin/invitations',
+    labelKey: 'nav.invitations',
+    icon: Mail,
+    requires: { resource: 'user', action: 'invite', scope: 'ALL' },
+  },
   {
     href: '/company',
     labelKey: 'nav.company',
