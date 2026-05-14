@@ -130,7 +130,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'customer:view:all', 'customer:create:all', 'customer:update:all', 'customer:delete:all',
     'product:view:all', 'product:create:all', 'product:update:all', 'product:delete:all',
     'company:view:all', 'company:update:all',
-    'user:view:all', 'user:invite:all', 'user:update:all', 'user:changeRole:all',
+    'user:view:all', 'user:update:all', 'user:changeRole:all',
     'team:view:all', 'team:create:all', 'team:update:all', 'team:assignMember:all',
     'department:view:all', 'department:create:all', 'department:update:all',
     'role:view:all', 'role:assignPermission:all',

@@ -595,7 +595,7 @@ export const quotationsService = {
   },
 
   async approveSpecialDiscount(id: string, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
+    if (!['CEO'].includes(currentUser.roleCode)) {
       throw new AppError(403, 'FORBIDDEN', 'Only CEO/Admin can approve special discounts');
     }
     const q = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
@@ -633,8 +633,8 @@ export const quotationsService = {
   },
 
   async rejectSpecialDiscount(id: string, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO/Admin can reject special discounts');
+    if (!['CEO'].includes(currentUser.roleCode)) {
+      throw new AppError(403, 'FORBIDDEN', 'Only CEO can reject special discounts');
     }
     const q = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
@@ -693,8 +693,8 @@ export const quotationsService = {
   },
 
   async modifySpecialDiscount(id: string, finalPercent: number, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO/Admin can modify special discounts');
+    if (!['CEO'].includes(currentUser.roleCode)) {
+      throw new AppError(403, 'FORBIDDEN', 'Only CEO can modify special discounts');
     }
     if (finalPercent < 0 || finalPercent > SPECIAL_DISCOUNT_MAX) {
       throw new AppError(400, 'BAD_REQUEST', `Final percent must be between 0 and ${SPECIAL_DISCOUNT_MAX}`);
