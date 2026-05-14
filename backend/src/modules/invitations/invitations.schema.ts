@@ -5,9 +5,9 @@ export const createInvitationSchema = z.object({
   email: z.string().email().toLowerCase(),
   name: z.string().min(2).max(100).optional(),
   phone: z.string().max(20).optional().nullable(),
-  roleId: z.string().cuid().optional(),
-  teamId: z.string().cuid().optional().nullable(),
-  reportsToId: z.string().cuid().optional().nullable(),
+  roleId: z.string().uuid().optional(),        // ✅ cuid → uuid
+  teamId: z.string().uuid().optional().nullable(),
+  reportsToId: z.string().uuid().optional().nullable(),
   channel: z.enum(['MANUAL', 'EMAIL', 'BOTH']).default('MANUAL'),
   expiresInDays: z.number().int().min(1).max(30).default(3),
 });
@@ -21,7 +21,7 @@ export const acceptInvitationSchema = z.object({
 
 export const listInvitationsQuerySchema = paginationSchema.extend({
   status: z.enum(['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']).optional(),
-  teamId: z.string().cuid().optional(),
+  teamId: z.string().uuid().optional(),        // ✅ cuid → uuid
 });
 
 export type CreateInvitationInput = z.infer<typeof createInvitationSchema>;
