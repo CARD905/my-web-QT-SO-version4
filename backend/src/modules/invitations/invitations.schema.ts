@@ -5,7 +5,7 @@ export const createInvitationSchema = z.object({
   email: z.string().email().toLowerCase(),
   name: z.string().min(2).max(100).optional(),
   phone: z.string().max(20).optional().nullable(),
-  roleId: z.string().cuid(),
+  roleId: z.string().cuid().optional(),
   teamId: z.string().cuid().optional().nullable(),
   reportsToId: z.string().cuid().optional().nullable(),
   channel: z.enum(['MANUAL', 'EMAIL', 'BOTH']).default('MANUAL'),

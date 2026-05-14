@@ -126,8 +126,6 @@ export default function ManagerTeamPage() {
   // ── Build hierarchy ────────────────────────────────────────────────────────
   const members = team?.members ?? [];
   const leads = members.filter((m) => m.isTeamLead);
-  const directOfficers = members.filter((m) => !m.isTeamLead && !m.reportsToId?.startsWith('lead'));
-  // Officers ที่ report ตรงต่อ Manager (reportsToId = managerId หรือ null ใน context ทีม)
   const officersUnderManager = members.filter(
     (m) => !m.isTeamLead && !leads.some((l) => l.id === m.reportsToId),
   );
@@ -306,7 +304,6 @@ function MemberRow({ member, indent, onPromote, promotingId, leads }: {
         <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
           <Link href={`/manager/users/${member.id}`}>ดูงาน</Link>
         </Button>
-        {/* ✅ ให้ Promote ได้เฉพาะ Officer ที่ไม่ได้อยู่ใต้ Lead อื่น */}
         {!leads.some((l) => l.id === member.reportsToId) && (
           <Button variant="outline" size="sm" className="h-7 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
             onClick={() => onPromote(member)} disabled={promotingId === member.id}>
@@ -328,29 +325,18 @@ function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [reportsToId, setReportsToId] = useState('');  // '' = รายงานตรง Manager
+  const [reportsToId, setReportsToId] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(3);
   const [submitting, setSubmitting] = useState(false);
 
-  const [officerRoleId, setOfficerRoleId] = useState('');
-
-  useEffect(() => {
-    api.get<ApiResponse<{ id: string; code: string }[]>>('/admin/users/_roles').then((res) => {
-      const officer = (res.data.data ?? []).find((r) => r.code === 'OFFICER');
-      if (officer) setOfficerRoleId(officer.id);
-    });
-  }, []);
-
   const submit = async () => {
     if (!email.trim()) { toast.error('กรุณากรอก Email'); return; }
-    if (!officerRoleId) { toast.error('ไม่พบ Role OFFICER'); return; }
     setSubmitting(true);
     try {
       const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>(
         '/invitations',
         {
           email, name: name || undefined,
-          roleId: officerRoleId,
           teamId: team.id,
           reportsToId: reportsToId || undefined,
           channel: 'MANUAL',
