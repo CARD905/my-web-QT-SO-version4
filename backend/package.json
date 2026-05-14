@@ -4,9 +4,9 @@
   "description": "Quotation & Sale Order Management System - Backend",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc && tsc-alias",
-    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts", 
+    "build": "next build",
+    "start": "next start",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
