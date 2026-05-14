@@ -58,7 +58,8 @@
     "quotationList": "รายการใบเสนอราคา",
     "quotationChecklist": "Checklist (รอ PO)",
     "pendingSaleOrder": "Pending Sale Order",
-    "specialDiscount": "Special Discount"
+    "specialDiscount": "ส่วนลดพิเศษ",
+    "nav.myTeam": "ทีมของฉัน"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

@@ -73,6 +73,12 @@ const NAV_ITEMS: NavItem[] = [
     requires: { resource: 'product', action: 'view', scope: 'ALL' },
   },
   {
+  href: '/manager/team',
+  labelKey: 'nav.myTeam',
+  icon: Users,
+  requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
+},
+  {
     href: '/company',
     labelKey: 'nav.company',
     icon: Building2,

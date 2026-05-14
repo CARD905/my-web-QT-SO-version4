@@ -118,6 +118,7 @@ model User {
   delegateToId       String?               @map("delegate_to_id")
   preferredLang      Lang                  @default(th) @map("preferred_lang")
   preferredTheme     Theme                 @default(light) @map("preferred_theme")
+  isTeamLead         Boolean               @default(false) @map("is_team_lead")
   isActive           Boolean               @default(true) @map("is_active")
   lastLoginAt        DateTime?             @map("last_login_at")
   version            Int                   @default(1)
