@@ -76,7 +76,7 @@ model Department {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   teams       Team[]
-
+  invitations Invitation[]
   @@index([deletedAt])
   @@map("departments")
 }
@@ -211,6 +211,7 @@ model Invitation {
   phone         String?
   roleId        String            @map("role_id")
   teamId        String?           @map("team_id")
+  departmentId  String?           @map("department_id")
   reportsToId   String?           @map("reports_to_id")
   invitedById   String            @map("invited_by_id")
   token         String            @unique
@@ -228,7 +229,8 @@ model Invitation {
   invitedBy     User              @relation("Inviter", fields: [invitedById], references: [id])
   role          Role              @relation(fields: [roleId], references: [id])
   team          Team?             @relation(fields: [teamId], references: [id])
-
+  department    Department?       @relation(fields: [departmentId], references: [id])
+  
   @@index([token])
   @@index([email])
   @@index([status])

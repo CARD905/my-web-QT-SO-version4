@@ -91,7 +91,6 @@ export const usersAdminService = {
       if (!supervisor) {
         throw new AppError(404, 'SUPERVISOR_NOT_FOUND', 'Reports-to user not found');
       }
-      // Cycle detection
       let cursorId: string | null = supervisor.reportsToId;
       const visited = new Set<string>([supervisor.id]);
       while (cursorId) {
@@ -108,7 +107,6 @@ export const usersAdminService = {
       }
     }
 
-    // Build update data — only include fields explicitly set
     const updateData: Prisma.UserUpdateInput = {};
     if (input.name !== undefined) updateData.name = input.name;
     if (input.phone !== undefined) updateData.phone = input.phone;
@@ -148,9 +146,7 @@ export const usersAdminService = {
     const existing = await prisma.user.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
-    if (existing.isActive === isActive) {
-      return existing;
-    }
+    if (existing.isActive === isActive) return existing;
 
     const updated = await prisma.user.update({
       where: { id },
@@ -195,6 +191,78 @@ export const usersAdminService = {
       entityType: 'User',
       entityId: id,
       description: `Reset password for ${user.email}`,
+      req,
+    });
+  },
+
+  // ✅ เพิ่มใหม่ — Soft delete user
+  async remove(id: string, actorId: string, req?: Request) {
+    if (id === actorId) {
+      throw new AppError(400, 'CANNOT_DELETE_SELF', 'ไม่สามารถลบบัญชีของตัวเองได้');
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        role: { select: { code: true } },
+        managedTeams: { where: { deletedAt: null }, select: { id: true, name: true } },
+        _count: { select: { reports: true } },
+      },
+    });
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'ไม่พบ User');
+
+    // ป้องกันลบ ADMIN / CEO
+    if (['ADMIN', 'CEO'].includes(user.role.code)) {
+      throw new AppError(403, 'FORBIDDEN', `ไม่สามารถลบ Account ระดับ ${user.role.code} ได้`);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Soft delete user
+      await tx.user.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      });
+
+      // 2. Revoke refresh tokens ทั้งหมด
+      await tx.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+
+      // 3. ถ้าเป็น MANAGER → soft delete ทีมที่ดูแลด้วย
+      if (user.role.code === 'MANAGER' && user.managedTeams.length > 0) {
+        await tx.team.updateMany({
+          where: { managerId: id, deletedAt: null },
+          data: { deletedAt: new Date(), isActive: false },
+        });
+        // ถอด Officer ออกจากทีมที่ถูกลบ
+        await tx.user.updateMany({
+          where: { teamId: { in: user.managedTeams.map((t) => t.id) }, deletedAt: null },
+          data: { teamId: null, reportsToId: null },
+        });
+      }
+
+      // 4. ถ้าคนอื่น reportsTo user นี้ → ถอด reportsToId ออก
+      if (user._count.reports > 0) {
+        await tx.user.updateMany({
+          where: { reportsToId: id, deletedAt: null },
+          data: { reportsToId: null },
+        });
+      }
+
+      // 5. Revoke pending invitations ที่ user นี้สร้างไว้
+      await tx.invitation.updateMany({
+        where: { invitedById: id, status: 'PENDING' },
+        data: { status: 'REVOKED', revokedAt: new Date(), revokedReason: 'Inviter account deleted' },
+      });
+    });
+
+    await logActivity(prisma, {
+      userId: actorId,
+      action: 'user.delete',
+      entityType: 'User',
+      entityId: id,
+      description: `Deleted user: ${user.email} (${user.role.code})`,
       req,
     });
   },

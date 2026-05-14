@@ -44,6 +44,13 @@ export const usersAdminController = {
     return success(res, null, 'Password reset successfully');
   },
 
+  // ✅ เพิ่มใหม่
+  async remove(req: Request, res: Response) {
+    const actor = requireUser(req);
+    await usersAdminService.remove(req.params.id, actor.id, req);
+    return success(res, null, 'User deleted successfully');
+  },
+
   async listRoles(_req: Request, res: Response) {
     const data = await usersAdminService.listRoles();
     return success(res, data);

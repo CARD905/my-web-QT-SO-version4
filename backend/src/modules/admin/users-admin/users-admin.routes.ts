@@ -12,7 +12,6 @@ import {
 const router = Router();
 router.use(authenticate);
 
-// View users — Admin/CEO only (user:view:ALL)
 router.get(
   '/',
   requirePermission('user', 'view', 'ALL'),
@@ -20,12 +19,12 @@ router.get(
   asyncHandler(usersAdminController.list),
 );
 
-// Helper endpoints for dropdowns
 router.get(
   '/_roles',
   requirePermission('user', 'view', 'ALL'),
   asyncHandler(usersAdminController.listRoles),
 );
+
 router.get(
   '/_teams',
   requirePermission('user', 'view', 'ALL'),
@@ -38,7 +37,6 @@ router.get(
   asyncHandler(usersAdminController.getById),
 );
 
-// Update — Admin/CEO only
 router.patch(
   '/:id',
   requirePermission('user', 'update', 'ALL'),
@@ -62,6 +60,13 @@ router.post(
   '/:id/reset-password',
   requirePermission('user', 'update', 'ALL'),
   asyncHandler(usersAdminController.resetPassword),
+);
+
+// ✅ เพิ่มใหม่
+router.delete(
+  '/:id',
+  requirePermission('user', 'delete', 'ALL'),
+  asyncHandler(usersAdminController.remove),
 );
 
 export default router;
