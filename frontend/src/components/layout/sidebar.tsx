@@ -233,7 +233,8 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const t = useT();
   const { can, role, loading, permissions } = usePermissions();
   const [collapsed, setCollapsed] = useState(false);
-
+  const roleCode = role?.code || initialRole || 'OFFICER';
+  const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
   const filterItems = (items: NavItem[]): NavItem[] => {
     return items
       .filter((item) => {
@@ -247,8 +248,6 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   };
 
   const items = filterItems(NAV_ITEMS);
-  const roleCode = role?.code || initialRole || 'OFFICER';
-  const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
 
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
     <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
