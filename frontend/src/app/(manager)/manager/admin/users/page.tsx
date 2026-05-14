@@ -2,13 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Loader2,
-  Search,
-  UserCog,
-  CheckCircle2,
-  XCircle,
-  KeyRound,
-  Save,
+  Loader2, Search, UserCog, CheckCircle2,
+  XCircle, KeyRound, Save, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,12 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { formatRelativeTime, getRoleDisplay, getRoleCode } from '@/lib/utils';
@@ -50,7 +41,7 @@ interface AdminUser {
   } | null;
   reportsToId: string | null;
   reportsTo: { id: string; name: string; email: string } | null;
-  _count: { reports: number }
+  _count: { reports: number };
 }
 
 interface RoleOption {
@@ -74,6 +65,7 @@ interface TeamOption {
 export default function AdminUsersPage() {
   const { can, loading: permLoading } = usePermissions();
   const canManage = can('user', 'update', 'ALL');
+  const canDelete = can('user', 'delete', 'ALL'); // ✅ เช็คสิทธิ์ลบ
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
@@ -87,6 +79,7 @@ export default function AdminUsersPage() {
 
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null); // ✅ เพิ่ม
 
   const fetchData = async () => {
     setLoading(true);
@@ -113,9 +106,7 @@ export default function AdminUsersPage() {
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return users.filter((u) => {
-      if (term && !u.name.toLowerCase().includes(term) && !u.email.toLowerCase().includes(term)) {
-        return false;
-      }
+      if (term && !u.name.toLowerCase().includes(term) && !u.email.toLowerCase().includes(term)) return false;
       if (filterRole && u.roleId !== filterRole) return false;
       if (filterTeam && u.teamId !== filterTeam) return false;
       if (filterActive === 'active' && !u.isActive) return false;
@@ -136,9 +127,7 @@ export default function AdminUsersPage() {
     }
   };
 
-  if (permLoading) {
-    return <Skeleton className="h-32 w-full max-w-7xl" />;
-  }
+  if (permLoading) return <Skeleton className="h-32 w-full max-w-7xl" />;
   if (!canManage) {
     return (
       <Card>
@@ -180,9 +169,7 @@ export default function AdminUsersPage() {
           >
             <option value="">All Roles</option>
             {roles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.nameTh} (L{r.level})
-              </option>
+              <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
             ))}
           </select>
           <select
@@ -192,13 +179,10 @@ export default function AdminUsersPage() {
           >
             <option value="">All Teams</option>
             {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.department?.name} / {t.name}
-              </option>
+              <option key={t.id} value={t.id}>{t.department?.name} / {t.name}</option>
             ))}
           </select>
         </CardContent>
-
         <CardContent className="pt-0 pb-4 flex gap-1">
           {(['all', 'active', 'inactive'] as const).map((v) => (
             <button
@@ -221,15 +205,11 @@ export default function AdminUsersPage() {
 
       {loading ? (
         <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
+          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
         </div>
       ) : filtered.length === 0 ? (
         <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            ไม่พบผู้ใช้
-          </CardContent>
+          <CardContent className="py-16 text-center text-muted-foreground">ไม่พบผู้ใช้</CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
@@ -243,19 +223,11 @@ export default function AdminUsersPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold">{user.name}</span>
-                    <Badge variant="outline" className="text-xs">
-                      {getRoleDisplay(user.role)}
-                    </Badge>
-                    {!user.isActive && (
-                    <Badge variant="destructive" className="text-xs">
-                        Disabled
-                    </Badge>
-                    )}
+                    <Badge variant="outline" className="text-xs">{getRoleDisplay(user.role)}</Badge>
+                    {!user.isActive && <Badge variant="destructive" className="text-xs">Disabled</Badge>}
                     {user._count.reports > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                        +{user._count.reports} reports
-                    </Badge>
-)}
+                      <Badge variant="secondary" className="text-xs">+{user._count.reports} reports</Badge>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {user.email}
@@ -263,38 +235,38 @@ export default function AdminUsersPage() {
                     {user.reportsTo && ` · reports to ${user.reportsTo.name}`}
                   </div>
                   <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {user.lastLoginAt
-                      ? `Last login ${formatRelativeTime(user.lastLoginAt)}`
-                      : 'Never logged in'}
+                    {user.lastLoginAt ? `Last login ${formatRelativeTime(user.lastLoginAt)}` : 'Never logged in'}
                   </div>
                 </div>
 
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-2 shrink-0 flex-wrap">
                   <Button variant="outline" size="sm" onClick={() => setEditing(user)}>
-                    <Save className="h-3.5 w-3.5" />
-                    Edit
+                    <Save className="h-3.5 w-3.5" />Edit
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setResetting(user)}>
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Reset PW
+                    <KeyRound className="h-3.5 w-3.5" />Reset PW
                   </Button>
                   <Button
                     variant={user.isActive ? 'destructive' : 'default'}
                     size="sm"
                     onClick={() => toggleActive(user)}
                   >
-                    {user.isActive ? (
-                      <>
-                        <XCircle className="h-3.5 w-3.5" />
-                        Disable
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Enable
-                      </>
-                    )}
+                    {user.isActive
+                      ? <><XCircle className="h-3.5 w-3.5" />Disable</>
+                      : <><CheckCircle2 className="h-3.5 w-3.5" />Enable</>
+                    }
                   </Button>
+                  {/* ✅ ปุ่ม Delete — แสดงเฉพาะถ้ามีสิทธิ์ และไม่ใช่ ADMIN/CEO */}
+                  {canDelete && !['ADMIN', 'CEO'].includes(user.role.code) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950"
+                      onClick={() => setDeleting(user)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />Delete
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -309,10 +281,7 @@ export default function AdminUsersPage() {
           teams={teams}
           allUsers={users}
           onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            fetchData();
-          }}
+          onSaved={() => { setEditing(null); fetchData(); }}
         />
       )}
 
@@ -323,7 +292,117 @@ export default function AdminUsersPage() {
           onDone={() => setResetting(null)}
         />
       )}
+
+      {/* ✅ Delete Dialog */}
+      {deleting && (
+        <DeleteUserDialog
+          user={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => { setDeleting(null); fetchData(); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ===========================
+// Delete User Dialog ✅ ใหม่
+// ===========================
+function DeleteUserDialog({
+  user,
+  onClose,
+  onDeleted,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirm, setConfirm] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const isManager = user.role.code === 'MANAGER';
+  const hasTeam = !!user.teamId;
+  const hasReports = user._count.reports > 0;
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/admin/users/${user.id}`);
+      toast.success(`ลบ ${user.name} เรียบร้อยแล้ว`);
+      onDeleted();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="h-5 w-5" />ลบ Account
+          </DialogTitle>
+          <DialogDescription>
+            การลบ Account จะไม่สามารถกู้คืนได้ผ่าน UI
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* User Info */}
+          <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+            <p className="font-semibold text-sm">{user.name}</p>
+            <p className="text-xs text-muted-foreground">{user.email}</p>
+            <p className="text-xs text-muted-foreground">{user.role.nameTh}</p>
+          </div>
+
+          {/* คำเตือน — แสดงตามเงื่อนไข */}
+          {(isManager || hasReports) && (
+            <div className="space-y-2">
+              {isManager && hasTeam && (
+                <div className="flex gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
+                  <span>⚠️</span>
+                  <span>ทีมที่ Manager คนนี้ดูแลจะถูกปิดใช้งาน และ Officer ในทีมจะถูกถอดออกจากทีม</span>
+                </div>
+              )}
+              {hasReports && (
+                <div className="flex gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
+                  <span>⚠️</span>
+                  <span>มี {user._count.reports} คนที่รายงานต่อ user นี้ — จะถูกถอด supervisor ออก</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* พิมพ์ยืนยัน */}
+          <div>
+            <Label className="text-xs">
+              พิมพ์ <span className="font-mono font-semibold">{user.email}</span> เพื่อยืนยัน
+            </Label>
+            <Input
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder={user.email}
+              className="mt-1.5"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={deleting}>ยกเลิก</Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={deleting || confirm !== user.email}
+          >
+            {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+            <Trash2 className="h-4 w-4" />ลบ Account
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -331,12 +410,7 @@ export default function AdminUsersPage() {
 // Edit User Dialog
 // ===========================
 function EditUserDialog({
-  user,
-  roles,
-  teams,
-  allUsers,
-  onClose,
-  onSaved,
+  user, roles, teams, allUsers, onClose, onSaved,
 }: {
   user: AdminUser;
   roles: RoleOption[];
@@ -352,19 +426,17 @@ function EditUserDialog({
   const [reportsToId, setReportsToId] = useState(user.reportsToId || '');
   const [saving, setSaving] = useState(false);
 
-  const potentialSupervisors = useMemo(() => {
-    return allUsers.filter((u) => u.id !== user.id && u.isActive);
-  }, [allUsers, user.id]);
+  const potentialSupervisors = useMemo(
+    () => allUsers.filter((u) => u.id !== user.id && u.isActive),
+    [allUsers, user.id],
+  );
 
   const save = async () => {
     setSaving(true);
     try {
       await api.patch(`/admin/users/${user.id}`, {
-        name,
-        phone: phone || null,
-        roleId,
-        teamId: teamId || null,
-        reportsToId: reportsToId || null,
+        name, phone: phone || null, roleId,
+        teamId: teamId || null, reportsToId: reportsToId || null,
       });
       toast.success('User updated');
       onSaved();
@@ -382,78 +454,49 @@ function EditUserDialog({
           <DialogTitle>Edit User</DialogTitle>
           <DialogDescription>{user.email}</DialogDescription>
         </DialogHeader>
-
         <div className="space-y-3">
           <div>
             <Label className="text-xs">Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
           </div>
-
           <div>
             <Label className="text-xs">Phone</Label>
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="mt-1.5"
-              placeholder="optional"
-            />
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1.5" placeholder="optional" />
           </div>
-
           <div>
             <Label className="text-xs">Role</Label>
-            <select
-              value={roleId}
-              onChange={(e) => setRoleId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
+            <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.nameTh} (L{r.level})
-                </option>
+                <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
               ))}
             </select>
           </div>
-
           <div>
             <Label className="text-xs">Team</Label>
-            <select
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
+            <select value={teamId} onChange={(e) => setTeamId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">— No team —</option>
               {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.department?.name} / {t.name}
-                </option>
+                <option key={t.id} value={t.id}>{t.department?.name} / {t.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <Label className="text-xs">Reports To</Label>
-            <select
-              value={reportsToId}
-              onChange={(e) => setReportsToId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
+            <select value={reportsToId} onChange={(e) => setReportsToId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">— No supervisor —</option>
               {potentialSupervisors.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({getRoleCode(u.role)})
-                </option>
+                <option key={u.id} value={u.id}>{u.name} ({getRoleCode(u.role)})</option>
               ))}
             </select>
           </div>
         </div>
-
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Save
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}Save
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -465,9 +508,7 @@ function EditUserDialog({
 // Reset Password Dialog
 // ===========================
 function ResetPasswordDialog({
-  user,
-  onClose,
-  onDone,
+  user, onClose, onDone,
 }: {
   user: AdminUser;
   onClose: () => void;
@@ -478,14 +519,8 @@ function ResetPasswordDialog({
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters');
-      return;
-    }
-    if (newPassword !== confirm) {
-      toast.error('Passwords do not match');
-      return;
-    }
+    if (newPassword.length < 8) { toast.error('Password must be at least 8 characters'); return; }
+    if (newPassword !== confirm) { toast.error('Passwords do not match'); return; }
     setSaving(true);
     try {
       await api.post(`/admin/users/${user.id}/reset-password`, { newPassword });
@@ -504,43 +539,24 @@ function ResetPasswordDialog({
         <DialogHeader>
           <DialogTitle>Reset Password</DialogTitle>
           <DialogDescription>
-            Reset password for <span className="font-mono">{user.email}</span>
-            <br />
-            <span className="text-amber-600 text-xs">
-              ⚠️ User will be logged out from all sessions.
-            </span>
+            Reset password for <span className="font-mono">{user.email}</span><br />
+            <span className="text-amber-600 text-xs">⚠️ User will be logged out from all sessions.</span>
           </DialogDescription>
         </DialogHeader>
-
         <div className="space-y-3">
           <div>
             <Label className="text-xs">New Password (min 8 chars)</Label>
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1.5"
-              autoFocus
-            />
+            <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="mt-1.5" autoFocus />
           </div>
           <div>
             <Label className="text-xs">Confirm Password</Label>
-            <Input
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className="mt-1.5"
-            />
+            <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="mt-1.5" />
           </div>
         </div>
-
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={submit} disabled={saving} variant="destructive">
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Reset Password
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}Reset Password
           </Button>
         </DialogFooter>
       </DialogContent>

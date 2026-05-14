@@ -48,6 +48,11 @@ interface Invitation {
   team: { id: string; name: string; code: string | null } | null;
   invitedBy: { id: string; name: string; email: string };
 }
+interface DepartmentOption {
+  id: string;
+  name: string;
+  code: string;
+}
 
 interface TeamOption {
   id: string;
@@ -311,24 +316,29 @@ function CreateInvitationDialog({
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [teamId, setTeamId] = useState('');
+  const [departmentId, setDepartmentId] = useState(''); // ✅ เพิ่ม
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]); // ✅ เพิ่ม
   const [expiresInDays, setExpiresInDays] = useState(3);
   const [submitting, setSubmitting] = useState(false);
 
+  // ✅ โหลด departments สำหรับ dropdown
+  useEffect(() => {
+    api.get<ApiResponse<DepartmentOption[]>>('/manager/departments')
+      .then((r) => setDepartments(r.data.data ?? []))
+      .catch(() => toast.error('โหลด Department ไม่สำเร็จ'));
+  }, []);
+
   const submit = async () => {
-    if (!email.trim()) {
-      toast.error('กรุณากรอก Email');
-      return;
-    }
+    if (!email.trim()) { toast.error('กรุณากรอก Email'); return; }
+    if (!departmentId) { toast.error('กรุณาเลือก Department'); return; } // ✅ validate
     setSubmitting(true);
     try {
-      // ✅ ไม่ส่ง roleId — backend auto-set เป็น MANAGER ให้เอง
       const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>(
         '/invitations',
         {
           email,
           name: name || undefined,
-          teamId: teamId || undefined,
+          departmentId, // ✅ ส่ง departmentId
           channel: 'MANUAL',
           expiresInDays,
         },
@@ -348,66 +358,50 @@ function CreateInvitationDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>เชิญ Manager ใหม่</DialogTitle>
-          <DialogDescription>Manager จะได้รับ Invitation Link เพื่อสร้าง Account</DialogDescription>
+          <DialogDescription>Manager จะได้รับ Invitation Link เพื่อสร้าง Account พร้อมทีม</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div>
             <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="manager@example.com"
-              className="mt-1.5"
-              autoFocus
-            />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="manager@example.com" className="mt-1.5" autoFocus />
           </div>
           <div>
             <Label className="text-xs">ชื่อ (optional)</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="ชื่อ-นามสกุล"
-              className="mt-1.5"
-            />
+            <Input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="ชื่อ-นามสกุล" className="mt-1.5" />
           </div>
+
+          {/* ✅ Department dropdown — บังคับเลือก */}
           <div>
-            <Label className="text-xs">ทีม (optional)</Label>
-            <select
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">— ไม่ระบุทีม —</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.department?.name} / {t.name}
-                </option>
+            <Label className="text-xs">
+              Department <span className="text-destructive">*</span>
+            </Label>
+            <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">— เลือก Department —</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
               ))}
             </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              ระบบจะสร้างทีมให้ Manager คนนี้อัตโนมัติใน Department ที่เลือก
+            </p>
           </div>
+
           <div>
             <Label className="text-xs">Link หมดอายุใน (วัน)</Label>
-            <Input
-              type="number"
-              min={1}
-              max={30}
-              value={expiresInDays}
-              onChange={(e) => setExpiresInDays(parseInt(e.target.value) || 3)}
-              className="mt-1.5"
-            />
+            <Input type="number" min={1} max={30} value={expiresInDays}
+              onChange={(e) => setExpiresInDays(parseInt(e.target.value) || 3)} className="mt-1.5" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            ยกเลิก
-          </Button>
-          <Button onClick={submit} disabled={submitting}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>ยกเลิก</Button>
+          <Button onClick={submit} disabled={submitting || !departmentId}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Mail className="h-4 w-4" />
-            สร้าง Invitation
+            <Mail className="h-4 w-4" />สร้าง Invitation
           </Button>
         </DialogFooter>
       </DialogContent>
