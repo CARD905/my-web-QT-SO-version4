@@ -113,7 +113,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dashboard:view:team',
   ],
   ADMIN: [
-    'quotation:view:all', 'quotation:approve:all', 'quotation:reject:all',
+    'quotation:view:all', 
     'saleOrder:view:all', 'saleOrder:exportPdf:all',
     'customer:view:all', 'customer:create:all', 'customer:update:all', 'customer:delete:all',
     'product:view:all', 'product:create:all', 'product:update:all', 'product:delete:all',

@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════
-// backend/src/modules/manager/manager-team.routes.ts  (ไฟล์ใหม่)
+// backend/src/modules/manager/manager-team.routes.ts
 // ════════════════════════════════════════════════════════════════════════════
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
@@ -17,12 +17,14 @@ router.use(requireRole('MANAGER', 'ADMIN', 'CEO'));
 router.get('/my-team', asyncHandler(async (req, res) => {
   const user = req.user as { id: string; roleCode?: string };
 
-  // หา team ที่ manager คนนี้ดูแล
   const team = await prisma.team.findFirst({
     where: { managerId: user.id, deletedAt: null },
     include: {
       members: {
-        where: { deletedAt: null },
+        where: {
+          deletedAt: null,
+          role: { code: 'OFFICER' }, // ✅ แสดงเฉพาะ OFFICER เท่านั้น ไม่รวม MANAGER
+        },
         select: {
           id: true, name: true, email: true, phone: true,
           isActive: true, isTeamLead: true, reportsToId: true,
@@ -45,14 +47,13 @@ router.patch('/team-members/:id/promote-lead', asyncHandler(async (req, res) => 
   const managerId = (req.user as any).id;
   const memberId = req.params.id;
 
-  // ตรวจว่า member อยู่ในทีมของ manager นี้
   const member = await prisma.user.findFirst({
     where: { id: memberId, deletedAt: null },
     include: {
-        team: true,
-        role: true,   // ← เพิ่มบรรทัดนี้
+      team: true,
+      role: true,
     },
-    });
+  });
   if (!member) throw new AppError(404, 'NOT_FOUND', 'ไม่พบ User');
   if (member.team?.managerId !== managerId) {
     throw new AppError(403, 'FORBIDDEN', 'User นี้ไม่ได้อยู่ในทีมของคุณ');
