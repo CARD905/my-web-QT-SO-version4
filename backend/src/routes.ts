@@ -13,6 +13,7 @@ import managerDashboardRoutes from './modules/manager-dashboard/manager-dashboar
 import usersAdminRoutes from './modules/admin/users-admin/users-admin.routes';
 import invitationsRoutes from './modules/invitations/invitations.routes';
 import rolesAdminRoutes from './modules/admin/roles-admin/roles-admin.routes';
+import managerTeamRoutes from './modules/manager/manager-team.routes'; // ✅ เพิ่ม
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.use('/quotations', quotationsRoutes);
 router.use('/sale-orders', saleOrdersRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/manager-dashboard', managerDashboardRoutes);
+router.use('/manager', managerTeamRoutes); // ✅ เพิ่ม → /api/v1/manager/my-team
 router.use('/notifications', notificationsRoutes);
 router.use('/uploads', uploadsRoutes);
 router.use('/company', companyRoutes);

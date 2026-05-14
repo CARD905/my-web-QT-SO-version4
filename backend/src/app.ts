@@ -6,7 +6,6 @@ import rateLimit from 'express-rate-limit';
 import { env, isDev } from './config/env';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import routes from './routes';
-import managerTeamRouter from './modules/manager/manager-team.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -63,6 +62,6 @@ export function createApp(): Express {
   // 404 + error handlers (must be last)
   app.use(notFoundHandler);
   app.use(errorHandler);
-  app.use('/api/v1/manager', managerTeamRouter)
+  
   return app;
 }
