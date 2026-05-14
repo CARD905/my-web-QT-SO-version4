@@ -115,11 +115,9 @@ export const invitationsService = {
     }
     const roleId = targetRole.id;
 
-    // MANAGER: ต้องระบุ teamId
-    if (currentUser.roleCode === 'MANAGER') {
-      if (!input.teamId) {
-        throw new AppError(400, 'TEAM_REQUIRED', 'Team is required when inviting');
-      }
+    // MANAGER: ถ้าส่ง teamId มา ให้ตรวจว่าเป็นทีมของตัวเองเท่านั้น
+    // ไม่บังคับต้องมี teamId — Manager ไม่มีทีมก็เชิญ Officer ได้
+    if (currentUser.roleCode === 'MANAGER' && input.teamId) {
       const team = await prisma.team.findFirst({
         where: { id: input.teamId, managerId: currentUser.id },
       });
