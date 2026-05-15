@@ -15,7 +15,6 @@ import {
 const invitationInclude = {
   role: { select: { id: true, code: true, nameTh: true, nameEn: true, level: true } },
   team: { select: { id: true, name: true, code: true } },
-  department: { select: { id: true, name: true, code: true } }, // ✅ เพิ่ม
   invitedBy: { select: { id: true, name: true, email: true } },
   acceptedBy: { select: { id: true, name: true, email: true } },
 } as const;
@@ -82,11 +81,13 @@ export const invitationsService = {
   // CREATE INVITATION
   // ============================================================
   async create(input: CreateInvitationInput, currentUser: CurrentUser, req?: Request) {
+    // ─── ตรวจสิทธิ์ก่อนเลย ────────────────────────────────────────────────
     const targetRoleCode = ALLOWED_INVITE_TARGET[currentUser.roleCode];
     if (targetRoleCode === null || targetRoleCode === undefined) {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่มีสิทธิ์สร้าง Account ให้ผู้ใช้งาน');
     }
 
+    // Check email already used
     const existingUser = await prisma.user.findFirst({
       where: { email: input.email, deletedAt: null },
     });
@@ -94,6 +95,7 @@ export const invitationsService = {
       throw new AppError(409, 'EMAIL_EXISTS', 'A user with this email already exists');
     }
 
+    // Check pending invitation
     const existingPending = await prisma.invitation.findFirst({
       where: { email: input.email, status: 'PENDING' },
     });
@@ -105,6 +107,7 @@ export const invitationsService = {
       );
     }
 
+    // ─── Resolve roleId จาก targetRoleCode เสมอ ─────────────────────────────
     const targetRole = await prisma.role.findUnique({ where: { code: targetRoleCode } });
     if (!targetRole || !targetRole.isActive) {
       throw new AppError(
@@ -126,27 +129,23 @@ export const invitationsService = {
       }
     }
 
-    // ADMIN invite MANAGER: ต้องระบุ departmentId ✅
-    if (currentUser.roleCode === 'ADMIN' && targetRoleCode === 'MANAGER') {
-      if (!input.departmentId) {
-        throw new AppError(400, 'DEPARTMENT_REQUIRED', 'กรุณาเลือก Department สำหรับ Manager');
-      }
-      const dept = await prisma.department.findFirst({
-        where: { id: input.departmentId, isActive: true, deletedAt: null },
-      });
-      if (!dept) {
-        throw new AppError(404, 'DEPARTMENT_NOT_FOUND', 'ไม่พบ Department ที่เลือก');
-      }
+    // ─── MANAGER invite OFFICER: ถ้าไม่มี teamId ให้ set reportsToId = managerId ─
+    // เพื่อให้ Officer อยู่ภายใต้ Manager แม้ยังไม่มีทีม
+    let reportsToId = input.reportsToId;
+    if (currentUser.roleCode === 'MANAGER' && !input.teamId && !reportsToId) {
+      reportsToId = currentUser.id;
     }
 
+    // Validate teamId (ถ้าส่งมา)
     if (input.teamId) {
       const team = await prisma.team.findUnique({ where: { id: input.teamId } });
       if (!team) throw new AppError(404, 'TEAM_NOT_FOUND', 'Team not found');
     }
 
-    if (input.reportsToId) {
+    // Validate reports-to (ถ้าส่งมา)
+    if (reportsToId) {
       const supervisor = await prisma.user.findFirst({
-        where: { id: input.reportsToId, deletedAt: null },
+        where: { id: reportsToId, deletedAt: null },
       });
       if (!supervisor) {
         throw new AppError(404, 'SUPERVISOR_NOT_FOUND', 'Supervisor not found');
@@ -164,8 +163,7 @@ export const invitationsService = {
         phone: input.phone,
         roleId,
         teamId: input.teamId,
-        departmentId: input.departmentId ?? null, // ✅ บันทึก departmentId
-        reportsToId: input.reportsToId,
+        reportsToId,
         invitedById: currentUser.id,
         token,
         expiresAt,
@@ -206,6 +204,7 @@ export const invitationsService = {
     if (!invitation) {
       throw new AppError(404, 'NOT_FOUND', 'Invitation not found or invalid');
     }
+
     if (invitation.status === 'ACCEPTED') {
       throw new AppError(409, 'ALREADY_ACCEPTED', 'This invitation has already been accepted');
     }
@@ -221,11 +220,12 @@ export const invitationsService = {
       }
       throw new AppError(410, 'EXPIRED', 'This invitation has expired');
     }
+
     return invitation;
   },
 
   // ============================================================
-  // ACCEPT INVITATION — auto-create team สำหรับ MANAGER ✅
+  // ACCEPT INVITATION (public — creates user)
   // ============================================================
   async accept(input: AcceptInvitationInput, req?: Request) {
     const invitation = await this.getByToken(input.token);
@@ -240,7 +240,7 @@ export const invitationsService = {
     const passwordHash = await bcrypt.hash(input.password, 12);
 
     const result = await prisma.$transaction(async (tx) => {
-      // ─── สร้าง User ────────────────────────────────────────────
+      // ─── สร้าง User ────────────────────────────────────────────────────────
       const user = await tx.user.create({
         data: {
           email: invitation.email,
@@ -248,38 +248,13 @@ export const invitationsService = {
           name: input.name || invitation.name || invitation.email.split('@')[0],
           phone: input.phone || invitation.phone,
           roleId: invitation.roleId,
-          teamId: invitation.teamId,
-          reportsToId: invitation.reportsToId,
+          teamId: invitation.teamId ?? null,
+          reportsToId: invitation.reportsToId ?? null,
           isActive: true,
-        },
-        include: {
-          role: { select: { code: true } },
         },
       });
 
-      // ─── ถ้าเป็น MANAGER → auto-create team ✅ ────────────────
-      if (user.role.code === 'MANAGER') {
-        if (!invitation.departmentId) {
-          throw new AppError(
-            400,
-            'DEPARTMENT_MISSING',
-            'Invitation สำหรับ Manager ต้องมี Department กรุณาติดต่อ Admin',
-          );
-        }
-
-        const team = await tx.team.create({
-          data: {
-            name: `ทีมของ ${user.name}`,
-            departmentId: invitation.departmentId,
-            managerId: user.id,
-            isActive: true,
-          },
-        });
-
-        console.log(`[Team] Auto-created team "${team.name}" (${team.id}) for manager ${user.email}`);
-      }
-
-      // ─── Mark invitation accepted ───────────────────────────────
+      // ─── Mark invitation accepted ───────────────────────────────────────────
       await tx.invitation.update({
         where: { id: invitation.id },
         data: {
@@ -297,7 +272,7 @@ export const invitationsService = {
       action: 'invitation.accept',
       entityType: 'User',
       entityId: result.id,
-      description: `User ${result.email} accepted invitation${result.role.code === 'MANAGER' ? ' + auto-created team' : ''}`,
+      description: `User ${result.email} accepted invitation`,
       req,
     });
 
@@ -323,6 +298,7 @@ export const invitationsService = {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่มีสิทธิ์จัดการ Invitation');
     }
 
+    // MANAGER revoke ได้เฉพาะที่ตัวเองสร้าง
     if (currentUser.roleCode === 'MANAGER' && invitation.invitedById !== currentUser.id) {
       throw new AppError(403, 'FORBIDDEN', 'You can only revoke invitations you sent');
     }
