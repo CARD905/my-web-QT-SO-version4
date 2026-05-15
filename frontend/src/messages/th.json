@@ -59,7 +59,8 @@
     "quotationChecklist": "Checklist (รอ PO)",
     "pendingSaleOrder": "Pending Sale Order",
     "specialDiscount": "ส่วนลดพิเศษ",
-    "nav.myTeam": "ทีมของฉัน"
+    "nav.myTeam": "ทีมของฉัน",
+    "nav.invitations": "คำเชิญ"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

@@ -58,7 +58,8 @@
     "quotationList": "Quotation List",
     "quotationChecklist": "Checklist (Awaiting PO)",
     "specialDiscount": "Special Discount",
-    "nav.myTeam": "My Team"
+    "nav.myTeam": "My Team",
+    "nav.invitations": "Invitations"
   },
   "login": {
     "title": "Sign In",
