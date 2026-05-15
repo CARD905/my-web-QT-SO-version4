@@ -3,15 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  Plus,
-  Search,
-  FileText,
-  CheckCircle2,
-  Loader2,
-  Lock,
-  CheckSquare,
-  Square,
-  ListChecks,
+  Plus, Search, FileText, CheckCircle2, Loader2,
+  Lock, CheckSquare, Square, ListChecks,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,44 +16,44 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, getStatusClass } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useConfirm } from '@/components/ui/confirm-dialog'; // ✅ import hook
 import type { ApiResponse, Quotation } from '@/types/api';
 
 export default function QuotationsPage() {
-  const t = useT();
+  const t       = useT();
+  const confirm = useConfirm(); // ✅ ใช้แทน window.confirm
   const { can, role } = usePermissions();
-  const [list, setList] = useState<Quotation[]>([]);
+
+  const [list,    setList]    = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search,  setSearch]  = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  // ─── Bulk Approve state ──────────────────────────────────────────────────
-  const [bulkMode, setBulkMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkMode,   setBulkMode]   = useState(false);
+  const [selected,   setSelected]   = useState<Set<string>>(new Set());
   const [bulkActing, setBulkActing] = useState(false);
 
-  const canCreate = can('quotation', 'create', 'OWN');
-  const canApprove = can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL');
+  const canCreate    = can('quotation', 'create', 'OWN');
+  const canApprove   = can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL');
   const canApproveAll = can('quotation', 'approve', 'ALL');
 
   const fetchList = async () => {
-  setLoading(true);
-  try {
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (statusFilter) params.set('status', statusFilter);
-    params.set('limit', '50');
-    const res = await api.get<ApiResponse<Quotation[]>>(`/quotations?${params}`);
-
-    const PO_STATUSES = ['PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'];
-    const data = res.data.data ?? [];
-    setList(statusFilter ? data : data.filter((q) => !PO_STATUSES.includes(q.status)));
-
-  } catch (err) {
-    console.error(getApiErrorMessage(err));
-  } finally {
-    setLoading(false);
-  }
-};
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search)       params.set('search', search);
+      if (statusFilter) params.set('status', statusFilter);
+      params.set('limit', '50');
+      const res = await api.get<ApiResponse<Quotation[]>>(`/quotations?${params}`);
+      const PO_STATUSES = ['PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'];
+      const data = res.data.data ?? [];
+      setList(statusFilter ? data : data.filter((q) => !PO_STATUSES.includes(q.status)));
+    } catch (err) {
+      console.error(getApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -68,10 +61,7 @@ export default function QuotationsPage() {
       if (cancelled) return;
       await fetchList();
     }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(handler);
-    };
+    return () => { cancelled = true; clearTimeout(handler); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter]);
 
@@ -90,8 +80,8 @@ export default function QuotationsPage() {
   };
 
   const approvableList = list.filter((q) => {
-    const isPending = q.status === 'PENDING';
-    const isEscalated = q.status === 'PENDING_ESCALATED';
+    const isPending    = q.status === 'PENDING';
+    const isEscalated  = q.status === 'PENDING_ESCALATED';
     return (
       canApprove &&
       ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
@@ -103,16 +93,24 @@ export default function QuotationsPage() {
     approvableList.length > 0 && approvableList.every((q) => selected.has(q.id));
 
   const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(approvableList.map((q) => q.id)));
-    }
+    allSelected
+      ? setSelected(new Set())
+      : setSelected(new Set(approvableList.map((q) => q.id)));
   };
 
+  // ✅ แทนที่ window.confirm ด้วย custom dialog สวยๆ
   const handleBulkApprove = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`อนุมัติ ${selected.size} รายการ ใช่หรือไม่?`)) return;
+
+    const ok = await confirm({
+      title:       `อนุมัติ ${selected.size} รายการ`,
+      description: 'ใบเสนอราคาที่เลือกทั้งหมดจะถูกอนุมัติพร้อมกัน ยืนยันหรือไม่?',
+      confirmText: `อนุมัติ ${selected.size} รายการ`,
+      cancelText:  'ยกเลิก',
+      variant:     'default',
+    });
+    if (!ok) return;
+
     setBulkActing(true);
     try {
       const res = await api.post<
@@ -133,7 +131,7 @@ export default function QuotationsPage() {
 
   const statuses = [
     '', 'DRAFT', 'PENDING', 'PENDING_ESCALATED',
-    'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED',
+    'APPROVED', 'REJECTED', 'CANCELLED',
   ];
 
   return (
@@ -175,11 +173,9 @@ export default function QuotationsPage() {
               onClick={toggleSelectAll}
               className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
             >
-              {allSelected ? (
-                <CheckSquare className="h-4 w-4 text-primary" />
-              ) : (
-                <Square className="h-4 w-4 text-muted-foreground" />
-              )}
+              {allSelected
+                ? <CheckSquare className="h-4 w-4 text-primary" />
+                : <Square className="h-4 w-4 text-muted-foreground" />}
               เลือกทั้งหมด ({approvableList.length})
             </button>
             <div className="flex-1" />
@@ -195,11 +191,9 @@ export default function QuotationsPage() {
               disabled={selected.size === 0 || bulkActing}
               onClick={handleBulkApprove}
             >
-              {bulkActing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              )}
+              {bulkActing
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <CheckCircle2 className="h-3.5 w-3.5" />}
               Approve {selected.size > 0 ? `(${selected.size})` : ''}
             </Button>
           </CardContent>
@@ -261,7 +255,7 @@ export default function QuotationsPage() {
       ) : (
         <div className="grid gap-3">
           {list.map((q) => {
-            const isEscalated = q.status === 'PENDING_ESCALATED';
+            const isEscalated  = q.status === 'PENDING_ESCALATED';
             const isManagerOnly = role?.code === 'MANAGER';
             const isApprovable =
               canApprove &&
@@ -295,11 +289,9 @@ export default function QuotationsPage() {
                       {bulkMode && (
                         <div className="shrink-0">
                           {isApprovable ? (
-                            isChecked ? (
-                              <CheckSquare className="h-5 w-5 text-primary" />
-                            ) : (
-                              <Square className="h-5 w-5 text-muted-foreground" />
-                            )
+                            isChecked
+                              ? <CheckSquare className="h-5 w-5 text-primary" />
+                              : <Square className="h-5 w-5 text-muted-foreground" />
                           ) : (
                             <Square className="h-5 w-5 text-muted-foreground/30" />
                           )}
@@ -318,10 +310,7 @@ export default function QuotationsPage() {
                             <span className="text-xs text-muted-foreground">v{q.version}</span>
                           )}
                           {isEscalated && isManagerOnly && (
-                            <Badge
-                              variant="outline"
-                              className="text-xs bg-amber-500/10 text-amber-700 border-amber-300"
-                            >
+                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">
                               <Lock className="h-2.5 w-2.5 mr-1" />
                               รอ CEO อนุมัติ
                             </Badge>

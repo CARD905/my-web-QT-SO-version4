@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { paginationSchema } from '../../utils/pagination';
 
 export const listSaleOrdersSchema = paginationSchema.extend({
-  status: z.enum(['DRAFT', 'PENDING_REVIEW', 'CONFIRMED', 'COMPLETED', 'CANCELLED']).optional(),
+  status: z.enum(['DRAFT', 'PENDING_REVIEW', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'REJECTED']).optional(),
   customerId: z.string().uuid().optional(),
 });
 

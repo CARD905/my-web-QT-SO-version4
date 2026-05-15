@@ -34,7 +34,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
           >
             <I18nProvider>
               {children}
-              <Toaster position="top-right" richColors />
+              {/* ✅ ย้ายมามุมล่างซ้าย — ไม่บังปุ่ม account มุมบนขวา */}
+              <Toaster
+                position="bottom-left"
+                richColors
+                toastOptions={{
+                  classNames: {
+                    toast: 'rounded-xl shadow-lg border',
+                  },
+                }}
+              />
             </I18nProvider>
           </ThemeProvider>
         </QueryClientProvider>

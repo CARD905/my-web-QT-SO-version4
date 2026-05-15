@@ -13,11 +13,11 @@ import { formatDate, formatMoney, getStatusClass } from '@/lib/utils';
 import type { ApiResponse, SaleOrder } from '@/types/api';
 
 const STATUS_FILTERS = [
-  { value: '', label: 'ทั้งหมด' },
+  { value: '', label: 'All' },
   { value: 'DRAFT', label: 'DRAFT' },
-  { value: 'PENDING_REVIEW', label: 'รออนุมัติ' },
-  { value: 'CONFIRMED', label: 'อนุมัติแล้ว' },
-  { value: 'REJECTED', label: 'ถูกปฏิเสธ' },
+  { value: 'PENDING_REVIEW', label: 'PENDING_REVIEW' },
+  { value: 'CONFIRMED', label: 'CONFIRMED' },
+  { value: 'REJECTED', label: 'REJECTED' },
 ];
 
 export default function SaleOrdersPage() {

@@ -139,8 +139,8 @@ export const saleOrdersService = {
   async submit(id: string, input: SubmitSaleOrderInput, currentUser: CurrentUser, req?: Request) {
     const so = await this.getById(id, currentUser);
 
-    if (so.status !== 'DRAFT') {
-      throw new AppError(409, 'INVALID_STATUS', `Can only submit DRAFT sale orders (current: ${so.status})`);
+    if (!['DRAFT', 'REJECTED'].includes(so.status)) {
+      throw new AppError(409, 'INVALID_STATUS', `Can only submit DRAFT or REJECTED sale orders (current: ${so.status})`);
     }
 
     if (so.quotation.createdById !== currentUser.id) {
