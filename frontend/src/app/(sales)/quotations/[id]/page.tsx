@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Send, X, Check, Loader2, FileText,
-  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer,Star, XCircle, 
+  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer, Star, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -195,7 +195,7 @@ function QuotationDocument({ q, company }: { q: Quotation; company: CompanySetti
         <div className="text-[11px]">
           <SummaryRow label="รวมเงิน (Subtotal)" value={formatNumber(q.subtotal)} />
           {Number(q.discountTotal) > 0 && <SummaryRow label="ส่วนลด (Discount)" value={`-${formatNumber(q.discountTotal)}`} />}
-          <SummaryRow label="หลังหักส่วนลด" value={formatNumber(afterDiscount)} />
+          <SummaryRow label="หลังหักส่วนลด" value={formatNumber(Number(q.subtotal) - Number(q.discountTotal))} />
           {q.vatEnabled ? <SummaryRow label={`ภาษีมูลค่าเพิ่ม ${formatNumber(q.vatRate)}%`} value={formatNumber(q.vatAmount)} /> : <SummaryRow label="ภาษีมูลค่าเพิ่ม" value="ไม่มี VAT" />}
           <div className="bg-black text-white px-3 py-2 flex justify-between items-baseline"><span className="font-bold">จำนวนเงินทั้งสิ้น</span><span className="font-bold text-base">{formatNumber(q.grandTotal)} {q.currency}</span></div>
         </div>
@@ -219,13 +219,13 @@ export default function QuotationDetailPage() {
   const { data: session } = useSession();
   const { role, can } = usePermissions();
 
-  const [q, setQ] = useState<Quotation | null>(null);
+  const [q, setQ]           = useState<Quotation | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [acting, setActing] = useState<string | null>(null);
+  const [acting, setActing]   = useState<string | null>(null);
   const [showApprovePopover, setShowApprovePopover] = useState(false);
-  const [showRejectPopover, setShowRejectPopover] = useState(false);
-  const [showPrintView, setShowPrintView] = useState(false);
+  const [showRejectPopover,  setShowRejectPopover]  = useState(false);
+  const [showPrintView,      setShowPrintView]      = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -280,13 +280,28 @@ export default function QuotationDetailPage() {
     </div>
   );
 
-  const userId = session?.user?.id;
-  const isOwner = !!(userId && q.createdById === userId);
+  const userId     = session?.user?.id;
+  const isOwner    = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
-  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner
-  && !((q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO');
-  const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
+
+  // ✅ FIX: ตรวจสอบว่ากำลังรอ CEO อนุมัติ Special Discount อยู่หรือเปล่า
+  const isSpecialDiscountPendingCEO =
+    !!(q as any).specialDiscountRequested &&
+    (q as any).specialDiscountStatus === 'PENDING_CEO';
+
+  // ✅ FIX: block Edit, Cancel, Submit เมื่อรอ CEO
+  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED')
+    && isOwner
+    && !isSpecialDiscountPendingCEO;
+
+  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED')
+    && isOwner
+    && !isSpecialDiscountPendingCEO;
+
+  const canCancel = q.status === 'DRAFT'
+    && (isOwner || isElevated)
+    && !isSpecialDiscountPendingCEO;
+
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
   const canApproveThis = (() => {
     if (!isElevated) return false;
@@ -328,38 +343,129 @@ export default function QuotationDetailPage() {
               <Badge className={getStatusClass(q.status)} variant="outline">● {q.status}</Badge>
               {q.version > 1 && <span className="text-xs text-muted-foreground">v{q.version}</span>}
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">{q.customerCompany} · {formatDate(q.issueDate)} → {formatDate(q.expiryDate)}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {q.customerCompany} · {formatDate(q.issueDate)} → {formatDate(q.expiryDate)}
+            </p>
           </div>
         </div>
+
+        {/* ✅ ปุ่มจะหายเมื่อ isSpecialDiscountPendingCEO = true */}
         <div className="flex gap-2 flex-wrap">
-          {canEdit && <Button asChild variant="outline"><Link href={`/quotations/${id}/edit`}><FileText className="h-4 w-4" />{t('common.edit')}</Link></Button>}
-          {canCancel && <Button variant="outline" onClick={cancel} disabled={acting !== null}>{acting === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}{t('common.cancel')}</Button>}
-          {canSubmit && <Button onClick={submit} disabled={acting !== null}>{acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{t('quotation.submitForApproval')}</Button>}
-          {canPdf && <Button variant="outline" onClick={() => setShowPrintView(true)}><Printer className="h-4 w-4" />Save PDF</Button>}
-          {q.saleOrder && <Button asChild variant="success"><Link href={`/sale-orders/${q.saleOrder.id}`}><FileText className="h-4 w-4" />{q.saleOrder.saleOrderNo}</Link></Button>}
+          {canEdit && (
+            <Button asChild variant="outline">
+              <Link href={`/quotations/${id}/edit`}>
+                <FileText className="h-4 w-4" />{t('common.edit')}
+              </Link>
+            </Button>
+          )}
+          {canCancel && (
+            <Button variant="outline" onClick={cancel} disabled={acting !== null}>
+              {acting === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              {t('common.cancel')}
+            </Button>
+          )}
+          {canSubmit && (
+            <Button onClick={submit} disabled={acting !== null}>
+              {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {t('quotation.submitForApproval')}
+            </Button>
+          )}
+          {canPdf && (
+            <Button variant="outline" onClick={() => setShowPrintView(true)}>
+              <Printer className="h-4 w-4" />Save PDF
+            </Button>
+          )}
+          {q.saleOrder && (
+            <Button asChild variant="success">
+              <Link href={`/sale-orders/${q.saleOrder.id}`}>
+                <FileText className="h-4 w-4" />{q.saleOrder.saleOrderNo}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Status Banners */}
+      {/* ── Status Banners ── */}
       {q.status === 'REJECTED' && q.rejectionReason && (
-        <Card className="border-destructive/50 bg-destructive/5"><CardContent className="pt-4 flex gap-3"><AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" /><div><div className="font-semibold text-destructive">ถูกปฏิเสธ</div><p className="text-sm mt-1">{q.rejectionReason}</p><p className="text-xs text-muted-foreground mt-2">แก้ไขแล้วส่งใหม่ได้เลย</p></div></CardContent></Card>
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="pt-4 flex gap-3">
+            <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold text-destructive">ถูกปฏิเสธ</div>
+              <p className="text-sm mt-1">{q.rejectionReason}</p>
+              <p className="text-xs text-muted-foreground mt-2">แก้ไขแล้วส่งใหม่ได้เลย</p>
+            </div>
+          </CardContent>
+        </Card>
       )}
       {q.status === 'PENDING' && (
-        <Card className="border-amber-500/50 bg-amber-500/5"><CardContent className="pt-4 flex gap-3"><Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" /><div><div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div><p className="text-sm mt-1">ส่งเมื่อ {formatDate(q.submittedAt)} · รอ Manager ตรวจสอบ</p>{!isElevated && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}</div></CardContent></Card>
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="pt-4 flex gap-3">
+            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div>
+              <p className="text-sm mt-1">ส่งเมื่อ {formatDate(q.submittedAt)} · รอ Manager ตรวจสอบ</p>
+              {!isElevated && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}
+            </div>
+          </CardContent>
+        </Card>
       )}
       {q.status === 'APPROVED' && (
-        <Card className="border-blue-500/50 bg-blue-500/5"><CardContent className="pt-4 flex gap-3 items-start"><Upload className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" /><div className="flex-1"><div className="font-semibold text-blue-900 dark:text-blue-200">อนุมัติแล้ว — กรุณาแนบใบ PO</div><p className="text-sm mt-1">อนุมัติเมื่อ {formatDate(q.approvedAt)} โดย {q.approvedBy?.name || '-'}</p><p className="text-xs text-muted-foreground mt-1">💡 กด "Save PDF" ส่งให้ลูกค้า แล้วนำใบ PO อัปโหลดที่ Checklist</p></div><Button asChild size="sm" className="shrink-0 mt-1"><Link href={`/quotations/checklist/${id}`}><ExternalLink className="h-3.5 w-3.5" />ไปหน้า Checklist</Link></Button></CardContent></Card>
+        <Card className="border-blue-500/50 bg-blue-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <Upload className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-blue-900 dark:text-blue-200">อนุมัติแล้ว — กรุณาแนบใบ PO</div>
+              <p className="text-sm mt-1">อนุมัติเมื่อ {formatDate(q.approvedAt)} โดย {q.approvedBy?.name || '-'}</p>
+              <p className="text-xs text-muted-foreground mt-1">💡 กด "Save PDF" ส่งให้ลูกค้า แล้วนำใบ PO อัปโหลดที่ Checklist</p>
+            </div>
+            <Button asChild size="sm" className="shrink-0 mt-1">
+              <Link href={`/quotations/checklist/${id}`}><ExternalLink className="h-3.5 w-3.5" />ไปหน้า Checklist</Link>
+            </Button>
+          </CardContent>
+        </Card>
       )}
       {q.status === 'PO_PENDING' && (
-        <Card className="border-amber-500/50 bg-amber-500/5"><CardContent className="pt-4 flex gap-3 items-start"><Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" /><div className="flex-1"><div className="font-semibold text-amber-700 dark:text-amber-400">PO รอการตรวจสอบ</div><p className="text-xs text-muted-foreground mt-1">Manager กำลังตรวจสอบใบ PO</p></div><Button asChild size="sm" variant="outline" className="shrink-0 mt-1"><Link href={`/quotations/checklist/${id}`}><ExternalLink className="h-3.5 w-3.5" />ดูหน้า Checklist</Link></Button></CardContent></Card>
+        <Card className="border-amber-500/50 bg-amber-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-amber-700 dark:text-amber-400">PO รอการตรวจสอบ</div>
+              <p className="text-xs text-muted-foreground mt-1">Manager กำลังตรวจสอบใบ PO</p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 mt-1">
+              <Link href={`/quotations/checklist/${id}`}><ExternalLink className="h-3.5 w-3.5" />ดูหน้า Checklist</Link>
+            </Button>
+          </CardContent>
+        </Card>
       )}
       {q.status === 'PO_APPROVED' && (
-        <Card className="border-emerald-500/50 bg-emerald-500/5"><CardContent className="pt-4 flex gap-3"><CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" /><div><div className="font-semibold text-emerald-700 dark:text-emerald-300">PO อนุมัติแล้ว — เสร็จสิ้น</div><p className="text-sm mt-1">Sale Order {q.saleOrder?.saleOrderNo} ถูกสร้างแล้ว</p></div></CardContent></Card>
+        <Card className="border-emerald-500/50 bg-emerald-500/5">
+          <CardContent className="pt-4 flex gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold text-emerald-700 dark:text-emerald-300">PO อนุมัติแล้ว — เสร็จสิ้น</div>
+              <p className="text-sm mt-1">Sale Order {q.saleOrder?.saleOrderNo} ถูกสร้างแล้ว</p>
+            </div>
+          </CardContent>
+        </Card>
       )}
       {(q.status as string) === 'PO_REJECTED' && (
-        <Card className="border-red-500/50 bg-red-500/5"><CardContent className="pt-4 flex gap-3 items-start"><AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" /><div className="flex-1"><div className="font-semibold text-red-700 dark:text-red-300">PO ถูกปฏิเสธ</div><p className="text-xs text-muted-foreground mt-1">กรุณาอัปโหลดใบ PO ใหม่</p></div><Button asChild size="sm" variant="outline" className="shrink-0 mt-1"><Link href={`/quotations/checklist/${id}`}><Upload className="h-3.5 w-3.5" />อัปโหลด PO ใหม่</Link></Button></CardContent></Card>
+        <Card className="border-red-500/50 bg-red-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-red-700 dark:text-red-300">PO ถูกปฏิเสธ</div>
+              <p className="text-xs text-muted-foreground mt-1">กรุณาอัปโหลดใบ PO ใหม่</p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 mt-1">
+              <Link href={`/quotations/checklist/${id}`}><Upload className="h-3.5 w-3.5" />อัปโหลด PO ใหม่</Link>
+            </Button>
+          </CardContent>
+        </Card>
       )}
-      {/* ✅ Special Discount Pending Banner */}
+
+      {/* Special Discount Banners */}
       {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO' && (
         <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-start">
@@ -371,7 +477,7 @@ export default function QuotationDetailPage() {
                 รอ CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}%
               </div>
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                ไม่สามารถส่งขออนุมัติ Quotation นี้ได้ จนกว่า CEO จะตอบกลับคำขอ Special Discount
+                ไม่สามารถแก้ไข ยกเลิก หรือส่งขออนุมัติ Quotation นี้ได้ จนกว่า CEO จะตอบกลับ
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 เหตุผล: {(q as any).specialDiscountReason}
@@ -380,8 +486,6 @@ export default function QuotationDetailPage() {
           </CardContent>
         </Card>
       )}
-      
-      {/* ✅ Special Discount Resolved Banners */}
       {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'APPROVED' && (
         <Card className="border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
@@ -395,7 +499,6 @@ export default function QuotationDetailPage() {
           </CardContent>
         </Card>
       )}
-      
       {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'MODIFIED' && (
         <Card className="border-blue-400 bg-blue-50 dark:bg-blue-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
@@ -410,7 +513,6 @@ export default function QuotationDetailPage() {
           </CardContent>
         </Card>
       )}
-      
       {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'REJECTED' && (
         <Card className="border-red-400 bg-red-50 dark:bg-red-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
@@ -425,7 +527,7 @@ export default function QuotationDetailPage() {
         </Card>
       )}
 
-      {/* ✅ Content — ไม่ใช้ grid แล้ว ปุ่มแชทจะ float เอง */}
+      {/* Content */}
       <div className="space-y-5 min-w-0">
         <Card>
           <CardContent className="pt-6">
@@ -502,7 +604,6 @@ export default function QuotationDetailPage() {
         )}
       </div>
 
-      {/* ✅ Floating chat — อยู่นอก layout ลอยได้อิสระ */}
       {showCommentThread && <CommentThread quotationId={id} />}
 
       {showApprovePopover && <ConfirmPopover title={`อนุมัติ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งให้อัปโหลด PO ที่หน้า Checklist" confirmLabel="✓ Approve" onClose={() => setShowApprovePopover(false)} onConfirm={handleApprove} loading={acting === 'approve'} />}
