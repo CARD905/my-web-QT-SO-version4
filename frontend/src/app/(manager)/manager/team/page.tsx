@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Users, Plus, Crown, UserCheck, UserX, Mail, Copy,
-  ChevronRight, Loader2, X, Star, AlertTriangle,
+  Users, Plus, Crown, UserX, Mail, Copy,
+  ChevronRight, Loader2, X, Star,
+  CheckCircle2, XCircle, Clock, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +19,7 @@ import {
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatRelativeTime } from '@/lib/utils';
 import type { ApiResponse } from '@/types/api';
 
 interface TeamMember {
@@ -42,33 +43,59 @@ interface MyTeam {
   members: TeamMember[];
 }
 
-interface PendingInvitation {
+interface Invitation {
   id: string;
   email: string;
   name: string | null;
-  status: string;
+  status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
   expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  revokedReason: string | null;
   token: string;
   role: { code: string; nameTh: string };
+  team: { id: string; name: string } | null;
+  invitedBy: { id: string; name: string; email: string };
 }
+
+type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+
+const STATUS_META: Record<InvitationStatus, { color: string; icon: typeof Clock; label: string }> = {
+  PENDING:  { color: 'bg-amber-500/10 text-amber-600',    icon: Clock,        label: 'Pending'  },
+  ACCEPTED: { color: 'bg-emerald-500/10 text-emerald-600', icon: CheckCircle2, label: 'Accepted' },
+  EXPIRED:  { color: 'bg-gray-500/10 text-gray-600',      icon: AlertCircle,  label: 'Expired'  },
+  REVOKED:  { color: 'bg-red-500/10 text-red-600',        icon: XCircle,      label: 'Revoked'  },
+};
 
 export default function ManagerTeamPage() {
   const [team, setTeam] = useState<MyTeam | null>(null);
-  const [pendingInvites, setPendingInvites] = useState<PendingInvitation[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [demotingId, setDemotingId] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<'all' | InvitationStatus>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [teamRes, invRes] = await Promise.all([
+      // ✅ ใช้ allSettled — ถ้า team fail ก็ยังโหลด invitations ได้
+      const [teamRes, invRes] = await Promise.allSettled([
         api.get<ApiResponse<MyTeam>>('/manager/my-team'),
-        api.get<ApiResponse<PendingInvitation[]>>('/invitations?status=PENDING&limit=50'),
+        api.get<ApiResponse<Invitation[]>>('/invitations?limit=100'),
       ]);
-      setTeam(teamRes.data.data ?? null);
-      setPendingInvites(invRes.data.data ?? []);
+
+      if (teamRes.status === 'fulfilled') {
+        setTeam(teamRes.value.data.data ?? null);
+      }
+      // ไม่ toast error ถ้า team ไม่มี — Manager ยังไม่มีทีมก็ได้
+
+      if (invRes.status === 'fulfilled') {
+        setInvitations(invRes.value.data.data ?? []);
+      } else {
+        toast.error(getApiErrorMessage(invRes.reason));
+      }
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -106,7 +133,7 @@ export default function ManagerTeamPage() {
     toast.success('คัดลอก Invitation Link แล้ว');
   };
 
-  const revokeInvite = async (inv: PendingInvitation) => {
+  const revokeInvite = async (inv: Invitation) => {
     if (!confirm(`ยกเลิก invitation ของ ${inv.email}?`)) return;
     try {
       await api.post(`/invitations/${inv.id}/revoke`, { reason: 'Revoked by Manager' });
@@ -123,12 +150,17 @@ export default function ManagerTeamPage() {
     </div>
   );
 
-  // ── Build hierarchy ────────────────────────────────────────────────────────
   const members = team?.members ?? [];
   const leads = members.filter((m) => m.isTeamLead);
   const officersUnderManager = members.filter(
     (m) => !m.isTeamLead && !leads.some((l) => l.id === m.reportsToId),
   );
+
+  const filteredInvitations = filterStatus === 'all'
+    ? invitations
+    : invitations.filter((inv) => inv.status === filterStatus);
+
+  const pendingCount = invitations.filter((inv) => inv.status === 'PENDING').length;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -141,7 +173,7 @@ export default function ManagerTeamPage() {
             {team && <span className="text-muted-foreground font-normal text-lg">— {team.name}</span>}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {members.length} คน · {leads.length} Lead · {pendingInvites.length} รอตอบรับ
+            {members.length} คน · {leads.length} Lead · {pendingCount} รอตอบรับ
           </p>
         </div>
         <Button onClick={() => setShowInvite(true)}>
@@ -163,12 +195,10 @@ export default function ManagerTeamPage() {
             </div>
           ) : (
             <>
-              {/* Officer Leads + their members */}
               {leads.map((lead) => {
                 const underLead = members.filter((m) => m.reportsToId === lead.id);
                 return (
                   <div key={lead.id} className="border rounded-xl overflow-hidden">
-                    {/* Lead row */}
                     <div className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
                       <div className="h-9 w-9 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0">
                         <Crown className="h-4 w-4 text-amber-600" />
@@ -194,8 +224,6 @@ export default function ManagerTeamPage() {
                         </Button>
                       </div>
                     </div>
-
-                    {/* Officers under this Lead */}
                     {underLead.length === 0 ? (
                       <div className="px-6 py-3 text-xs text-muted-foreground italic">
                         ยังไม่มี Officer ในกลุ่มนี้
@@ -209,7 +237,6 @@ export default function ManagerTeamPage() {
                 );
               })}
 
-              {/* Officers reporting directly to Manager */}
               {officersUnderManager.length > 0 && (
                 <div className="border rounded-xl overflow-hidden">
                   <div className="px-3 py-2 bg-muted/40 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -225,41 +252,98 @@ export default function ManagerTeamPage() {
         </CardContent>
       </Card>
 
-      {/* Pending Invitations */}
-      {pendingInvites.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Mail className="h-4 w-4 text-primary" />
-              Invitation รอตอบรับ
-              <Badge variant="outline" className="ml-auto">{pendingInvites.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {pendingInvites.map((inv) => (
-              <div key={inv.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/20">
-                <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-                  <Mail className="h-4 w-4 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{inv.email}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {inv.name && `${inv.name} · `}หมดอายุ {formatDate(inv.expiresAt)}
-                  </div>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyInviteLink(inv.token)}>
-                    <Copy className="h-3 w-3" />Copy Link
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-7 text-xs text-red-600" onClick={() => revokeInvite(inv)}>
-                    <X className="h-3 w-3" />ยกเลิก
-                  </Button>
-                </div>
-              </div>
+      {/* Invitations Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Mail className="h-4 w-4 text-primary" />
+            รายการ Invitation
+            {pendingCount > 0 && (
+              <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-600 border-amber-200">
+                {pendingCount} รอตอบรับ
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-1 flex-wrap">
+            {(['all', 'PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  filterStatus === s
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+                }`}
+              >
+                {s === 'all' ? 'ทั้งหมด' : s}
+              </button>
             ))}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+
+          {filteredInvitations.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              ไม่มี invitation
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredInvitations.map((inv) => {
+                const meta = STATUS_META[inv.status];
+                const StatusIcon = meta.icon;
+                return (
+                  <div key={inv.id} className="flex flex-wrap items-center gap-3 p-3 rounded-lg border bg-muted/10">
+                    <div className={`h-9 w-9 rounded-lg ${meta.color} flex items-center justify-center shrink-0`}>
+                      <StatusIcon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{inv.email}</span>
+                        <Badge variant="outline" className={`text-[10px] ${meta.color}`}>
+                          {meta.label}
+                        </Badge>
+                        {inv.team && (
+                          <Badge variant="secondary" className="text-[10px]">{inv.team.name}</Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {inv.name && `${inv.name} · `}
+                        เชิญโดย {inv.invitedBy.name} {formatRelativeTime(inv.createdAt)}
+                      </div>
+                      {inv.status === 'PENDING' && (
+                        <div className="text-[10px] text-muted-foreground">
+                          หมดอายุ {formatDate(inv.expiresAt)}
+                        </div>
+                      )}
+                      {inv.status === 'ACCEPTED' && inv.acceptedAt && (
+                        <div className="text-[10px] text-emerald-600">
+                          ตอบรับแล้ว {formatRelativeTime(inv.acceptedAt)}
+                        </div>
+                      )}
+                      {inv.status === 'REVOKED' && inv.revokedReason && (
+                        <div className="text-[10px] text-red-600">
+                          เหตุผล: {inv.revokedReason}
+                        </div>
+                      )}
+                    </div>
+                    {inv.status === 'PENDING' && (
+                      <div className="flex gap-2 shrink-0">
+                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyInviteLink(inv.token)}>
+                          <Copy className="h-3 w-3" />Copy Link
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={() => revokeInvite(inv)}>
+                          <X className="h-3 w-3" />ยกเลิก
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Invite Dialog */}
       {showInvite && (

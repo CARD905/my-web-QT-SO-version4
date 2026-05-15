@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nProvider } from '@/lib/i18n';
 import { PermissionsProvider } from '@/contexts/permissions-context';
 import { Toaster } from '@/components/ui/sonner';
+import {ConfirmProvider } from '@/components/ui/confirm-dialog'; // ✅ เพิ่ม
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -33,8 +34,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
             disableTransitionOnChange
           >
             <I18nProvider>
-              {children}
-              {/* ✅ ย้ายมามุมล่างซ้าย — ไม่บังปุ่ม account มุมบนขวา */}
+              <ConfirmProvider>
+                {children}
+              </ConfirmProvider>
               <Toaster
                 position="bottom-left"
                 richColors
