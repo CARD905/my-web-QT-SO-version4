@@ -262,7 +262,7 @@ export default function ManagerTeamPage() {
       )}
 
       {/* Invite Dialog */}
-      {showInvite && team && (
+      {showInvite && (
         <InviteOfficerDialog
           team={team}
           leads={leads}
@@ -318,7 +318,7 @@ function MemberRow({ member, indent, onPromote, promotingId, leads }: {
 
 // ── Invite Officer Dialog ────────────────────────────────────────────────────
 function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
-  team: MyTeam;
+  team: MyTeam | null;
   leads: TeamMember[];
   onClose: () => void;
   onCreated: (url: string, email: string) => void;
@@ -337,7 +337,7 @@ function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
         '/invitations',
         {
           email, name: name || undefined,
-          teamId: team.id,
+          teamId: team?.id || undefined,
           reportsToId: reportsToId || undefined,
           channel: 'MANUAL',
           expiresInDays,
@@ -356,7 +356,7 @@ function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>เชิญ Officer เข้าทีม {team.name}</DialogTitle>
+          <DialogTitle>เชิญ Officer {team ? `เข้าทีม ${team.name}` : 'ใหม่'}</DialogTitle>
           <DialogDescription>Officer จะได้รับ Invitation Link เพื่อสร้าง Account</DialogDescription>
         </DialogHeader>
 
@@ -371,19 +371,21 @@ function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อ-นามสกุล" className="mt-1.5" />
           </div>
 
-          <div>
-            <Label className="text-xs">รายงานต่อ (สังกัด)</Label>
-            <select value={reportsToId} onChange={(e) => setReportsToId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">— รายงานตรงต่อ Manager —</option>
-              {leads.map((l) => (
-                <option key={l.id} value={l.id}>📋 {l.name} (Officer Lead)</option>
-              ))}
-            </select>
-            <p className="text-xs text-muted-foreground mt-1">
-              เลือก Officer Lead ถ้าต้องการให้อยู่ในกลุ่มย่อย
-            </p>
-          </div>
+          {leads.length > 0 && (
+            <div>
+              <Label className="text-xs">รายงานต่อ (สังกัด)</Label>
+              <select value={reportsToId} onChange={(e) => setReportsToId(e.target.value)}
+                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— รายงานตรงต่อ Manager —</option>
+                {leads.map((l) => (
+                  <option key={l.id} value={l.id}>📋 {l.name} (Officer Lead)</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                เลือก Officer Lead ถ้าต้องการให้อยู่ในกลุ่มย่อย
+              </p>
+            </div>
+          )}
 
           <div>
             <Label className="text-xs">Link หมดอายุใน (วัน)</Label>
