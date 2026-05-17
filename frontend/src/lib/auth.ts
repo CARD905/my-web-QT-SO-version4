@@ -75,10 +75,6 @@ async function refreshAccessToken(refreshToken: string) {
  * Role code is now a string (Phase 1 soft-coded).
  */
 function roleDest(role: string | undefined): string {
-  if (!role) return '/dashboard';
-  const upper = role.toUpperCase();
-  if (upper === 'MANAGER' || upper === 'ADMIN' || upper === 'CEO') return '/manager/dashboard';
-  if (upper === 'APPROVER') return '/approver/dashboard'; // legacy support
   return '/dashboard';
 }
 

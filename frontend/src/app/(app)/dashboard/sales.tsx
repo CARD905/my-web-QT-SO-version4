@@ -84,7 +84,7 @@ export default function SalesDashboardPage() {
     if (permLoading) return;
     if (role?.code && MANAGER_ROLES.includes(role.code)) {
       setRedirecting(true);
-      router.replace('/manager/dashboard');
+      router.replace('/dashboard');
     }
   }, [role, permLoading, router]);
 
