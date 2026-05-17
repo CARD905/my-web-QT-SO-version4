@@ -41,11 +41,19 @@ export type ApprovalAction =
 
 export type ApproverType = 'PRIMARY' | 'BACKUP' | 'ESCALATION' | 'DELEGATE';
 
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   message?: string;
   error?: { code: string; message: string };
+  meta?: PaginationMeta;
 }
 
 // ============================================================

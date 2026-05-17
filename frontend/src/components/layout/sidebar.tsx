@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
-  CheckSquare, Star, Mail,
+  CheckSquare, Star, Mail,History,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -80,6 +80,12 @@ const NAV_ITEMS: NavItem[] = [
     requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
     onlyRoles: ['MANAGER'],
   },
+  {
+    href: '/history',
+    labelKey: 'nav.history',
+    icon: History,
+    requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
+  },
   // ✅ ADMIN เห็น Invitations (invite:ALL)
   {
     href: '/admin/invitations',
@@ -108,7 +114,6 @@ const ROLE_THEMES: Record<string, RoleTheme> = {
   OFFICER:  { brandLabel: 'WISDOM', tagline: 'Officer',  accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
   SALES:    { brandLabel: 'WISDOM', tagline: 'Sales',    accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
   MANAGER:  { brandLabel: 'WISDOM', tagline: 'Manager',  accentColor: '#f59e0b', gradientStops: ['#fbbf24', '#f59e0b', '#f97316', '#ef4444'] },
-  APPROVER: { brandLabel: 'WISDOM', tagline: 'Approver', accentColor: '#a855f7', gradientStops: ['#a855f7', '#c084fc', '#d946ef', '#ec4899'] },
   ADMIN:    { brandLabel: 'WISDOM', tagline: 'Admin',    accentColor: '#ef4444', gradientStops: ['#fb7185', '#f43f5e', '#ef4444', '#dc2626'] },
   CEO:      { brandLabel: 'WISDOM', tagline: 'CEO',      accentColor: '#d4a574', gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'] },
 };

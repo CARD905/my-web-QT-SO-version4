@@ -1,21 +1,6 @@
 'use client';
 
-/**
- * ConfirmDialog.tsx
- * แทนที่ window.confirm() ด้วย custom modal สวยๆ
- *
- * วิธีใช้:
- * import { useConfirm } from '@/components/ui/confirm-dialog';
- *
- * const confirm = useConfirm();
- * const ok = await confirm({
- *   title: 'ยืนยันการส่งอนุมัติ',
- *   description: 'หลังจากส่งแล้ว จะไม่สามารถถอยกลับมาแก้ไขได้',
- *   confirmText: 'ส่งอนุมัติ',
- *   variant: 'warning',   // 'default' | 'warning' | 'danger'
- * });
- * if (!ok) return;
- */
+
 
 import { useCallback, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Trash2, X } from 'lucide-react';

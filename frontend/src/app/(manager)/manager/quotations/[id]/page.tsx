@@ -1,1 +1,0 @@
-export { default } from '@/app/(approver)/approver/quotations/[id]/page';

@@ -1,3 +1,5 @@
+// backend/src/modules/auth/auth.service.ts
+// แทนทั้งไฟล์ — เพิ่ม LoginHistory recording ใน login()
 import bcrypt from 'bcrypt';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -15,19 +17,11 @@ import { JwtPayload } from '../../middleware/auth';
 const ACCESS_OPTS: SignOptions = { expiresIn: env.JWT_EXPIRES_IN as SignOptions['expiresIn'] };
 
 function signAccessToken(user: {
-  id: string;
-  email: string;
-  name: string;
-  roleId: string;
-  roleCode: string;
+  id: string; email: string; name: string; roleId: string; roleCode: string;
 }) {
   const payload: JwtPayload = {
-    sub: user.id,
-    email: user.email,
-    name: user.name,
-    roleId: user.roleId,
-    roleCode: user.roleCode,
-    // Legacy compat — some old code reads `role`
+    sub: user.id, email: user.email, name: user.name,
+    roleId: user.roleId, roleCode: user.roleCode,
     role: user.roleCode as JwtPayload['role'],
   };
   return jwt.sign(payload, env.JWT_SECRET, ACCESS_OPTS);
@@ -39,49 +33,76 @@ function generateRefreshTokenString(): string {
 
 function refreshTokenExpiry(): Date {
   const match = env.REFRESH_TOKEN_EXPIRES_IN.match(/^(\d+)([smhd])$/);
-  if (!match) {
-    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  }
+  if (!match) return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   const value = parseInt(match[1], 10);
   const unit = match[2];
-  const ms =
-    unit === 's' ? value * 1000
+  const ms = unit === 's' ? value * 1000
     : unit === 'm' ? value * 60 * 1000
     : unit === 'h' ? value * 60 * 60 * 1000
     : value * 24 * 60 * 60 * 1000;
   return new Date(Date.now() + ms);
 }
 
+// ✅ Helper บันทึก login history (silent fail — ไม่ break flow)
+async function recordLoginHistory(opts: {
+  userId?: string; email: string; success: boolean;
+  ipAddress?: string; userAgent?: string; reason?: string;
+}) {
+  try {
+    await prisma.loginHistory.create({
+      data: {
+        userId: opts.userId || undefined,
+        email: opts.email,
+        success: opts.success,
+        ipAddress: opts.ipAddress,
+        userAgent: opts.userAgent,
+        reason: opts.reason,
+      },
+    });
+  } catch {
+    // silent — ไม่ให้ login history ทำให้ login fail
+  }
+}
+
 export const authService = {
   async login(input: LoginInput, ipAddress?: string, userAgent?: string) {
-    // findFirst because email is now @@unique([email, deletedAt])
     const user = await prisma.user.findFirst({
-      where: {
-        email: input.email.toLowerCase(),
-        deletedAt: null,
-      },
+      where: { email: input.email.toLowerCase(), deletedAt: null },
       include: { role: true },
     });
 
+    // ✅ User not found
     if (!user) {
+      await recordLoginHistory({
+        email: input.email, success: false,
+        reason: 'USER_NOT_FOUND', ipAddress, userAgent,
+      });
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
+    // ✅ Account disabled
     if (!user.isActive) {
+      await recordLoginHistory({
+        userId: user.id, email: user.email, success: false,
+        reason: 'ACCOUNT_DISABLED', ipAddress, userAgent,
+      });
       throw new AppError(403, 'ACCOUNT_DISABLED', 'Account is disabled');
     }
 
     const validPassword = await bcrypt.compare(input.password, user.password);
+
+    // ✅ Wrong password
     if (!validPassword) {
+      await recordLoginHistory({
+        userId: user.id, email: user.email, success: false,
+        reason: 'WRONG_PASSWORD', ipAddress, userAgent,
+      });
       throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
     const accessToken = signAccessToken({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      roleId: user.roleId,
-      roleCode: user.role.code,
+      id: user.id, email: user.email, name: user.name,
+      roleId: user.roleId, roleCode: user.role.code,
     });
     const refreshTokenStr = generateRefreshTokenString();
     const expiresAt = refreshTokenExpiry();
@@ -93,6 +114,12 @@ export const authService = {
     await prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
+    });
+
+    // ✅ Login success
+    await recordLoginHistory({
+      userId: user.id, email: user.email, success: true,
+      ipAddress, userAgent,
     });
 
     await logActivity(prisma, {
@@ -108,11 +135,8 @@ export const authService = {
       accessToken,
       refreshToken: refreshTokenStr,
       user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role.code,
-        roleId: user.roleId,
+        id: user.id, email: user.email, name: user.name,
+        role: user.role.code, roleId: user.roleId,
         avatarUrl: user.avatarUrl,
         preferredLang: user.preferredLang,
         preferredTheme: user.preferredTheme,
@@ -135,7 +159,6 @@ export const authService = {
       throw new AppError(401, 'USER_INACTIVE', 'User is inactive');
     }
 
-    // Rotate refresh token
     await prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
@@ -143,19 +166,12 @@ export const authService = {
 
     const newRefresh = generateRefreshTokenString();
     await prisma.refreshToken.create({
-      data: {
-        token: newRefresh,
-        userId: stored.userId,
-        expiresAt: refreshTokenExpiry(),
-      },
+      data: { token: newRefresh, userId: stored.userId, expiresAt: refreshTokenExpiry() },
     });
 
     const accessToken = signAccessToken({
-      id: stored.user.id,
-      email: stored.user.email,
-      name: stored.user.name,
-      roleId: stored.user.roleId,
-      roleCode: stored.user.role.code,
+      id: stored.user.id, email: stored.user.email, name: stored.user.name,
+      roleId: stored.user.roleId, roleCode: stored.user.role.code,
     });
 
     return { accessToken, refreshToken: newRefresh };
@@ -182,24 +198,15 @@ export const authService = {
       include: { role: true, team: true },
     });
 
-    if (!user) {
-      throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-    }
+    if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role.code,
-      roleId: user.roleId,
-      roleName: user.role.nameTh,
-      avatarUrl: user.avatarUrl,
-      phone: user.phone,
-      preferredLang: user.preferredLang,
-      preferredTheme: user.preferredTheme,
-      lastLoginAt: user.lastLoginAt,
-      createdAt: user.createdAt,
-      teamId: user.teamId,
-      teamName: user.team?.name ?? null,
+      id: user.id, email: user.email, name: user.name,
+      role: user.role.code, roleId: user.roleId, roleName: user.role.nameTh,
+      avatarUrl: user.avatarUrl, phone: user.phone,
+      preferredLang: user.preferredLang, preferredTheme: user.preferredTheme,
+      lastLoginAt: user.lastLoginAt, createdAt: user.createdAt,
+      teamId: user.teamId, teamName: user.team?.name ?? null,
     };
   },
 
@@ -210,15 +217,10 @@ export const authService = {
       include: { role: true },
     });
     return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role.code,
-      roleId: user.roleId,
-      avatarUrl: user.avatarUrl,
-      phone: user.phone,
-      preferredLang: user.preferredLang,
-      preferredTheme: user.preferredTheme,
+      id: user.id, email: user.email, name: user.name,
+      role: user.role.code, roleId: user.roleId,
+      avatarUrl: user.avatarUrl, phone: user.phone,
+      preferredLang: user.preferredLang, preferredTheme: user.preferredTheme,
     };
   },
 
@@ -232,12 +234,8 @@ export const authService = {
     }
 
     const hashed = await bcrypt.hash(input.newPassword, 12);
-    await prisma.user.update({
-      where: { id: userId },
-      data: { password: hashed },
-    });
+    await prisma.user.update({ where: { id: userId }, data: { password: hashed } });
 
-    // Revoke all refresh tokens
     await prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },

@@ -16,7 +16,7 @@ router.get(
 
 router.get(
   '/approver',
-  requireRole('APPROVER', 'ADMIN'),
+  requireRole('MANAGER', 'CEO', 'ADMIN'),
   asyncHandler(dashboardController.approver),
 );
 

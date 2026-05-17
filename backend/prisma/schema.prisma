@@ -67,16 +67,17 @@ model RolePermission {
 }
 
 model Department {
-  id          String    @id @default(uuid())
-  code        String    @unique
+  id          String       @id @default(uuid())
+  code        String       @unique
   name        String
   description String?
-  isActive    Boolean   @default(true)
-  deletedAt   DateTime? @map("deleted_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  isActive    Boolean      @default(true)
+  deletedAt   DateTime?    @map("deleted_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
   teams       Team[]
   invitations Invitation[]
+
   @@index([deletedAt])
   @@map("departments")
 }
@@ -125,7 +126,9 @@ model User {
   deletedAt          DateTime?             @map("deleted_at")
   createdAt          DateTime              @default(now()) @map("created_at")
   updatedAt          DateTime              @updatedAt @map("updated_at")
+
   activityLogs       ActivityLog[]
+  loginHistory       LoginHistory[]          // ✅ เพิ่ม
   authorizedBy       BackupApproverAuth[]  @relation("AuthorizedBy")
   authorizedAsBackup BackupApproverAuth[]  @relation("BackupApprover")
   myBackups          BackupApproverAuth[]  @relation("Officer")
@@ -151,7 +154,6 @@ model User {
   role               Role                  @relation(fields: [roleId], references: [id])
   team               Team?                 @relation("TeamMembers", fields: [teamId], references: [id])
 
-  // ─── PO workflow relations (NEW) ───
   poUploadedQuotations  Quotation[]  @relation("QuotationPoUploadedBy")
   poApprovedQuotations  Quotation[]  @relation("QuotationPoApprovedBy")
   poRejectedQuotations  Quotation[]  @relation("QuotationPoRejectedBy")
@@ -230,7 +232,7 @@ model Invitation {
   role          Role              @relation(fields: [roleId], references: [id])
   team          Team?             @relation(fields: [teamId], references: [id])
   department    Department?       @relation(fields: [departmentId], references: [id])
-  
+
   @@index([token])
   @@index([email])
   @@index([status])
@@ -280,87 +282,82 @@ model Product {
 }
 
 model Quotation {
-  id                      String                @id @default(uuid())
-  quotationNo             String                @unique @map("quotation_no")
-  version                 Int                   @default(1)
-  customerId              String                @map("customer_id")
-  customerCompany         String                @map("customer_company")
-  customerContactName     String                @map("customer_contact_name")
-  customerTaxId           String?               @map("customer_tax_id")
-  customerEmail           String?               @map("customer_email")
-  customerPhone           String?               @map("customer_phone")
-  customerBillingAddress  String?               @map("customer_billing_address")
-  customerShippingAddress String?               @map("customer_shipping_address")
-  issueDate               DateTime              @map("issue_date")
-  expiryDate              DateTime              @map("expiry_date")
-  currency                Currency              @default(THB)
-  subtotal                Decimal               @db.Decimal(15, 2)
-  discountTotal           Decimal               @default(0) @map("discount_total") @db.Decimal(15, 2)
-  vatRate                 Decimal               @default(7) @map("vat_rate") @db.Decimal(5, 2)
-  vatEnabled              Boolean               @default(true) @map("vat_enabled")
-  vatAmount               Decimal               @default(0) @map("vat_amount") @db.Decimal(15, 2)
-  grandTotal              Decimal               @map("grand_total") @db.Decimal(15, 2)
-  paymentTerms            String?               @map("payment_terms")
-  conditions              String?
-  status                  QuotationStatus       @default(DRAFT)
-  primaryApproverId       String?               @map("primary_approver_id")
-  backupApproverId        String?               @map("backup_approver_id")
-  currentStep             Int                   @default(0) @map("current_step")
-  totalSteps              Int                   @default(1) @map("total_steps")
-  approvedById            String?               @map("approved_by_id")
-  approvedAt              DateTime?             @map("approved_at")
-  rejectedById            String?               @map("rejected_by_id")
-  rejectedAt              DateTime?             @map("rejected_at")
-  rejectionReason         String?               @map("rejection_reason")
-  submittedAt             DateTime?             @map("submitted_at")
-  cancelledAt             DateTime?             @map("cancelled_at")
-  cancelledReason         String?               @map("cancelled_reason")
-  createdById             String                @map("created_by_id")
-  deletedAt               DateTime?             @map("deleted_at")
-  createdAt               DateTime              @default(now()) @map("created_at")
-  updatedAt               DateTime              @updatedAt @map("updated_at")
-  specialDiscountRequested Boolean   @default(false) @map("special_discount_requested")
-  specialDiscountPercent   Decimal?  @map("special_discount_percent") @db.Decimal(5, 2)
-  specialDiscountReason    String?   @map("special_discount_reason")
-  specialDiscountStatus    String?   @map("special_discount_status")
-  specialDiscountFinalPct  Decimal?  @map("special_discount_final_pct") @db.Decimal(5, 2)
-  specialDiscountById      String?   @map("special_discount_by_id")
-  specialDiscountAt        DateTime? @map("special_discount_at")
-  // ─── NEW: PO workflow fields ───────────────────────────────────────────
-  poFileUrl          String?   @map("po_file_url")
-  poFileName         String?   @map("po_file_name")
-  poFileSize         Int?      @map("po_file_size")
-  poFileMimeType     String?   @map("po_file_mime_type")
-  poUploadedAt       DateTime? @map("po_uploaded_at")
-  poUploadedById     String?   @map("po_uploaded_by_id")
-  poSubmittedAt      DateTime? @map("po_submitted_at")
-  poApprovedAt       DateTime? @map("po_approved_at")
-  poApprovedById     String?   @map("po_approved_by_id")
-  poRejectedAt       DateTime? @map("po_rejected_at")
-  poRejectedById     String?   @map("po_rejected_by_id")
-  poRejectionReason  String?   @map("po_rejection_reason")
-  poUploadHistory    Json?     @map("po_upload_history")
-  poNumber           String?   @map("po_number")
-  // ───────────────────────────────────────────────────────────────────────
+  id                       String                @id @default(uuid())
+  quotationNo              String                @unique @map("quotation_no")
+  version                  Int                   @default(1)
+  customerId               String                @map("customer_id")
+  customerCompany          String                @map("customer_company")
+  customerContactName      String                @map("customer_contact_name")
+  customerTaxId            String?               @map("customer_tax_id")
+  customerEmail            String?               @map("customer_email")
+  customerPhone            String?               @map("customer_phone")
+  customerBillingAddress   String?               @map("customer_billing_address")
+  customerShippingAddress  String?               @map("customer_shipping_address")
+  issueDate                DateTime              @map("issue_date")
+  expiryDate               DateTime              @map("expiry_date")
+  currency                 Currency              @default(THB)
+  subtotal                 Decimal               @db.Decimal(15, 2)
+  discountTotal            Decimal               @default(0) @map("discount_total") @db.Decimal(15, 2)
+  vatRate                  Decimal               @default(7) @map("vat_rate") @db.Decimal(5, 2)
+  vatEnabled               Boolean               @default(true) @map("vat_enabled")
+  vatAmount                Decimal               @default(0) @map("vat_amount") @db.Decimal(15, 2)
+  grandTotal               Decimal               @map("grand_total") @db.Decimal(15, 2)
+  paymentTerms             String?               @map("payment_terms")
+  conditions               String?
+  status                   QuotationStatus       @default(DRAFT)
+  primaryApproverId        String?               @map("primary_approver_id")
+  backupApproverId         String?               @map("backup_approver_id")
+  currentStep              Int                   @default(0) @map("current_step")
+  totalSteps               Int                   @default(1) @map("total_steps")
+  approvedById             String?               @map("approved_by_id")
+  approvedAt               DateTime?             @map("approved_at")
+  rejectedById             String?               @map("rejected_by_id")
+  rejectedAt               DateTime?             @map("rejected_at")
+  rejectionReason          String?               @map("rejection_reason")
+  submittedAt              DateTime?             @map("submitted_at")
+  cancelledAt              DateTime?             @map("cancelled_at")
+  cancelledReason          String?               @map("cancelled_reason")
+  createdById              String                @map("created_by_id")
+  deletedAt                DateTime?             @map("deleted_at")
+  createdAt                DateTime              @default(now()) @map("created_at")
+  updatedAt                DateTime              @updatedAt @map("updated_at")
+  specialDiscountRequested Boolean               @default(false) @map("special_discount_requested")
+  specialDiscountPercent   Decimal?              @map("special_discount_percent") @db.Decimal(5, 2)
+  specialDiscountReason    String?               @map("special_discount_reason")
+  specialDiscountStatus    String?               @map("special_discount_status")
+  specialDiscountFinalPct  Decimal?              @map("special_discount_final_pct") @db.Decimal(5, 2)
+  specialDiscountById      String?               @map("special_discount_by_id")
+  specialDiscountAt        DateTime?             @map("special_discount_at")
+  poFileUrl                String?               @map("po_file_url")
+  poFileName               String?               @map("po_file_name")
+  poFileSize               Int?                  @map("po_file_size")
+  poFileMimeType           String?               @map("po_file_mime_type")
+  poUploadedAt             DateTime?             @map("po_uploaded_at")
+  poUploadedById           String?               @map("po_uploaded_by_id")
+  poSubmittedAt            DateTime?             @map("po_submitted_at")
+  poApprovedAt             DateTime?             @map("po_approved_at")
+  poApprovedById           String?               @map("po_approved_by_id")
+  poRejectedAt             DateTime?             @map("po_rejected_at")
+  poRejectedById           String?               @map("po_rejected_by_id")
+  poRejectionReason        String?               @map("po_rejection_reason")
+  poUploadHistory          Json?                 @map("po_upload_history")
+  poNumber                 String?               @map("po_number")
 
-  approvals               QuotationApproval[]
-  attachments             QuotationAttachment[]
-  comments                QuotationComment[]
-  items                   QuotationItem[]
-  versions                QuotationVersion[]
-  approvedBy              User?                 @relation("QuotationApprover", fields: [approvedById], references: [id])
-  backupApprover          User?                 @relation("BackupApprover", fields: [backupApproverId], references: [id])
-  createdBy               User                  @relation("QuotationCreator", fields: [createdById], references: [id])
-  customer                Customer              @relation(fields: [customerId], references: [id])
-  primaryApprover         User?                 @relation("PrimaryApprover", fields: [primaryApproverId], references: [id])
-  rejectedBy              User?                 @relation("QuotationRejecter", fields: [rejectedById], references: [id])
-  saleOrder               SaleOrder?
-
-  // ─── NEW: PO relations ─────────────────────────────────────────────────
-  poUploadedBy  User? @relation("QuotationPoUploadedBy", fields: [poUploadedById], references: [id])
-  poApprovedBy  User? @relation("QuotationPoApprovedBy", fields: [poApprovedById], references: [id])
-  poRejectedBy  User? @relation("QuotationPoRejectedBy", fields: [poRejectedById], references: [id])
-  // ───────────────────────────────────────────────────────────────────────
+  approvals     QuotationApproval[]
+  attachments   QuotationAttachment[]
+  comments      QuotationComment[]
+  items         QuotationItem[]
+  versions      QuotationVersion[]
+  approvedBy    User?    @relation("QuotationApprover", fields: [approvedById], references: [id])
+  backupApprover User?   @relation("BackupApprover", fields: [backupApproverId], references: [id])
+  createdBy     User     @relation("QuotationCreator", fields: [createdById], references: [id])
+  customer      Customer @relation(fields: [customerId], references: [id])
+  primaryApprover User?  @relation("PrimaryApprover", fields: [primaryApproverId], references: [id])
+  rejectedBy    User?    @relation("QuotationRejecter", fields: [rejectedById], references: [id])
+  saleOrder     SaleOrder?
+  poUploadedBy  User?    @relation("QuotationPoUploadedBy", fields: [poUploadedById], references: [id])
+  poApprovedBy  User?    @relation("QuotationPoApprovedBy", fields: [poApprovedById], references: [id])
+  poRejectedBy  User?    @relation("QuotationPoRejectedBy", fields: [poRejectedById], references: [id])
 
   @@index([quotationNo])
   @@index([customerId])
@@ -503,17 +500,16 @@ model SaleOrder {
   grandTotal              Decimal         @map("grand_total") @db.Decimal(15, 2)
   paymentTerms            String?         @map("payment_terms")
   conditions              String?
-  
   status                  SaleOrderStatus @default(DRAFT)
+  poNumber                String?         @map("po_number")
+  poFileUrl               String?         @map("po_file_url")
+  deadlineDate            DateTime?       @map("deadline_date")
   deletedAt               DateTime?       @map("deleted_at")
   createdAt               DateTime        @default(now()) @map("created_at")
   updatedAt               DateTime        @updatedAt @map("updated_at")
   items                   SaleOrderItem[]
   customer                Customer        @relation(fields: [customerId], references: [id])
   quotation               Quotation       @relation(fields: [quotationId], references: [id])
-  poNumber                String?         @map("po_number")
-  poFileUrl               String?         @map("po_file_url")
-  deadlineDate            DateTime?       @map("deadline_date")
 
   @@index([saleOrderNo])
   @@index([customerId])
@@ -542,6 +538,42 @@ model SaleOrderItem {
 
   @@index([saleOrderId])
   @@map("sale_order_items")
+}
+
+// ✅ เพิ่มใหม่
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  type        String   @default("string")
+  group       String   @default("general")
+  label       String
+  description String?
+  updatedById String?  @map("updated_by_id")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([group])
+  @@map("system_settings")
+}
+
+// ✅ เพิ่มใหม่
+model LoginHistory {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  email     String
+  success   Boolean
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([email])
+  @@index([success])
+  @@index([createdAt])
+  @@map("login_history")
 }
 
 model ActivityLog {
@@ -647,11 +679,9 @@ enum QuotationStatus {
   SIGNED
   CANCELLED
   EXPIRED
-
- 
-  PO_PENDING    
-  PO_APPROVED   
-  PO_REJECTED   
+  PO_PENDING
+  PO_APPROVED
+  PO_REJECTED
 }
 
 enum SaleOrderStatus {
@@ -717,7 +747,7 @@ enum NotificationType {
   MANAGER_RESIGNED
   ROLE_CHANGED
   SYSTEM_ALERT
-  PO_SUBMITTED 
+  PO_SUBMITTED
   PO_APPROVED
   PO_REJECTED
   SO_CREATED

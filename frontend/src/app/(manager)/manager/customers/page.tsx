@@ -1,1 +1,0 @@
-export { default } from '@/app/(sales)/customers/page';
