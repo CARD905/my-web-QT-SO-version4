@@ -2,15 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import {
-  Mail,
-  Plus,
-  Loader2,
-  Copy,
-  X,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  AlertCircle,
+  Mail, Plus, Loader2, Copy, X,
+  CheckCircle2, XCircle, Clock, AlertCircle,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,12 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
@@ -33,16 +22,11 @@ import type { ApiResponse } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
 
 interface Invitation {
-  id: string;
-  email: string;
-  name: string | null;
+  id: string; email: string; name: string | null;
   status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
   channel: 'MANUAL' | 'EMAIL' | 'BOTH';
-  expiresAt: string;
-  createdAt: string;
-  acceptedAt: string | null;
-  revokedAt: string | null;
-  revokedReason: string | null;
+  expiresAt: string; createdAt: string;
+  acceptedAt: string | null; revokedAt: string | null; revokedReason: string | null;
   token: string;
   role: { id: string; code: string; nameTh: string; level: number };
   team: { id: string; name: string; code: string | null } | null;
@@ -50,19 +34,28 @@ interface Invitation {
 }
 
 interface TeamOption {
-  id: string;
-  name: string;
-  code: string | null;
+  id: string; name: string; code: string | null;
   department: { id: string; name: string } | null;
 }
 
+interface RoleOption {
+  id: string; code: string; nameTh: string; level: number;
+}
+
 type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+type ManagerLevel = 'DIVISION' | 'DEPARTMENT' | 'SECTION';
 
 const STATUS_META: Record<InvitationStatus, { color: string; icon: typeof Clock; label: string }> = {
-  PENDING: { color: 'bg-amber-500/10 text-amber-600', icon: Clock, label: 'Pending' },
+  PENDING:  { color: 'bg-amber-500/10 text-amber-600',   icon: Clock,         label: 'Pending' },
   ACCEPTED: { color: 'bg-emerald-500/10 text-emerald-600', icon: CheckCircle2, label: 'Accepted' },
-  EXPIRED: { color: 'bg-gray-500/10 text-gray-600', icon: AlertCircle, label: 'Expired' },
-  REVOKED: { color: 'bg-red-500/10 text-red-600', icon: XCircle, label: 'Revoked' },
+  EXPIRED:  { color: 'bg-gray-500/10 text-gray-600',     icon: AlertCircle,   label: 'Expired' },
+  REVOKED:  { color: 'bg-red-500/10 text-red-600',       icon: XCircle,       label: 'Revoked' },
+};
+
+const LEVEL_LABEL: Record<ManagerLevel, string> = {
+  DIVISION:   'Division Manager',
+  DEPARTMENT: 'Department Manager',
+  SECTION:    'Section Manager',
 };
 
 export default function AdminInvitationsPage() {
@@ -71,9 +64,9 @@ export default function AdminInvitationsPage() {
 
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [teams, setTeams] = useState<TeamOption[]>([]);
+  const [roles, setRoles] = useState<RoleOption[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const [filterStatus, setFilterStatus] = useState<'all' | Invitation['status']>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | InvitationStatus>('all');
   const [creating, setCreating] = useState(false);
   const [showCreated, setShowCreated] = useState<{ url: string; email: string } | null>(null);
 
@@ -83,14 +76,14 @@ export default function AdminInvitationsPage() {
       const params = new URLSearchParams();
       if (filterStatus !== 'all') params.set('status', filterStatus);
       params.set('limit', '100');
-
-      // ✅ ลบ /admin/users/_roles ออก — ADMIN ไม่มีสิทธิ์ และไม่ต้องใช้แล้ว
-      const [iRes, tRes] = await Promise.all([
+      const [iRes, tRes, rRes] = await Promise.all([
         api.get<ApiResponse<Invitation[]>>(`/invitations?${params}`),
-        api.get<ApiResponse<TeamOption[]>>('/admin/users/_teams'),
+        api.get<any>('/admin/users/_teams'),
+        api.get<any>('/admin/users/_roles'),
       ]);
       setInvitations(iRes.data.data ?? []);
       setTeams(tRes.data.data ?? []);
+      setRoles(rRes.data.data ?? []);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -109,9 +102,7 @@ export default function AdminInvitationsPage() {
       await api.post(`/invitations/${inv.id}/revoke`, { reason });
       toast.success('Invitation revoked');
       fetchData();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    }
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
   };
 
   const copyUrl = (token: string) => {
@@ -121,63 +112,36 @@ export default function AdminInvitationsPage() {
   };
 
   if (permLoading) return <Skeleton className="h-32 w-full max-w-7xl" />;
-  if (!canInvite) {
-    return (
-      <Card>
-        <CardContent className="py-16 text-center">
-          <p className="text-muted-foreground">คุณไม่มีสิทธิ์เชิญผู้ใช้</p>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (!canInvite) return (
+    <Card><CardContent className="py-16 text-center"><p className="text-muted-foreground">คุณไม่มีสิทธิ์เชิญผู้ใช้</p></CardContent></Card>
+  );
 
   return (
     <div className="space-y-6 max-w-7xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Mail className="h-6 w-6 text-blue-500" />
-            Invitations
+            <Mail className="h-6 w-6 text-blue-500" />Invitations
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            เชิญ Manager ใหม่เข้าสู่ระบบผ่านลิงก์
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">เชิญผู้ใช้เข้าสู่ระบบผ่านลิงก์</p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="h-4 w-4" />
-          New Invitation
-        </Button>
+        <Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" />New Invitation</Button>
       </div>
 
       {/* Filter */}
       <div className="flex gap-1">
         {(['all', 'PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilterStatus(s)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              filterStatus === s
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-            }`}
-          >
+          <button key={s} onClick={() => setFilterStatus(s)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${filterStatus === s ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}>
             {s === 'all' ? 'All' : s}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
-        </div>
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
       ) : invitations.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            ยังไม่มี invitation
-          </CardContent>
-        </Card>
+        <Card><CardContent className="py-16 text-center text-muted-foreground">ยังไม่มี invitation</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {invitations.map((inv) => {
@@ -186,30 +150,18 @@ export default function AdminInvitationsPage() {
             return (
               <Card key={inv.id}>
                 <CardContent className="p-4 flex flex-wrap items-center gap-4">
-                  <div
-                    className={`h-10 w-10 rounded-lg ${meta.color} flex items-center justify-center shrink-0`}
-                  >
+                  <div className={`h-10 w-10 rounded-lg ${meta.color} flex items-center justify-center shrink-0`}>
                     <StatusIcon className="h-5 w-5" />
                   </div>
-
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold">{inv.email}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {inv.role.nameTh}
-                      </Badge>
-                      <Badge className={`text-xs ${meta.color}`} variant="outline">
-                        {meta.label}
-                      </Badge>
-                      {inv.team && (
-                        <Badge variant="secondary" className="text-xs">
-                          {inv.team.name}
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className="text-xs">{inv.role.nameTh}</Badge>
+                      <Badge className={`text-xs ${meta.color}`} variant="outline">{meta.label}</Badge>
+                      {inv.team && <Badge variant="secondary" className="text-xs">{inv.team.name}</Badge>}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {inv.name && `${inv.name} · `}
-                      Invited by {inv.invitedBy.name} {formatRelativeTime(inv.createdAt)}
+                      {inv.name && `${inv.name} · `}Invited by {inv.invitedBy.name} {formatRelativeTime(inv.createdAt)}
                     </div>
                     {inv.status === 'PENDING' && (
                       <div className="text-[10px] text-muted-foreground mt-0.5">
@@ -217,26 +169,19 @@ export default function AdminInvitationsPage() {
                       </div>
                     )}
                     {inv.status === 'ACCEPTED' && inv.acceptedAt && (
-                      <div className="text-[10px] text-emerald-600 mt-0.5">
-                        Accepted {formatRelativeTime(inv.acceptedAt)}
-                      </div>
+                      <div className="text-[10px] text-emerald-600 mt-0.5">Accepted {formatRelativeTime(inv.acceptedAt)}</div>
                     )}
                     {inv.status === 'REVOKED' && inv.revokedReason && (
-                      <div className="text-[10px] text-red-600 mt-0.5">
-                        Reason: {inv.revokedReason}
-                      </div>
+                      <div className="text-[10px] text-red-600 mt-0.5">Reason: {inv.revokedReason}</div>
                     )}
                   </div>
-
                   {inv.status === 'PENDING' && (
                     <div className="flex gap-2 shrink-0">
                       <Button variant="outline" size="sm" onClick={() => copyUrl(inv.token)}>
-                        <Copy className="h-3.5 w-3.5" />
-                        Copy Link
+                        <Copy className="h-3.5 w-3.5" />Copy Link
                       </Button>
                       <Button variant="destructive" size="sm" onClick={() => revoke(inv)}>
-                        <X className="h-3.5 w-3.5" />
-                        Revoke
+                        <X className="h-3.5 w-3.5" />Revoke
                       </Button>
                     </div>
                   )}
@@ -247,48 +192,29 @@ export default function AdminInvitationsPage() {
         </div>
       )}
 
-      {/* Create Invitation Dialog */}
       {creating && (
         <CreateInvitationDialog
-          teams={teams}
+          teams={teams} roles={roles}
           onClose={() => setCreating(false)}
-          onCreated={(url, email) => {
-            setCreating(false);
-            setShowCreated({ url, email });
-            fetchData();
-          }}
+          onCreated={(url, email) => { setCreating(false); setShowCreated({ url, email }); fetchData(); }}
         />
       )}
 
-      {/* Show Created Link Dialog */}
       {showCreated && (
         <Dialog open onOpenChange={(open) => { if (!open) setShowCreated(null); }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>✅ Invitation Created</DialogTitle>
-              <DialogDescription>
-                Send this link to <span className="font-mono">{showCreated.email}</span>
-              </DialogDescription>
+              <DialogDescription>Send this link to <span className="font-mono">{showCreated.email}</span></DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
-              <div className="bg-muted p-3 rounded-md break-all text-xs font-mono">
-                {showCreated.url}
-              </div>
-              <Button
-                onClick={() => {
-                  navigator.clipboard.writeText(showCreated.url);
-                  toast.success('Link copied');
-                }}
-                className="w-full"
-              >
-                <Copy className="h-4 w-4" />
-                Copy to Clipboard
+              <div className="bg-muted p-3 rounded-md break-all text-xs font-mono">{showCreated.url}</div>
+              <Button onClick={() => { navigator.clipboard.writeText(showCreated.url); toast.success('Link copied'); }} className="w-full">
+                <Copy className="h-4 w-4" />Copy to Clipboard
               </Button>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowCreated(null)}>
-                Done
-              </Button>
+              <Button variant="outline" onClick={() => setShowCreated(null)}>Done</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -297,42 +223,59 @@ export default function AdminInvitationsPage() {
   );
 }
 
-// ===========================
-// Create Invitation Dialog
-// ===========================
+// ════════════════════════════════════════════════════════════════════════════
+// Create Invitation Dialog — ✅ เพิ่ม roleId, managerLevel, approvalLimit
+// ════════════════════════════════════════════════════════════════════════════
 function CreateInvitationDialog({
-  teams,
-  onClose,
-  onCreated,
+  teams, roles, onClose, onCreated,
 }: {
   teams: TeamOption[];
+  roles: RoleOption[];
   onClose: () => void;
   onCreated: (url: string, email: string) => void;
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [roleId, setRoleId] = useState('');
   const [teamId, setTeamId] = useState('');
+  const [managerLevel, setManagerLevel] = useState<ManagerLevel>('SECTION');
+  const [approvalLimit, setApprovalLimit] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(3);
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = async () => {
-    if (!email.trim()) {
-      toast.error('กรุณากรอก Email');
-      return;
+  // หา role code จาก roleId ที่เลือก
+  const selectedRole = roles.find((r) => r.id === roleId);
+  const isManager = selectedRole?.code === 'MANAGER';
+
+  // Set default roleId เมื่อ roles โหลดแล้ว
+  useEffect(() => {
+    if (roles.length > 0 && !roleId) {
+      const managerRole = roles.find((r) => r.code === 'MANAGER');
+      if (managerRole) setRoleId(managerRole.id);
     }
+  }, [roles]);
+
+  const submit = async () => {
+    if (!email.trim()) { toast.error('กรุณากรอก Email'); return; }
+    if (!roleId) { toast.error('กรุณาเลือก Role'); return; }
     setSubmitting(true);
     try {
-      // ✅ ไม่ส่ง roleId — backend auto-set เป็น MANAGER ให้เอง
-      const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>(
-        '/invitations',
-        {
-          email,
-          name: name || undefined,
-          teamId: teamId || undefined,
-          channel: 'MANUAL',
-          expiresInDays,
-        },
-      );
+      const body: any = {
+        email,
+        name: name || undefined,
+        roleId,                              // ✅ ส่ง roleId
+        teamId: teamId || undefined,
+        channel: 'MANUAL',
+        expiresInDays,
+      };
+
+      // ✅ เพิ่ม managerLevel และ approvalLimit เฉพาะ MANAGER
+      if (isManager) {
+        body.managerLevel = managerLevel;
+        body.approvalLimit = approvalLimit ? Number(approvalLimit) : undefined;
+      }
+
+      const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>('/invitations', body);
       const url = res.data.data?.invitationUrl || `${window.location.origin}/invite/${res.data.data?.token}`;
       toast.success('Invitation created');
       onCreated(url, email);
@@ -347,67 +290,97 @@ function CreateInvitationDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>เชิญ Manager ใหม่</DialogTitle>
-          <DialogDescription>Manager จะได้รับ Invitation Link เพื่อสร้าง Account</DialogDescription>
+          <DialogTitle>สร้าง Invitation</DialogTitle>
+          <DialogDescription>ผู้ใช้จะได้รับ Link สำหรับสร้าง Account</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Email */}
           <div>
             <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="manager@example.com"
-              className="mt-1.5"
-              autoFocus
-            />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="user@example.com" className="mt-1.5" autoFocus />
           </div>
+
+          {/* ชื่อ */}
           <div>
             <Label className="text-xs">ชื่อ (optional)</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="ชื่อ-นามสกุล"
-              className="mt-1.5"
-            />
+            <Input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="ชื่อ-นามสกุล" className="mt-1.5" />
           </div>
+
+          {/* ✅ Role */}
           <div>
-            <Label className="text-xs">ทีม (optional)</Label>
-            <select
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
+            <Label className="text-xs">Role <span className="text-destructive">*</span></Label>
+            <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              <option value="">— เลือก Role —</option>
+              {roles
+                .filter((r) => !['ADMIN'].includes(r.code)) // Admin ไม่ควร invite ADMIN อีก
+                .sort((a, b) => a.level - b.level)
+                .map((r) => (
+                  <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
+                ))}
+            </select>
+          </div>
+
+          {/* ✅ Manager Level — แสดงเฉพาะเมื่อเลือก MANAGER */}
+          {isManager && (
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200">
+              <div>
+                <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  ระดับ Manager <span className="text-destructive">*</span>
+                </Label>
+                <select value={managerLevel} onChange={(e) => setManagerLevel(e.target.value as ManagerLevel)}
+                  className="mt-1.5 flex h-10 w-full rounded-md border border-amber-300 bg-white dark:bg-amber-950/30 px-3 text-sm">
+                  <option value="DIVISION">Division Manager</option>
+                  <option value="DEPARTMENT">Department Manager</option>
+                  <option value="SECTION">Section Manager</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  วงเงินอนุมัติ (฿)
+                </Label>
+                <Input type="number" min="0" step="1000" value={approvalLimit}
+                  onChange={(e) => setApprovalLimit(e.target.value)}
+                  placeholder="ว่าง = ไม่จำกัด"
+                  className="mt-1.5 border-amber-300 focus:ring-amber-400" />
+              </div>
+              <div className="col-span-2 text-[10px] text-amber-700 dark:text-amber-300">
+                Approval flow: Section → Department → Division → CEO
+              </div>
+            </div>
+          )}
+
+          {/* Team */}
+          <div>
+            <Label className="text-xs">Team (optional)</Label>
+            <select value={teamId} onChange={(e) => setTeamId(e.target.value)}
+              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">— ไม่ระบุทีม —</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.department?.name} / {t.name}
+                  {t.department?.name ? `${t.department.name} / ` : ''}{t.name}
                 </option>
               ))}
             </select>
           </div>
+
+          {/* Expiry */}
           <div>
             <Label className="text-xs">Link หมดอายุใน (วัน)</Label>
-            <Input
-              type="number"
-              min={1}
-              max={30}
-              value={expiresInDays}
+            <Input type="number" min={1} max={30} value={expiresInDays}
               onChange={(e) => setExpiresInDays(parseInt(e.target.value) || 3)}
-              className="mt-1.5"
-            />
+              className="mt-1.5" />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            ยกเลิก
-          </Button>
-          <Button onClick={submit} disabled={submitting}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>ยกเลิก</Button>
+          <Button onClick={submit} disabled={submitting || !email.trim() || !roleId}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Mail className="h-4 w-4" />
-            สร้าง Invitation
+            <Mail className="h-4 w-4" />สร้าง Invitation
           </Button>
         </DialogFooter>
       </DialogContent>
