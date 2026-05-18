@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Send, X, Check, Loader2, FileText,
-  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink, Printer, Star, XCircle,
+  CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink,
+  Printer, Star, XCircle, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,9 @@ const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
 const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING'];
 const PDF_ALLOWED_STATUSES = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED', 'SENT', 'SIGNED'];
 
+// ════════════════════════════════════════════════════════════════════════════
+// Thai Baht Text
+// ════════════════════════════════════════════════════════════════════════════
 function toThaiBahtText(num: number): string {
   const txtNum = ['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
   const txtDigit = ['','สิบ','ร้อย','พัน','หมื่น','แสน','ล้าน'];
@@ -52,6 +56,9 @@ function toThaiBahtText(num: number): string {
   return bahtText;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Confirm Popover
+// ════════════════════════════════════════════════════════════════════════════
 function ConfirmPopover({
   title, description, confirmLabel, confirmVariant = 'default',
   requireComment = false, onClose, onConfirm, loading,
@@ -74,12 +81,10 @@ function ConfirmPopover({
               {requireComment ? 'เหตุผล' : 'Comment (optional)'}
               {requireComment && <span className="text-destructive ml-1">*</span>}
             </Label>
-            <textarea
-              value={comment} onChange={(e) => setComment(e.target.value)}
+            <textarea value={comment} onChange={(e) => setComment(e.target.value)}
               rows={2} autoFocus
               placeholder={requireComment ? 'ระบุเหตุผลที่ปฏิเสธ...' : 'เพิ่มหมายเหตุ...'}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
-            />
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none" />
           </div>
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={onClose} disabled={loading}>ยกเลิก</Button>
@@ -96,9 +101,29 @@ function ConfirmPopover({
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Quotation PDF Document
+// ════════════════════════════════════════════════════════════════════════════
+function DocRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div className="flex gap-2 text-[11px] py-0.5">
+      <span className="text-gray-700 w-[110px] shrink-0">{label}</span>
+      <span className={`flex-1 ${bold ? 'font-bold text-[12px]' : 'font-semibold'}`}>{value}</span>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto] px-3 py-1.5 border-b border-gray-300">
+      <span className="text-gray-700">{label}</span>
+      <span className="font-semibold min-w-[90px] text-right">{value}</span>
+    </div>
+  );
+}
+
 function QuotationDocument({ q, company }: { q: Quotation; company: CompanySettings | null }) {
   const grandTotalNum = Number(q.grandTotal);
-  const afterDiscount = Number(q.subtotal) - Number(q.discountTotal);
   const bahtText = q.currency === 'THB' ? toThaiBahtText(grandTotalNum) : '';
   const padCount = Math.max(0, 8 - (q.items?.length ?? 0));
 
@@ -212,20 +237,24 @@ function QuotationDocument({ q, company }: { q: Quotation; company: CompanySetti
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Main Page
+// ════════════════════════════════════════════════════════════════════════════
 export default function QuotationDetailPage() {
   const t = useT();
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const { data: session } = useSession();
   const { role, can } = usePermissions();
 
-  const [q, setQ]           = useState<Quotation | null>(null);
+  const [q, setQ] = useState<Quotation | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [acting, setActing]   = useState<string | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
   const [showApprovePopover, setShowApprovePopover] = useState(false);
-  const [showRejectPopover,  setShowRejectPopover]  = useState(false);
-  const [showPrintView,      setShowPrintView]      = useState(false);
+  const [showRejectPopover, setShowRejectPopover] = useState(false);
+  const [showPrintView, setShowPrintView] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -267,6 +296,21 @@ export default function QuotationDetailPage() {
     catch (err) { toast.error(getApiErrorMessage(err)); } finally { setActing(null); }
   };
 
+  // ✅ Renew — สร้าง Draft ใหม่ v+1
+  const handleRenew = async () => {
+    if (!q) return;
+    if (!confirm(`ต้องการต่ออายุ ${q.quotationNo}?\n\nระบบจะสร้าง Draft ใหม่เป็น v${q.version + 1} ให้อัตโนมัติ`)) return;
+    setActing('renew');
+    try {
+      const res = await api.post<ApiResponse<{ id: string; quotationNo: string }>>(`/quotations/${id}/renew`, {});
+      const newQt = res.data.data;
+      toast.success(`สร้าง ${newQt?.quotationNo} (v${q.version + 1}) เรียบร้อย`);
+      router.push(`/quotations/${newQt?.id}`);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally { setActing(null); }
+  };
+
   if (loading) return (
     <div className="space-y-4 max-w-6xl">
       <Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /><Skeleton className="h-96 w-full" />
@@ -280,29 +324,18 @@ export default function QuotationDetailPage() {
     </div>
   );
 
-  const userId     = session?.user?.id;
-  const isOwner    = !!(userId && q.createdById === userId);
+  const userId = session?.user?.id;
+  const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
+  const isSpecialDiscountPendingCEO = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO';
 
-  // ✅ FIX: ตรวจสอบว่ากำลังรอ CEO อนุมัติ Special Discount อยู่หรือเปล่า
-  const isSpecialDiscountPendingCEO =
-    !!(q as any).specialDiscountRequested &&
-    (q as any).specialDiscountStatus === 'PENDING_CEO';
-
-  // ✅ FIX: block Edit, Cancel, Submit เมื่อรอ CEO
-  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED')
-    && isOwner
-    && !isSpecialDiscountPendingCEO;
-
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED')
-    && isOwner
-    && !isSpecialDiscountPendingCEO;
-
-  const canCancel = q.status === 'DRAFT'
-    && (isOwner || isElevated)
-    && !isSpecialDiscountPendingCEO;
-
+  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
+  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
+  const canCancel = q.status === 'DRAFT' && (isOwner || isElevated) && !isSpecialDiscountPendingCEO;
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
+  // ✅ Renew — เฉพาะ EXPIRED และเป็นเจ้าของ
+  const canRenew  = q.status === 'EXPIRED' && isOwner;
+
   const canApproveThis = (() => {
     if (!isElevated) return false;
     if (q.status === 'PENDING') return can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL');
@@ -311,6 +344,7 @@ export default function QuotationDetailPage() {
   })();
   const showCommentThread = COMMENT_ALLOWED_STATUSES.includes(q.status as string);
 
+  // ── Print View ──────────────────────────────────────────────────────────
   if (showPrintView) {
     return (
       <>
@@ -349,13 +383,10 @@ export default function QuotationDetailPage() {
           </div>
         </div>
 
-        {/* ✅ ปุ่มจะหายเมื่อ isSpecialDiscountPendingCEO = true */}
         <div className="flex gap-2 flex-wrap">
           {canEdit && (
             <Button asChild variant="outline">
-              <Link href={`/quotations/${id}/edit`}>
-                <FileText className="h-4 w-4" />{t('common.edit')}
-              </Link>
+              <Link href={`/quotations/${id}/edit`}><FileText className="h-4 w-4" />{t('common.edit')}</Link>
             </Button>
           )}
           {canCancel && (
@@ -370,13 +401,21 @@ export default function QuotationDetailPage() {
               {t('quotation.submitForApproval')}
             </Button>
           )}
+          {/* ✅ ปุ่ม Renew */}
+          {canRenew && (
+            <Button onClick={handleRenew} disabled={acting !== null} variant="outline"
+              className="border-violet-400 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20">
+              {acting === 'renew' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Renew (v{q.version + 1})
+            </Button>
+          )}
           {canPdf && (
             <Button variant="outline" onClick={() => setShowPrintView(true)}>
               <Printer className="h-4 w-4" />Save PDF
             </Button>
           )}
           {q.saleOrder && (
-            <Button asChild variant="success">
+            <Button asChild variant="secondary">
               <Link href={`/sale-orders/${q.saleOrder.id}`}>
                 <FileText className="h-4 w-4" />{q.saleOrder.saleOrderNo}
               </Link>
@@ -386,6 +425,28 @@ export default function QuotationDetailPage() {
       </div>
 
       {/* ── Status Banners ── */}
+
+      {/* ✅ EXPIRED */}
+      {q.status === 'EXPIRED' && (
+        <Card className="border-orange-500/50 bg-orange-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-orange-700 dark:text-orange-400">ใบเสนอราคาหมดอายุแล้ว</div>
+              <p className="text-sm mt-1">หมดอายุเมื่อ {formatDate(q.expiryDate)}</p>
+              <p className="text-xs text-muted-foreground mt-1">กด "Renew" เพื่อสร้าง Draft ใหม่โดยคัดลอกข้อมูลทั้งหมดมาให้อัตโนมัติ</p>
+            </div>
+            {canRenew && (
+              <Button size="sm" onClick={handleRenew} disabled={acting !== null}
+                className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white">
+                {acting === 'renew' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Renew
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {q.status === 'REJECTED' && q.rejectionReason && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="pt-4 flex gap-3">
@@ -479,9 +540,7 @@ export default function QuotationDetailPage() {
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                 ไม่สามารถแก้ไข ยกเลิก หรือส่งขออนุมัติ Quotation นี้ได้ จนกว่า CEO จะตอบกลับ
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                เหตุผล: {(q as any).specialDiscountReason}
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">เหตุผล: {(q as any).specialDiscountReason}</p>
             </div>
           </CardContent>
         </Card>
@@ -491,9 +550,7 @@ export default function QuotationDetailPage() {
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>
-              <div className="font-semibold text-emerald-800 dark:text-emerald-200">
-                CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% แล้ว
-              </div>
+              <div className="font-semibold text-emerald-800 dark:text-emerald-200">CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% แล้ว</div>
               <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
             </div>
           </CardContent>
@@ -518,9 +575,7 @@ export default function QuotationDetailPage() {
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
             <XCircle className="h-5 w-5 text-red-600 shrink-0" />
             <div>
-              <div className="font-semibold text-red-800 dark:text-red-200">
-                CEO ปฏิเสธ Special Discount — ส่วนลดถูกปรับเหลือ 20% อัตโนมัติ
-              </div>
+              <div className="font-semibold text-red-800 dark:text-red-200">CEO ปฏิเสธ Special Discount — ส่วนลดถูกปรับเหลือ 20% อัตโนมัติ</div>
               <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
             </div>
           </CardContent>
@@ -605,16 +660,8 @@ export default function QuotationDetailPage() {
       </div>
 
       {showCommentThread && <CommentThread quotationId={id} />}
-
       {showApprovePopover && <ConfirmPopover title={`อนุมัติ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งให้อัปโหลด PO ที่หน้า Checklist" confirmLabel="✓ Approve" onClose={() => setShowApprovePopover(false)} onConfirm={handleApprove} loading={acting === 'approve'} />}
       {showRejectPopover && <ConfirmPopover title={`ปฏิเสธ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งและสามารถแก้ไขแล้วส่งใหม่ได้" confirmLabel="✕ Reject" confirmVariant="destructive" requireComment onClose={() => setShowRejectPopover(false)} onConfirm={handleReject} loading={acting === 'reject'} />}
     </div>
   );
-}
-
-function DocRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return <div className="flex gap-2 text-[11px] py-0.5"><span className="text-gray-700 w-[110px] shrink-0">{label}</span><span className={`flex-1 ${bold ? 'font-bold text-[12px]' : 'font-semibold'}`}>{value}</span></div>;
-}
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return <div className="grid grid-cols-[1fr_auto] px-3 py-1.5 border-b border-gray-300"><span className="text-gray-700">{label}</span><span className="font-semibold min-w-[90px] text-right">{value}</span></div>;
 }

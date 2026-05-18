@@ -61,6 +61,14 @@ export const quotationsController = {
     return success(res, quotation, 'Quotation rejected');
   },
 
+  // ✅ ESCALATE — Manager ส่งต่อขึ้นไปยังผู้มีอำนาจถัดไป
+  async escalate(req: Request, res: Response) {
+    const user = requireUser(req);
+    const { comment } = req.body as { comment?: string };
+    const result = await quotationsService.escalate(req.params.id, comment, user.id, req);
+    return success(res, result, 'Quotation escalated to next approver');
+  },
+
   async cancel(req: Request, res: Response) {
     const user = requireUser(req);
     const quotation = await quotationsService.cancel(req.params.id, req.body, user.id, req);
@@ -100,7 +108,6 @@ export const quotationsController = {
     return success(res, data);
   },
 
-  // ✅ Special Discount handlers
   async listSpecialDiscountRequests(req: Request, res: Response) {
     const user = requireUser(req);
     const result = await quotationsService.listSpecialDiscountRequests(user);
@@ -125,5 +132,11 @@ export const quotationsController = {
     if (typeof finalPercent !== 'number') throw new AppError(400, 'BAD_REQUEST', 'finalPercent is required');
     const result = await quotationsService.modifySpecialDiscount(req.params.id, finalPercent, user, req);
     return success(res, result, `Special discount modified to ${finalPercent}%`);
+  },
+
+  async renew(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await quotationsService.renew(req.params.id, user.id, req);
+    return created(res, data, `Renewed quotation ${data.quotationNo}`);
   },
 };

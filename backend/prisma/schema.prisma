@@ -146,6 +146,7 @@ model User {
   primaryApproverFor Quotation[]           @relation("PrimaryApprover")
   rejectedQuotations Quotation[]           @relation("QuotationRejecter")
   refreshTokens      RefreshToken[]
+  
   grantedPermissions RolePermission[]      @relation("PermissionGranter")
   managedTeams       Team[]                @relation("TeamManager")
   delegateTo         User?                 @relation("Delegate", fields: [delegateToId], references: [id])
@@ -154,11 +155,11 @@ model User {
   reports            User[]                @relation("Hierarchy")
   role               Role                  @relation(fields: [roleId], references: [id])
   team               Team?                 @relation("TeamMembers", fields: [teamId], references: [id])
-
+  managerLevel       ManagerLevel?         @map("manager_level")
   poUploadedQuotations  Quotation[]  @relation("QuotationPoUploadedBy")
   poApprovedQuotations  Quotation[]  @relation("QuotationPoApprovedBy")
   poRejectedQuotations  Quotation[]  @relation("QuotationPoRejectedBy")
-
+  pendingApprovalQuotations  Quotation[]  @relation("CurrentApprover")
   @@unique([email, deletedAt])
   @@index([email])
   @@index([roleId])
@@ -233,7 +234,8 @@ model Invitation {
   role          Role              @relation(fields: [roleId], references: [id])
   team          Team?             @relation(fields: [teamId], references: [id])
   department    Department?       @relation(fields: [departmentId], references: [id])
-
+  managerLevel    ManagerLevel? @map("manager_level")   
+  approvalLimit   Decimal?      @map("approval_limit") @db.Decimal(15, 2)
   @@index([token])
   @@index([email])
   @@index([status])
@@ -343,7 +345,8 @@ model Quotation {
   poRejectionReason        String?               @map("po_rejection_reason")
   poUploadHistory          Json?                 @map("po_upload_history")
   poNumber                 String?               @map("po_number")
-
+  currentApproverId        String?               @map("current_approver_id")
+  currentApprover          User?                 @relation("CurrentApprover", fields: [currentApproverId], references: [id])
   approvals     QuotationApproval[]
   attachments   QuotationAttachment[]
   comments      QuotationComment[]
@@ -763,4 +766,9 @@ enum Theme {
   light
   dark
   system
+}
+enum ManagerLevel {
+  SECTION
+  DEPARTMENT
+  DIVISION
 }

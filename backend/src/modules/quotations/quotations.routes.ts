@@ -93,6 +93,11 @@ router.post(
   validate(cancelQuotationSchema),
   asyncHandler(quotationsController.cancel),
 );
+router.post(
+  '/:id/renew',
+  requirePermission('quotation', 'create', 'OWN'),
+  asyncHandler(quotationsController.renew),
+);
 
 // ─── APPROVE / REJECT ────────────────────────────────────────────────────────
 
@@ -117,7 +122,15 @@ router.post(
   validate(rejectQuotationSchema),
   asyncHandler(quotationsController.reject),
 );
-
+// เพิ่มหลัง reject route
+router.post(
+  '/:id/escalate',
+  requireAnyPermission(
+    ['quotation', 'approve', 'TEAM'],
+    ['quotation', 'approve', 'ALL'],
+  ),
+  asyncHandler(quotationsController.escalate),
+);
 // ─── VERSIONS ────────────────────────────────────────────────────────────────
 
 router.get(

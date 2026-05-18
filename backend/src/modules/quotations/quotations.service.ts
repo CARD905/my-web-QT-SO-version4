@@ -8,6 +8,7 @@ import { createNotification, notifyByRole } from '../../utils/notification';
 import { generateDocumentNumber } from '../../utils/number-generator';
 import { calcQuotation } from '../../utils/calc';
 import { buildScopeFilter, canActOnEntity } from '../../utils/scope-filter';
+import { findNextApprover, findEscalationTarget } from '../../utils/approval-chain';
 
 import {
   AddCommentInput,
@@ -46,6 +47,13 @@ const quotationDetailInclude = {
     select: {
       id: true, name: true, email: true,
       role: { select: { code: true, nameTh: true } },
+    },
+  },
+  currentApprover: {
+    select: {
+      id: true, name: true, email: true,
+      role: { select: { code: true, nameTh: true } },
+      managerLevel: true,
     },
   },
   saleOrder: { select: { id: true, saleOrderNo: true, status: true } },
@@ -112,6 +120,7 @@ export const quotationsService = {
         include: {
           createdBy: { select: { id: true, name: true } },
           approvedBy: { select: { id: true, name: true } },
+          currentApprover: { select: { id: true, name: true } },
           customer: { select: { id: true, company: true } },
           saleOrder: { select: { id: true, saleOrderNo: true } },
           _count: { select: { items: true, comments: true } },
@@ -211,7 +220,6 @@ export const quotationsService = {
       description: `Created quotation ${quotation.quotationNo}`, req,
     });
 
-    // ✅ Detect special discount → notify CEO
     const maxPctDiscount = input.items
       .filter((it) => it.discountType === 'PERCENTAGE')
       .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
@@ -235,7 +243,7 @@ export const quotationsService = {
       });
     }
 
-    return quotation; // ← ปิด create() ถูกต้อง
+    return quotation;
   },
 
   // ============================================================
@@ -249,14 +257,9 @@ export const quotationsService = {
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only edit your own quotations');
     if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot edit quotation with status ${existing.status}`);
-    // ✅ Block submit ถ้า Special Discount ยัง PENDING_CEO
-    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING_CEO') {
-      throw new AppError(
-        409,
-        'SPECIAL_DISCOUNT_PENDING',
-        'ไม่สามารถส่งขออนุมัติได้ — รอ CEO ตอบกลับคำขอ Special Discount ก่อน',
-      );
     }
+    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING_CEO') {
+      throw new AppError(409, 'SPECIAL_DISCOUNT_PENDING', 'ไม่สามารถแก้ไขได้ — รอ CEO ตอบกลับคำขอ Special Discount ก่อน');
     }
 
     const customer = await prisma.customer.findFirst({ where: { id: input.customerId, deletedAt: null } });
@@ -291,7 +294,10 @@ export const quotationsService = {
           customerBillingAddress: customer.billingAddress, customerShippingAddress: customer.shippingAddress,
           subtotal, discountTotal, vatEnabled: input.vatEnabled, vatRate: input.vatRate, vatAmount, grandTotal,
           paymentTerms: input.paymentTerms, conditions: input.conditions,
-          ...(existing.status === 'REJECTED' && { rejectedAt: null, rejectionReason: null, submittedAt: null }),
+          ...(existing.status === 'REJECTED' && {
+            rejectedAt: null, rejectionReason: null, submittedAt: null,
+            currentApproverId: null,
+          }),
           items: {
             create: input.items.map((item, idx) => ({
               productId: item.productId || null, productSku: item.productSku || null,
@@ -315,7 +321,7 @@ export const quotationsService = {
   },
 
   // ============================================================
-  // SUBMIT
+  // SUBMIT — Officer ส่งให้ Section Manager
   // ============================================================
   async submit(id: string, input: SubmitQuotationInput, userId: string, req?: Request) {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
@@ -328,38 +334,46 @@ export const quotationsService = {
       throw new AppError(409, 'EXPIRED', 'Quotation has expired. Please update expiry date first.');
     }
 
-    const managerRole = await prisma.role.findUnique({ where: { code: 'MANAGER' } });
-    const approverLimit = Number(managerRole?.defaultApprovalLimit ?? HIGH_VALUE_THRESHOLD);
     const grandTotal = Number(existing.grandTotal);
-    const exceedsLimit = grandTotal > approverLimit;
-    const targetStatus: QuotationStatus = exceedsLimit ? 'PENDING_ESCALATED' : 'PENDING';
     const isResubmit = existing.status === 'REJECTED';
+
+    // หา approver คนแรกในสายงาน (Section Manager ของ officer)
+    const next = await findNextApprover(prisma as any, userId, grandTotal);
+    if (!next) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติในสายงาน กรุณาติดต่อ Admin');
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
-        data: { status: targetStatus, submittedAt: new Date() },
+        data: {
+          status: 'PENDING',
+          submittedAt: new Date(),
+          currentApproverId: next.approverId,
+        },
         include: quotationDetailInclude,
       });
+
       if (input.comment) {
         await tx.quotationComment.create({
           data: { quotationId: id, userId, message: input.comment, isInternal: false },
         });
       }
-      await notifyByRole(tx, exceedsLimit ? 'CEO' : 'MANAGER', {
-        type: exceedsLimit ? 'QUOTATION_ESCALATED' : isResubmit ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
-        title: exceedsLimit ? `🔥 High-value quotation (>${approverLimit.toLocaleString()})` : isResubmit ? 'Quotation resubmitted' : 'New quotation pending approval',
-        message: `${q.quotationNo} from ${q.customerCompany} (${q.grandTotal.toString()} ${q.currency})`,
+
+      await createNotification(tx, {
+        userId: next.approverId,
+        type: isResubmit ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
+        title: isResubmit ? '🔄 Quotation resubmitted' : '📋 Quotation รออนุมัติ',
+        message: `${q.quotationNo} จาก ${q.customerCompany} (${q.grandTotal} ${q.currency})`,
         link: `/quotations/${q.id}`,
-        metadata: { quotationId: q.id, exceedsLimit },
+        metadata: { quotationId: q.id },
       });
+
       return q;
     });
 
     await logActivity(prisma, {
       userId, action: isResubmit ? 'quotation.resubmit' : 'quotation.submit',
       entityType: 'Quotation', entityId: updated.id,
-      description: `${isResubmit ? 'Resubmitted' : 'Submitted'} quotation ${updated.quotationNo}${exceedsLimit ? ' (exceeds limit, escalated)' : ''}`,
+      description: `${isResubmit ? 'Resubmitted' : 'Submitted'} ${updated.quotationNo} → ${next.approverName}`,
       req,
     });
 
@@ -367,30 +381,150 @@ export const quotationsService = {
   },
 
   // ============================================================
-  // APPROVE
+  // ESCALATE — Manager ส่งต่อขึ้นไปยังผู้มีอำนาจถัดไป
   // ============================================================
-  async approve(id: string, input: ApproveQuotationInput | string, approverId: string, req?: Request) {
-    const approveInput: ApproveQuotationInput = typeof input === 'string' ? { comment: input } : input;
+  async escalate(id: string, comment: string | undefined, managerId: string, req?: Request) {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    const approverUser = await prisma.user.findUnique({ where: { id: approverId }, include: { role: true } });
-    if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
-    const approverRoleCode = approverUser.role.code;
-
-    if (existing.status === 'PENDING_ESCALATED') {
-      if (approverRoleCode === 'OFFICER') throw new AppError(403, 'INSUFFICIENT_AUTHORITY', 'This quotation requires CEO/Admin approval');
-      if (approverRoleCode === 'MANAGER') throw new AppError(403, 'EXCEEDS_LIMIT', 'รายการนี้เกินอำนาจอนุมัติของคุณ ต้องรอ CEO/Admin อนุมัติ');
+    if (!['PENDING', 'PENDING_ESCALATED'].includes(existing.status)) {
+      throw new AppError(409, 'INVALID_STATUS', 'Only pending quotations can be escalated');
     }
+
+    // ตรวจว่า manager คนนี้เป็น currentApprover จริง
+    if (existing.currentApproverId !== managerId) {
+      throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
+    }
+
+    if (new Date(existing.expiryDate) < new Date()) {
+      await prisma.quotation.update({ where: { id }, data: { status: 'EXPIRED' } });
+      throw new AppError(409, 'EXPIRED', 'Cannot escalate expired quotation');
+    }
+
+    const grandTotal = Number(existing.grandTotal);
+
+    // หา approver ถัดไปจาก manager คนนี้
+    const next = await findEscalationTarget(prisma as any, managerId, grandTotal);
+    if (!next) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติถัดไป');
+
+    // ดึงข้อมูล manager ที่ escalate
+    const managerUser = await prisma.user.findUnique({
+      where: { id: managerId },
+      include: { role: true },
+    });
+    if (!managerUser) throw new AppError(404, 'USER_NOT_FOUND', 'Manager not found');
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const q = await tx.quotation.update({
+        where: { id },
+        data: {
+          status: 'PENDING_ESCALATED',
+          currentApproverId: next.approverId,
+          currentStep: { increment: 1 },
+        },
+        include: quotationDetailInclude,
+      });
+
+      if (comment) {
+        await tx.quotationComment.create({
+          data: {
+            quotationId: id, userId: managerId,
+            message: `[ส่งต่อเพื่อพิจารณา] ${comment}`,
+            isInternal: false,
+          },
+        });
+      }
+
+      // บันทึก approval log ว่า manager คนนี้ escalate
+      await tx.quotationApproval.create({
+        data: {
+          quotationId: id,
+          approverId: managerId,
+          approverName: managerUser.name,
+          approverEmail: managerUser.email,
+          approverRoleId: managerUser.roleId,
+          approverRoleCode: managerUser.role.code,
+          approverRoleName: managerUser.role.nameTh,
+          step: existing.currentStep + 1,
+          totalSteps: existing.totalSteps,
+          status: 'ESCALATED',
+          comment: comment ?? null,
+          grandTotalAtAction: existing.grandTotal,
+          approverLimitAtAction: managerUser.approvalLimit,
+          exceedsLimit: true,
+          quotationVersion: existing.version,
+          escalatedToId: next.approverId,
+        },
+      });
+
+      // แจ้ง approver ถัดไป
+      await createNotification(tx, {
+        userId: next.approverId,
+        type: 'QUOTATION_ESCALATED',
+        title: '🔼 Quotation ส่งต่อมาให้คุณพิจารณา',
+        message: `${q.quotationNo} จาก ${q.customerCompany} — ส่งต่อโดย ${managerUser.name}`,
+        link: `/quotations/${q.id}`,
+        metadata: { quotationId: q.id, escalatedBy: managerId },
+      });
+
+      // แจ้ง officer ด้วยว่าอยู่ระหว่าง escalate
+      await createNotification(tx, {
+        userId: q.createdById,
+        type: 'QUOTATION_ESCALATED',
+        title: '📤 Quotation ถูกส่งต่อเพื่อพิจารณา',
+        message: `${q.quotationNo} ถูกส่งต่อโดย ${managerUser.name} เพื่อขออนุมัติจากผู้มีอำนาจสูงขึ้น`,
+        link: `/quotations/${q.id}`,
+        metadata: { quotationId: q.id },
+      });
+
+      return q;
+    });
+
+    await logActivity(prisma, {
+      userId: managerId, action: 'quotation.escalate',
+      entityType: 'Quotation', entityId: id,
+      description: `Escalated ${updated.quotationNo}: ${managerUser.name} → ${next.approverName}`,
+      req,
+    });
+
+    return updated;
+  },
+
+  // ============================================================
+  // APPROVE — เช็ค currentApprover และ limit
+  // ============================================================
+  async approve(id: string, input: ApproveQuotationInput | string, approverId: string, req?: Request) {
+    const approveInput: ApproveQuotationInput = typeof input === 'string' ? { comment: input } : input;
+
+    const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
     if (!['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Only pending quotations can be approved (current: ${existing.status})`);
     }
 
-    const managerRole = await prisma.role.findUnique({ where: { code: 'MANAGER' } });
-    const approverLimit = Number(managerRole?.defaultApprovalLimit ?? HIGH_VALUE_THRESHOLD);
-    if (approverRoleCode === 'MANAGER' && Number(existing.grandTotal) > approverLimit) {
-      throw new AppError(403, 'EXCEEDS_LIMIT', `Quotation exceeds your approval limit (${approverLimit.toLocaleString()})`);
+    // ตรวจว่าเป็น currentApprover หรือ CEO/ADMIN
+    const approverUser = await prisma.user.findUnique({
+      where: { id: approverId },
+      include: { role: true },
+    });
+    if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
+
+    const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(approverUser.role.code);
+    const isCurrentApprover = existing.currentApproverId === approverId;
+
+    if (!isCeoOrAdmin && !isCurrentApprover) {
+      throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
+    }
+
+    // เช็ค limit รายคน
+    const approverLimit = Number(approverUser.approvalLimit ?? 0);
+    const grandTotal = Number(existing.grandTotal);
+    if (approverLimit > 0 && grandTotal > approverLimit) {
+      throw new AppError(
+        403, 'EXCEEDS_LIMIT',
+        `มูลค่า ${grandTotal.toLocaleString()} เกินวงเงินอนุมัติของคุณ (${approverLimit.toLocaleString()}) — กรุณากด "ส่งต่อ" แทน`,
+      );
     }
 
     if (new Date(existing.expiryDate) < new Date()) {
@@ -401,62 +535,137 @@ export const quotationsService = {
     const quotation = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
-        data: { status: 'APPROVED', approvedAt: new Date(), approvedById: approverId },
+        data: {
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          approvedById: approverId,
+          currentApproverId: null,
+        },
         include: quotationDetailInclude,
       });
+
       if (approveInput.comment) {
         await tx.quotationComment.create({
           data: { quotationId: id, userId: approverId, message: approveInput.comment, isInternal: false },
         });
       }
+
+      // บันทึก approval log
+      await tx.quotationApproval.create({
+        data: {
+          quotationId: id,
+          approverId,
+          approverName: approverUser.name,
+          approverEmail: approverUser.email,
+          approverRoleId: approverUser.roleId,
+          approverRoleCode: approverUser.role.code,
+          approverRoleName: approverUser.role.nameTh,
+          step: existing.currentStep + 1,
+          totalSteps: existing.totalSteps,
+          status: 'APPROVED',
+          comment: approveInput.comment ?? null,
+          grandTotalAtAction: existing.grandTotal,
+          approverLimitAtAction: approverUser.approvalLimit,
+          exceedsLimit: false,
+          quotationVersion: existing.version,
+        },
+      });
+
       await createNotification(tx, {
         userId: q.createdById, type: 'QUOTATION_APPROVED',
-        title: 'Quotation อนุมัติแล้ว ✓',
-        message: `${q.quotationNo} อนุมัติแล้ว — กรุณาอัปโหลดใบ PO ที่หน้า Checklist`,
+        title: '✅ Quotation อนุมัติแล้ว',
+        message: `${q.quotationNo} อนุมัติแล้วโดย ${approverUser.name} — กรุณาอัปโหลดใบ PO`,
         link: `/quotations/checklist/${q.id}`,
         metadata: { quotationId: q.id },
       });
+
       return q;
     });
 
     await logActivity(prisma, {
       userId: approverId, action: 'quotation.approve', entityType: 'Quotation', entityId: id,
-      description: `Approved quotation ${quotation.quotationNo} → awaiting PO upload`, req,
+      description: `Approved ${quotation.quotationNo} by ${approverUser.name}`, req,
     });
 
     return quotation;
   },
 
   // ============================================================
-  // REJECT
+  // REJECT — manager reject ส่งกลับ officer
   // ============================================================
   async reject(id: string, input: RejectQuotationInput, approverId: string, req?: Request) {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
+
     if (!['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Only pending quotations can be rejected (current: ${existing.status})`);
+    }
+
+    const approverUser = await prisma.user.findUnique({
+      where: { id: approverId },
+      include: { role: true },
+    });
+    if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
+
+    const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(approverUser.role.code);
+    const isCurrentApprover = existing.currentApproverId === approverId;
+
+    if (!isCeoOrAdmin && !isCurrentApprover) {
+      throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
-        data: { status: 'REJECTED', rejectedAt: new Date(), rejectedById: approverId, rejectionReason: input.reason },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          rejectedById: approverId,
+          rejectionReason: input.reason,
+          currentApproverId: null,
+        },
         include: quotationDetailInclude,
       });
+
       await tx.quotationComment.create({
         data: { quotationId: id, userId: approverId, message: `[Rejected] ${input.reason}`, isInternal: false },
       });
-      await createNotification(tx, {
-        userId: q.createdById, type: 'QUOTATION_REJECTED', title: 'Quotation rejected',
-        message: `${q.quotationNo} was rejected. Reason: ${input.reason}`,
-        link: `/quotations/${q.id}`, metadata: { quotationId: q.id },
+
+      // บันทึก approval log
+      await tx.quotationApproval.create({
+        data: {
+          quotationId: id,
+          approverId,
+          approverName: approverUser.name,
+          approverEmail: approverUser.email,
+          approverRoleId: approverUser.roleId,
+          approverRoleCode: approverUser.role.code,
+          approverRoleName: approverUser.role.nameTh,
+          step: existing.currentStep + 1,
+          totalSteps: existing.totalSteps,
+          status: 'REJECTED',
+          comment: input.reason,
+          grandTotalAtAction: existing.grandTotal,
+          approverLimitAtAction: approverUser.approvalLimit,
+          exceedsLimit: false,
+          quotationVersion: existing.version,
+        },
       });
+
+      await createNotification(tx, {
+        userId: q.createdById, type: 'QUOTATION_REJECTED',
+        title: '❌ Quotation ถูกปฏิเสธ',
+        message: `${q.quotationNo} ถูกปฏิเสธโดย ${approverUser.name} — เหตุผล: ${input.reason}`,
+        link: `/quotations/${q.id}`,
+        metadata: { quotationId: q.id },
+      });
+
       return q;
     });
 
     await logActivity(prisma, {
       userId: approverId, action: 'quotation.reject', entityType: 'Quotation', entityId: id,
-      description: `Rejected quotation ${updated.quotationNo}: ${input.reason}`, req,
+      description: `Rejected ${updated.quotationNo}: ${input.reason}`, req,
     });
 
     return updated;
@@ -579,7 +788,7 @@ export const quotationsService = {
   },
 
   // ============================================================
-  // ✅ SPECIAL DISCOUNT — CEO/Admin
+  // SPECIAL DISCOUNT
   // ============================================================
   async listSpecialDiscountRequests(currentUser: CurrentUser) {
     return prisma.quotation.findMany({
@@ -596,7 +805,7 @@ export const quotationsService = {
 
   async approveSpecialDiscount(id: string, currentUser: CurrentUser, req?: Request) {
     if (!['CEO'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO/Admin can approve special discounts');
+      throw new AppError(403, 'FORBIDDEN', 'Only CEO can approve special discounts');
     }
     const q = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
@@ -618,7 +827,7 @@ export const quotationsService = {
       data: {
         userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
         title: '✅ Special Discount อนุมัติแล้ว',
-        message: `${q.quotationNo} ได้รับอนุมัติ Special Discount ${(q as any).specialDiscountPercent}% — สามารถส่งขออนุมัติได้เลย`,
+        message: `${q.quotationNo} — สามารถส่งขออนุมัติได้เลย`,
         link: `/quotations/${q.id}`,
       },
     });
@@ -686,7 +895,7 @@ export const quotationsService = {
     await logActivity(prisma, {
       userId: currentUser.id, action: 'quotation.specialDiscount.reject',
       entityType: 'Quotation', entityId: id,
-      description: `Rejected special discount for ${q.quotationNo} → auto-reduced to ${NORMAL_DISCOUNT_MAX}%`, req,
+      description: `Rejected special discount for ${q.quotationNo}`, req,
     });
 
     return { message: `Special discount rejected. Discounts auto-reduced to ${NORMAL_DISCOUNT_MAX}%` };
@@ -741,7 +950,7 @@ export const quotationsService = {
       data: {
         userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
         title: '🟡 Special Discount ได้รับการปรับ',
-        message: `${q.quotationNo} — CEO อนุมัติ ${finalPercent}% (ขอ ${(q as any).specialDiscountPercent}%)`,
+        message: `${q.quotationNo} — CEO อนุมัติ ${finalPercent}%`,
         link: `/quotations/${q.id}`,
       },
     });
@@ -749,9 +958,65 @@ export const quotationsService = {
     await logActivity(prisma, {
       userId: currentUser.id, action: 'quotation.specialDiscount.modify',
       entityType: 'Quotation', entityId: id,
-      description: `Modified special discount for ${q.quotationNo}: ${(q as any).specialDiscountPercent}% → ${finalPercent}%`, req,
+      description: `Modified special discount for ${q.quotationNo}: → ${finalPercent}%`, req,
     });
 
     return { message: `Special discount modified to ${finalPercent}%` };
+  },
+
+  // ============================================================
+  // RENEW
+  // ============================================================
+  async renew(id: string, userId: string, req?: Request) {
+    const existing = await prisma.quotation.findFirst({
+      where: { id, deletedAt: null },
+      include: { items: { orderBy: { sortOrder: 'asc' } } },
+    });
+    if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
+    if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only renew your own quotations');
+    if (existing.status !== 'EXPIRED') {
+      throw new AppError(409, 'INVALID_STATUS', `Only EXPIRED quotations can be renewed (current: ${existing.status})`);
+    }
+
+    const today = new Date();
+    const newExpiry = new Date();
+    newExpiry.setDate(newExpiry.getDate() + 30);
+
+    const newQuotation = await prisma.$transaction(async (tx) => {
+      const quotationNo = await generateDocumentNumber(tx, 'QT');
+      return tx.quotation.create({
+        data: {
+          quotationNo, version: existing.version + 1, status: 'DRAFT',
+          customerId: existing.customerId, customerCompany: existing.customerCompany,
+          customerContactName: existing.customerContactName, customerTaxId: existing.customerTaxId,
+          customerEmail: existing.customerEmail, customerPhone: existing.customerPhone,
+          customerBillingAddress: existing.customerBillingAddress,
+          customerShippingAddress: existing.customerShippingAddress,
+          issueDate: today, expiryDate: newExpiry,
+          currency: existing.currency, subtotal: existing.subtotal,
+          discountTotal: existing.discountTotal, vatEnabled: existing.vatEnabled,
+          vatRate: existing.vatRate, vatAmount: existing.vatAmount,
+          grandTotal: existing.grandTotal, paymentTerms: existing.paymentTerms,
+          conditions: existing.conditions, createdById: userId,
+          items: {
+            create: existing.items.map((item, idx) => ({
+              productId: item.productId, productSku: item.productSku,
+              productName: item.productName, productDescription: item.productDescription,
+              quantity: item.quantity, unit: item.unit, unitPrice: item.unitPrice,
+              discount: item.discount, discountType: item.discountType,
+              lineTotal: item.lineTotal, sortOrder: item.sortOrder ?? idx,
+            })),
+          },
+        },
+        include: quotationDetailInclude,
+      });
+    });
+
+    await logActivity(prisma, {
+      userId, action: 'quotation.renew', entityType: 'Quotation', entityId: newQuotation.id,
+      description: `Renewed ${existing.quotationNo} → ${newQuotation.quotationNo}`, req,
+    });
+
+    return newQuotation;
   },
 };

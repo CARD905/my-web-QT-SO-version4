@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Loader2, Plus, Save, Send, Trash2, X,
-  AlertTriangle, Star, CheckCircle2, Info,
+  AlertTriangle, Star, Info, Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,9 +18,8 @@ import { useT } from '@/lib/i18n';
 import { formatDateInput, formatMoney, formatNumber } from '@/lib/utils';
 import type { ApiResponse, Customer, Product } from '@/types/api';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const NORMAL_DISCOUNT_MAX = 20;   // ส่วนลดปกติสูงสุด
-const SPECIAL_DISCOUNT_MAX = 50;  // ส่วนลดพิเศษสูงสุด (ต้องขออนุมัติ CEO)
+const NORMAL_DISCOUNT_MAX = 20;
+const SPECIAL_DISCOUNT_MAX = 50;
 
 interface LineItem {
   id: string;
@@ -31,6 +30,7 @@ interface LineItem {
   quantity: number;
   unit: string;
   unitPrice: number;
+  unitPriceLocked: boolean; // ✅ ใหม่ — true เมื่อเลือกจาก master data
   discount: number;
   discountType: 'PERCENTAGE' | 'FIXED';
 }
@@ -38,13 +38,12 @@ interface LineItem {
 const newItem = (): LineItem => ({
   id: Math.random().toString(36).slice(2),
   productName: '', description: '', quantity: 1, unit: 'pcs',
-  unitPrice: 0, discount: 0, discountType: 'PERCENTAGE',
+  unitPrice: 0, unitPriceLocked: false,
+  discount: 0, discountType: 'PERCENTAGE',
 });
 
-// ─── ตรวจสอบว่ามี special discount ไหม ─────────────────────────────────────
 function detectSpecialDiscount(items: LineItem[]): { hasSpecial: boolean; maxPct: number } {
-  let maxPct = 0;
-  let hasSpecial = false;
+  let maxPct = 0, hasSpecial = false;
   for (const it of items) {
     if (it.discountType === 'PERCENTAGE' && it.discount > NORMAL_DISCOUNT_MAX) {
       hasSpecial = true;
@@ -54,18 +53,7 @@ function detectSpecialDiscount(items: LineItem[]): { hasSpecial: boolean; maxPct
   return { hasSpecial, maxPct };
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Special Discount Panel
-// ════════════════════════════════════════════════════════════════════════════
-function SpecialDiscountPanel({
-  maxPct,
-  reason,
-  onReasonChange,
-}: {
-  maxPct: number;
-  reason: string;
-  onReasonChange: (v: string) => void;
-}) {
+function SpecialDiscountPanel({ maxPct, reason, onReasonChange }: { maxPct: number; reason: string; onReasonChange: (v: string) => void }) {
   return (
     <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
       <CardContent className="pt-5">
@@ -83,36 +71,26 @@ function SpecialDiscountPanel({
               </div>
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                 ส่วนลดเกิน {NORMAL_DISCOUNT_MAX}% ต้องได้รับการอนุมัติจาก CEO ก่อน
-                ระบบจะส่ง Notification ให้ CEO พิจารณาโดยอัตโนมัติเมื่อบันทึก
               </p>
             </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              <div>
-                <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                  เหตุผลที่ขอส่วนลดพิเศษ <span className="text-destructive">*</span>
-                </Label>
-                <textarea
-                  value={reason}
-                  onChange={(e) => onReasonChange(e.target.value)}
-                  rows={3}
-                  placeholder="เช่น ลูกค้า VIP ซื้อปริมาณมาก, โปรเจกต์ระยะยาว, ลูกค้าใหม่ที่มีศักยภาพสูง..."
-                  className="mt-1.5 w-full rounded-md border border-amber-300 bg-white dark:bg-amber-950/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none placeholder:text-amber-400"
-                />
-                {!reason.trim() && (
-                  <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3" />
-                    กรุณาระบุเหตุผลก่อนบันทึก
-                  </p>
-                )}
-              </div>
+            <div>
+              <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                เหตุผลที่ขอส่วนลดพิเศษ <span className="text-destructive">*</span>
+              </Label>
+              <textarea value={reason} onChange={(e) => onReasonChange(e.target.value)} rows={3}
+                placeholder="เช่น ลูกค้า VIP ซื้อปริมาณมาก, โปรเจกต์ระยะยาว..."
+                className="mt-1.5 w-full rounded-md border border-amber-300 bg-white dark:bg-amber-950/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none placeholder:text-amber-400" />
+              {!reason.trim() && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />กรุณาระบุเหตุผลก่อนบันทึก
+                </p>
+              )}
             </div>
-
             <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-100 dark:bg-amber-800/30">
               <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-700 dark:text-amber-300 space-y-0.5">
                 <div>CEO จะได้รับ Notification พร้อม 3 ตัวเลือก:</div>
-                <div>🔴 ปฏิเสธ → ระบบลด discount เหลือ {NORMAL_DISCOUNT_MAX}% อัตโนมัติ</div>
+                <div>🔴 ปฏิเสธ → ระบบลด discount เหลือ {NORMAL_DISCOUNT_MAX}%</div>
                 <div>🟡 อนุมัติบางส่วน → CEO กำหนด % ใหม่เอง</div>
                 <div>🟢 อนุมัติ → ผ่านตามที่ขอ ({maxPct}%)</div>
               </div>
@@ -124,24 +102,15 @@ function SpecialDiscountPanel({
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Main Page
-// ════════════════════════════════════════════════════════════════════════════
 export default function NewQuotationPage() {
   const t = useT();
   const router = useRouter();
-
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customerId, setCustomerId] = useState('');
-  const [customerInfo, setCustomerInfo] = useState({
-    contactName: '', company: '', taxId: '', phone: '',
-    email: '', billingAddress: '', shippingAddress: '',
-  });
-
+  const [customerInfo, setCustomerInfo] = useState({ contactName: '', company: '', taxId: '', phone: '', email: '', billingAddress: '', shippingAddress: '' });
   const today = useMemo(() => formatDateInput(new Date()), []);
   const expireDefault = useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return formatDateInput(d); }, []);
-
   const [issueDate, setIssueDate] = useState(today);
   const [expiryDate, setExpiryDate] = useState(expireDefault);
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
@@ -150,14 +119,10 @@ export default function NewQuotationPage() {
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [conditions, setConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([newItem()]);
-
-  // ✅ Special Discount state
   const [specialDiscountReason, setSpecialDiscountReason] = useState('');
-
   const [submitting, setSubmitting] = useState<'draft' | 'submit' | null>(null);
   const [locked, setLocked] = useState(false);
 
-  // Load customers + products
   useEffect(() => {
     (async () => {
       try {
@@ -188,7 +153,6 @@ export default function NewQuotationPage() {
     setItems((prev) => prev.map((it) => {
       if (it.id !== id) return it;
       const updated = { ...it, ...patch };
-      // ✅ Cap discount ที่ SPECIAL_DISCOUNT_MAX
       if ('discount' in patch && updated.discountType === 'PERCENTAGE') {
         updated.discount = Math.min(updated.discount, SPECIAL_DISCOUNT_MAX);
       }
@@ -199,10 +163,19 @@ export default function NewQuotationPage() {
   const removeItem = (id: string) => setItems((prev) => prev.length > 1 ? prev.filter((it) => it.id !== id) : prev);
 
   const onProductSelect = (itemId: string, productId: string) => {
-    if (!productId) { updateItem(itemId, { productId: undefined, productSku: undefined }); return; }
+    if (!productId) {
+      // ✅ เมื่อล้างการเลือก → unlock ราคา
+      updateItem(itemId, { productId: undefined, productSku: undefined, unitPriceLocked: false });
+      return;
+    }
     const p = products.find((x) => x.id === productId);
     if (!p) return;
-    updateItem(itemId, { productId: p.id, productSku: p.sku, productName: p.name, description: p.description || '', unitPrice: Number(p.unitPrice), unit: p.unit });
+    // ✅ เมื่อเลือก product → lock ราคาตาม master data
+    updateItem(itemId, {
+      productId: p.id, productSku: p.sku, productName: p.name,
+      description: p.description || '', unitPrice: Number(p.unitPrice),
+      unit: p.unit, unitPriceLocked: true, // ← lock!
+    });
   };
 
   const calc = useMemo(() => {
@@ -221,45 +194,31 @@ export default function NewQuotationPage() {
     return { subtotal: grossSubtotal, discountTotal, vatAmount, grandTotal: afterDisc + vatAmount, itemTotals };
   }, [items, vatEnabled, vatRate]);
 
-  // ✅ Detect special discount
   const { hasSpecial, maxPct } = useMemo(() => detectSpecialDiscount(items), [items]);
 
   const submitForm = async (mode: 'draft' | 'submit') => {
     if (!customerId) { toast.error('Please select a customer'); return; }
     if (items.some((it) => !it.productName.trim() || it.quantity <= 0)) { toast.error('Please fill in all product names and quantities'); return; }
-
-    // ✅ Validate special discount reason
-    if (hasSpecial && !specialDiscountReason.trim()) {
-      toast.error('กรุณาระบุเหตุผลสำหรับ Special Discount ก่อนบันทึก');
-      return;
-    }
-
+    if (hasSpecial && !specialDiscountReason.trim()) { toast.error('กรุณาระบุเหตุผลสำหรับ Special Discount ก่อนบันทึก'); return; }
     if (mode === 'submit') {
       const msg = hasSpecial
-        ? `⚠️ ยืนยันส่งใบเสนอราคาพร้อม Special Discount ${maxPct}%?\n\nระบบจะส่งคำขอไปให้ CEO อนุมัติ และจะดำเนินการต่อได้หลัง CEO ตอบกลับ`
+        ? `⚠️ ยืนยันส่งใบเสนอราคาพร้อม Special Discount ${maxPct}%?`
         : `⚠️ ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`;
       if (!confirm(msg)) return;
     }
-
     setSubmitting(mode);
     try {
-      const createRes = await api.post<ApiResponse<{ id: string; quotationNo: string }>>(
-        '/quotations',
-        {
-          customerId, issueDate, expiryDate, currency, vatEnabled, vatRate, paymentTerms, conditions,
-          // ✅ ส่ง special discount info
-          specialDiscountReason: hasSpecial ? specialDiscountReason.trim() : undefined,
-          items: items.map((it, idx) => ({
-            productId: it.productId, productSku: it.productSku, productName: it.productName,
-            description: it.description, quantity: it.quantity, unit: it.unit,
-            unitPrice: it.unitPrice, discount: it.discount, discountType: it.discountType, sortOrder: idx,
-          })),
-        },
-      );
-
+      const createRes = await api.post<ApiResponse<{ id: string; quotationNo: string }>>('/quotations', {
+        customerId, issueDate, expiryDate, currency, vatEnabled, vatRate, paymentTerms, conditions,
+        specialDiscountReason: hasSpecial ? specialDiscountReason.trim() : undefined,
+        items: items.map((it, idx) => ({
+          productId: it.productId, productSku: it.productSku, productName: it.productName,
+          description: it.description, quantity: it.quantity, unit: it.unit,
+          unitPrice: it.unitPrice, discount: it.discount, discountType: it.discountType, sortOrder: idx,
+        })),
+      });
       const quotation = createRes.data.data;
       if (!quotation) throw new Error('No data returned');
-
       if (mode === 'submit' && !hasSpecial) {
         await api.post(`/quotations/${quotation.id}/submit`, {});
         setLocked(true);
@@ -269,7 +228,6 @@ export default function NewQuotationPage() {
       } else {
         toast.success(`${quotation.quotationNo} บันทึก draft แล้ว`);
       }
-
       router.push(`/quotations/${quotation.id}`);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
@@ -287,7 +245,6 @@ export default function NewQuotationPage() {
 
   return (
     <div className="space-y-5 max-w-6xl pb-32">
-      {/* Header */}
       <div className="flex flex-wrap gap-4 items-start">
         <Button asChild={!isFullyDisabled} variant="ghost" size="icon" className="mt-1" disabled={isFullyDisabled}>
           {isFullyDisabled ? <span><ArrowLeft className="h-5 w-5 opacity-30" /></span> : <Link href="/quotations" aria-label="back"><ArrowLeft className="h-5 w-5" /></Link>}
@@ -349,9 +306,11 @@ export default function NewQuotationPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold">{t('quotation.lineItems')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                ส่วนลดปกติสูงสุด <span className="font-semibold text-foreground">{NORMAL_DISCOUNT_MAX}%</span>
-                {' · '}Special Discount สูงสุด <span className="font-semibold text-amber-600">{SPECIAL_DISCOUNT_MAX}%</span> (ต้องขออนุมัติ CEO)
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                <Lock className="h-3 w-3" />
+                ราคาสินค้าจาก Master Data จะถูก lock อัตโนมัติ — ส่วนลดปกติสูงสุด
+                <span className="font-semibold text-foreground">{NORMAL_DISCOUNT_MAX}%</span>
+                {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{SPECIAL_DISCOUNT_MAX}%</span>
               </p>
             </div>
             <Button variant="outline" size="sm" disabled={isFullyDisabled} onClick={() => setItems((p) => [...p, newItem()])}>
@@ -359,10 +318,10 @@ export default function NewQuotationPage() {
             </Button>
           </div>
 
-          <div className="hidden md:grid grid-cols-[1.5fr_1.5fr_70px_100px_80px_80px_100px_40px] gap-2 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase border-b">
+          <div className="hidden md:grid grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase border-b">
             <div>Product</div><div>Description</div>
             <div className="text-center">Qty</div>
-            <div className="text-right">Unit Price</div>
+            <div className="text-right flex items-center justify-end gap-1"><Lock className="h-3 w-3" />Unit Price</div>
             <div className="text-right">Discount</div>
             <div className="text-center">Type</div>
             <div className="text-right">Line Total</div>
@@ -372,40 +331,53 @@ export default function NewQuotationPage() {
           <div className="space-y-2 mt-2">
             {items.map((item, idx) => {
               const isSpecialItem = item.discountType === 'PERCENTAGE' && item.discount > NORMAL_DISCOUNT_MAX;
+              const priceIsLocked = item.unitPriceLocked && !!item.productId;
               return (
-                <div key={item.id} className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_100px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}>
+                <div key={item.id} className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}>
                   <div>
-                    <select value={item.productId || ''} disabled={isFullyDisabled} onChange={(e) => onProductSelect(item.id, e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
+                    <select value={item.productId || ''} disabled={isFullyDisabled} onChange={(e) => onProductSelect(item.id, e.target.value)}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
                       <option value="">{t('quotation.selectProduct')}</option>
                       {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
                     </select>
                     {!item.productId && <Input value={item.productName} disabled={isFullyDisabled} onChange={(e) => updateItem(item.id, { productName: e.target.value })} placeholder="Or type product name" className="h-9 mt-1.5" />}
                   </div>
                   <Input value={item.description} disabled={isFullyDisabled} onChange={(e) => updateItem(item.id, { description: e.target.value })} placeholder="Description" className="h-9" />
-                  <Input type="number" min="0" step="0.01" disabled={isFullyDisabled} value={item.quantity} onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })} className="h-9 text-center" />
-                  <Input type="number" min="0" step="0.01" disabled={isFullyDisabled} value={item.unitPrice} onChange={(e) => updateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })} className="h-9 text-right" />
+                  <Input type="number" min="0" step="0.01" disabled={isFullyDisabled} value={item.quantity}
+                    onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })} className="h-9 text-center" />
 
-                  {/* ✅ Discount input พร้อม visual feedback */}
+                  {/* ✅ Unit Price — locked เมื่อเลือกจาก master data */}
                   <div className="relative">
                     <Input
                       type="number" min="0" step="0.01"
-                      max={item.discountType === 'PERCENTAGE' ? SPECIAL_DISCOUNT_MAX : undefined}
-                      disabled={isFullyDisabled}
-                      value={item.discount}
-                      onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
-                      className={`h-9 text-right ${isSpecialItem ? 'border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : ''}`}
+                      disabled={isFullyDisabled || priceIsLocked}
+                      value={item.unitPrice}
+                      onChange={(e) => updateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })}
+                      className={`h-9 text-right pr-7 ${priceIsLocked ? 'bg-muted cursor-not-allowed text-muted-foreground' : ''}`}
                     />
-                    {isSpecialItem && (
-                      <Star className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-500 pointer-events-none" />
+                    {priceIsLocked && (
+                      <Lock className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
                     )}
                   </div>
 
-                  <select value={item.discountType} disabled={isFullyDisabled} onChange={(e) => updateItem(item.id, { discountType: e.target.value as 'PERCENTAGE' | 'FIXED' })} className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
+                  <div className="relative">
+                    <Input type="number" min="0" step="0.01"
+                      max={item.discountType === 'PERCENTAGE' ? SPECIAL_DISCOUNT_MAX : undefined}
+                      disabled={isFullyDisabled} value={item.discount}
+                      onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
+                      className={`h-9 text-right ${isSpecialItem ? 'border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : ''}`} />
+                    {isSpecialItem && <Star className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-500 pointer-events-none" />}
+                  </div>
+
+                  <select value={item.discountType} disabled={isFullyDisabled}
+                    onChange={(e) => updateItem(item.id, { discountType: e.target.value as 'PERCENTAGE' | 'FIXED' })}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
                     <option value="PERCENTAGE">%</option>
                     <option value="FIXED">{currency}</option>
                   </select>
                   <div className="h-9 flex items-center justify-end font-semibold text-sm">{formatNumber(calc.itemTotals[idx] ?? 0)}</div>
-                  <button onClick={() => removeItem(item.id)} disabled={items.length === 1 || isFullyDisabled} className="h-9 w-9 flex items-center justify-center rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-30" aria-label="Remove item">
+                  <button onClick={() => removeItem(item.id)} disabled={items.length === 1 || isFullyDisabled}
+                    className="h-9 w-9 flex items-center justify-center rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-30">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -415,14 +387,7 @@ export default function NewQuotationPage() {
         </CardContent>
       </Card>
 
-      {/* ✅ Special Discount Panel — แสดงเมื่อมี discount > 20% */}
-      {hasSpecial && (
-        <SpecialDiscountPanel
-          maxPct={maxPct}
-          reason={specialDiscountReason}
-          onReasonChange={setSpecialDiscountReason}
-        />
-      )}
+      {hasSpecial && <SpecialDiscountPanel maxPct={maxPct} reason={specialDiscountReason} onReasonChange={setSpecialDiscountReason} />}
 
       {/* Summary */}
       <Card>
@@ -431,17 +396,12 @@ export default function NewQuotationPage() {
             <div className="w-full md:w-80 space-y-3">
               <div className="text-xs font-semibold text-muted-foreground uppercase">{t('quotation.summary')}</div>
               <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.subtotal')}</span><span className="font-medium">{formatMoney(calc.subtotal, currency)}</span></div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  {t('quotation.discount')}
-                  {hasSpecial && <Star className="h-3 w-3 text-amber-500" />}
-                </span>
-                <span className="font-medium text-destructive">-{formatMoney(calc.discountTotal, currency)}</span>
-              </div>
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground flex items-center gap-1">{t('quotation.discount')}{hasSpecial && <Star className="h-3 w-3 text-amber-500" />}</span><span className="font-medium text-destructive">-{formatMoney(calc.discountTotal, currency)}</span></div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground flex items-center gap-2">
                   {t('quotation.vat')} ({vatRate}%)
-                  <button onClick={() => setVatEnabled((v) => !v)} disabled={isFullyDisabled} className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${vatEnabled ? 'bg-primary' : 'bg-muted'}`} aria-pressed={vatEnabled}>
+                  <button onClick={() => setVatEnabled((v) => !v)} disabled={isFullyDisabled}
+                    className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${vatEnabled ? 'bg-primary' : 'bg-muted'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${vatEnabled ? 'translate-x-4' : ''}`} />
                   </button>
                 </span>
@@ -458,25 +418,21 @@ export default function NewQuotationPage() {
 
       {/* Payment Terms + Conditions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <Card>
-          <CardContent className="pt-6">
-            <Label className="text-sm font-semibold">{t('quotation.paymentTerms')}</Label>
-            <select value={paymentTerms} disabled={isFullyDisabled} onChange={(e) => setPaymentTerms(e.target.value)} className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">
-              <option value="Net 30">Net 30</option><option value="Net 60">Net 60</option>
-              <option value="Net 90">Net 90</option><option value="COD">COD</option><option value="Prepaid">Prepaid</option>
-            </select>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <Label className="text-sm font-semibold">{t('quotation.conditions')}</Label>
-            <textarea value={conditions} disabled={isFullyDisabled} onChange={(e) => setConditions(e.target.value)} placeholder={t('quotation.additionalRemarks')} rows={3} className="mt-2 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-y disabled:opacity-60" />
-          </CardContent>
-        </Card>
+        <Card><CardContent className="pt-6">
+          <Label className="text-sm font-semibold">{t('quotation.paymentTerms')}</Label>
+          <select value={paymentTerms} disabled={isFullyDisabled} onChange={(e) => setPaymentTerms(e.target.value)} className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">
+            <option value="Net 30">Net 30</option><option value="Net 60">Net 60</option>
+            <option value="Net 90">Net 90</option><option value="COD">COD</option><option value="Prepaid">Prepaid</option>
+          </select>
+        </CardContent></Card>
+        <Card><CardContent className="pt-6">
+          <Label className="text-sm font-semibold">{t('quotation.conditions')}</Label>
+          <textarea value={conditions} disabled={isFullyDisabled} onChange={(e) => setConditions(e.target.value)} placeholder={t('quotation.additionalRemarks')} rows={3} className="mt-2 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-y disabled:opacity-60" />
+        </CardContent></Card>
       </div>
 
       {/* Sticky Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-card/95 backdrop-blur-xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] lg:left-60 transition-[left] duration-300">
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-card/95 backdrop-blur-xl shadow-[0_-4px_20px_rgba(0,0,0,0.08)] lg:left-60">
         <div className="max-w-6xl mx-auto px-4 md:px-6 lg:px-8 py-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
@@ -486,12 +442,10 @@ export default function NewQuotationPage() {
               </div>
               {hasSpecial && (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 text-xs text-amber-700 dark:text-amber-300">
-                  <Star className="h-3 w-3" />
-                  Special Discount {maxPct}% — รอ CEO อนุมัติ
+                  <Star className="h-3 w-3" />Special Discount {maxPct}% — รอ CEO อนุมัติ
                 </div>
               )}
             </div>
-
             <div className="flex gap-2 ml-auto">
               {!locked && <Button variant="ghost" onClick={handleCancel} disabled={isProcessing}><X className="h-4 w-4" />ยกเลิก</Button>}
               <Button variant="outline" onClick={() => submitForm('draft')} disabled={isFullyDisabled || (hasSpecial && !specialDiscountReason.trim())}>

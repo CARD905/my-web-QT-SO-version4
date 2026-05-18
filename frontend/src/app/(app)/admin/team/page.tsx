@@ -1,166 +1,324 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  Users, Plus, Crown, UserX, Mail, Copy,
-  ChevronRight, Loader2, X, Star,
-  CheckCircle2, XCircle, Clock, AlertCircle,
+  Building2, Plus, ChevronDown, ChevronRight, Users,
+  Shield, Edit2, Loader2, RefreshCw, Crown, X, Check,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
+  Dialog, DialogContent, DialogHeader,
+  DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatDate, formatRelativeTime } from '@/lib/utils';
-import type { ApiResponse } from '@/types/api';
+import { formatMoney } from '@/lib/utils';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string | null;
+  id: string; name: string; email: string;
+  approvalLimit: string | null;
+  managerLevel: 'DIVISION' | 'DEPARTMENT' | 'SECTION' | null;
+  role: { code: string; nameTh: string };
   isActive: boolean;
-  isTeamLead: boolean;
-  reportsToId?: string | null;
-  reportsTo?: { id: string; name: string } | null;
-  role: { code: string; nameTh: string };
-  lastLoginAt?: string | null;
-  _count?: { createdQuotations: number };
 }
 
-interface MyTeam {
-  id: string;
-  name: string;
-  code?: string | null;
-  members: TeamMember[];
+interface TeamData {
+  id: string; name: string; code?: string; description?: string;
+  manager?: { id: string; name: string; managerLevel?: string } | null;
+  _count?: { members: number };
 }
 
-interface Invitation {
-  id: string;
-  email: string;
-  name: string | null;
-  status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
-  expiresAt: string;
-  createdAt: string;
-  acceptedAt: string | null;
-  revokedAt: string | null;
-  revokedReason: string | null;
-  token: string;
-  role: { code: string; nameTh: string };
-  team: { id: string; name: string } | null;
-  invitedBy: { id: string; name: string; email: string };
+interface DeptData {
+  id: string; name: string; code: string; description?: string;
+  teams: TeamData[];
 }
 
-type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
+type ManagerLevel = 'DIVISION' | 'DEPARTMENT' | 'SECTION';
 
-const STATUS_META: Record<InvitationStatus, { color: string; icon: typeof Clock; label: string }> = {
-  PENDING:  { color: 'bg-amber-500/10 text-amber-600',    icon: Clock,        label: 'Pending'  },
-  ACCEPTED: { color: 'bg-emerald-500/10 text-emerald-600', icon: CheckCircle2, label: 'Accepted' },
-  EXPIRED:  { color: 'bg-gray-500/10 text-gray-600',      icon: AlertCircle,  label: 'Expired'  },
-  REVOKED:  { color: 'bg-red-500/10 text-red-600',        icon: XCircle,      label: 'Revoked'  },
+const LEVEL_COLOR: Record<ManagerLevel, string> = {
+  DIVISION:   'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300',
+  DEPARTMENT: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300',
+  SECTION:    'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300',
 };
 
-export default function ManagerTeamPage() {
-  const [team, setTeam] = useState<MyTeam | null>(null);
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
+const LEVEL_LABEL: Record<ManagerLevel, string> = {
+  DIVISION:   'Division Manager',
+  DEPARTMENT: 'Department Manager',
+  SECTION:    'Section Manager',
+};
+
+// ─── OrgNode — แสดง 1 department พร้อม teams ────────────────────────────────
+function OrgNode({
+  dept,
+  managers,
+  onAssignManager,
+  onEditLimit,
+}: {
+  dept: DeptData;
+  managers: TeamMember[];
+  onAssignManager: (teamId: string, managerId: string) => void;
+  onEditLimit: (user: TeamMember) => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="border rounded-xl overflow-hidden">
+      {/* Department Header */}
+      <button onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-muted/40 hover:bg-muted/60 transition-colors text-left">
+        {open ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+        <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="font-semibold text-sm">{dept.name}</span>
+          <span className="text-xs text-muted-foreground ml-2 font-mono">{dept.code}</span>
+        </div>
+        <Badge variant="outline" className="text-[10px] shrink-0">{dept.teams.length} ทีม</Badge>
+      </button>
+
+      {open && (
+        <div className="p-3 space-y-2 border-t bg-background">
+          {dept.teams.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">ยังไม่มีทีม</p>
+          ) : (
+            dept.teams.map((team) => (
+              <TeamNode
+                key={team.id} team={team} managers={managers}
+                onAssignManager={onAssignManager} onEditLimit={onEditLimit}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamNode({
+  team, managers, onAssignManager, onEditLimit,
+}: {
+  team: TeamData;
+  managers: TeamMember[];
+  onAssignManager: (teamId: string, managerId: string) => void;
+  onEditLimit: (user: TeamMember) => void;
+}) {
+  const [selectedMgr, setSelectedMgr] = useState(team.manager?.id ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const handleAssign = async () => {
+    if (!selectedMgr || selectedMgr === team.manager?.id) return;
+    setSaving(true);
+    try {
+      await onAssignManager(team.id, selectedMgr);
+    } finally { setSaving(false); }
+  };
+
+  // หา manager user object
+  const mgrUser = managers.find((m) => m.id === selectedMgr);
+
+  return (
+    <div className="rounded-lg border bg-muted/10 p-3">
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium">{team.name}</span>
+            {team.code && <span className="text-[10px] text-muted-foreground font-mono">{team.code}</span>}
+            {team._count && (
+              <Badge variant="outline" className="text-[9px]">{team._count.members} คน</Badge>
+            )}
+          </div>
+          {team.manager && (
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <Crown className="h-3 w-3 text-amber-500" />
+              <span className="text-xs text-muted-foreground">หัวหน้าปัจจุบัน:</span>
+              <span className="text-xs font-medium">{team.manager.name}</span>
+              {team.manager.managerLevel && (
+                <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[team.manager.managerLevel as ManagerLevel] ?? ''}`}>
+                  {LEVEL_LABEL[team.manager.managerLevel as ManagerLevel] ?? team.manager.managerLevel}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Assign Manager */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <select value={selectedMgr}
+            onChange={(e) => setSelectedMgr(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs min-w-[180px]">
+            <option value="">— เลือก Manager —</option>
+            {managers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.managerLevel ? LEVEL_LABEL[m.managerLevel] ?? m.managerLevel : 'Manager'})
+              </option>
+            ))}
+          </select>
+          <Button size="sm" className="h-8 text-xs"
+            onClick={handleAssign}
+            disabled={saving || !selectedMgr || selectedMgr === team.manager?.id}>
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+            Assign
+          </Button>
+        </div>
+      </div>
+
+      {/* Show selected manager limit */}
+      {mgrUser && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground">วงเงินอนุมัติ:</span>
+          <span className="text-[10px] font-semibold">
+            {mgrUser.approvalLimit ? formatMoney(Number(mgrUser.approvalLimit)) : 'ไม่จำกัด'}
+          </span>
+          <button onClick={() => onEditLimit(mgrUser)}
+            className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+            <Edit2 className="h-2.5 w-2.5" />แก้ไข
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Main Page
+// ════════════════════════════════════════════════════════════════════════════
+export default function AdminTeamsPage() {
+  const [depts, setDepts] = useState<DeptData[]>([]);
+  const [managers, setManagers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showInvite, setShowInvite] = useState(false);
-  const [promotingId, setPromotingId] = useState<string | null>(null);
-  const [demotingId, setDemotingId] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<'all' | InvitationStatus>('all');
+
+  // Create Department dialog
+  const [showCreateDept, setShowCreateDept] = useState(false);
+  const [deptName, setDeptName] = useState('');
+  const [deptCode, setDeptCode] = useState('');
+  const [savingDept, setSavingDept] = useState(false);
+
+  // Create Team dialog
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+  const [teamName, setTeamName] = useState('');
+  const [teamCode, setTeamCode] = useState('');
+  const [teamDeptId, setTeamDeptId] = useState('');
+  const [savingTeam, setSavingTeam] = useState(false);
+
+  // Create Manager (Invite) dialog
+  const [showInviteMgr, setShowInviteMgr] = useState(false);
+  const [mgrEmail, setMgrEmail] = useState('');
+  const [mgrName, setMgrName] = useState('');
+  const [mgrLevel, setMgrLevel] = useState<ManagerLevel>('SECTION');
+  const [mgrLimit, setMgrLimit] = useState('');
+  const [mgrTeamId, setMgrTeamId] = useState('');
+  const [savingMgr, setSavingMgr] = useState(false);
+
+  // Edit limit dialog
+  const [editLimitUser, setEditLimitUser] = useState<TeamMember | null>(null);
+  const [newLimit, setNewLimit] = useState('');
+  const [savingLimit, setSavingLimit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // ✅ ใช้ allSettled — ถ้า team fail ก็ยังโหลด invitations ได้
-      const [teamRes, invRes] = await Promise.allSettled([
-        api.get<ApiResponse<MyTeam>>('/manager/my-team'),
-        api.get<ApiResponse<Invitation[]>>('/invitations?limit=100'),
+      const [deptRes, usersRes] = await Promise.all([
+        api.get<any>('/admin/departments'),
+        api.get<any>('/admin/users?roleCode=MANAGER&limit=100'),
       ]);
-
-      if (teamRes.status === 'fulfilled') {
-        setTeam(teamRes.value.data.data ?? null);
-      }
-      // ไม่ toast error ถ้า team ไม่มี — Manager ยังไม่มีทีมก็ได้
-
-      if (invRes.status === 'fulfilled') {
-        setInvitations(invRes.value.data.data ?? []);
-      } else {
-        toast.error(getApiErrorMessage(invRes.reason));
-      }
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      setDepts(deptRes.data.data ?? []);
+      // Filter เฉพาะ MANAGER role
+      const allUsers: TeamMember[] = usersRes.data.data ?? [];
+      setManagers(allUsers);
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const handlePromote = async (member: TeamMember) => {
-    if (!confirm(`เลื่อน ${member.name} เป็น Officer Lead?\n\nเขาจะสามารถดูงาน และ assign งานให้ Officer ในทีมได้`)) return;
-    setPromotingId(member.id);
+  // Assign team manager
+  const handleAssignManager = async (teamId: string, managerId: string) => {
     try {
-      await api.patch(`/manager/team-members/${member.id}/promote-lead`);
-      toast.success(`${member.name} เป็น Officer Lead แล้ว`);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setPromotingId(null); }
-  };
-
-  const handleDemote = async (member: TeamMember) => {
-    if (!confirm(`ถอด ${member.name} จาก Officer Lead?\n\nOfficer ที่อยู่ใต้เขาจะยังคงอยู่ในทีม`)) return;
-    setDemotingId(member.id);
-    try {
-      await api.patch(`/manager/team-members/${member.id}/demote-lead`);
-      toast.success(`${member.name} ถูกถอดจาก Officer Lead แล้ว`);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setDemotingId(null); }
-  };
-
-  const copyInviteLink = (token: string) => {
-    const url = `${window.location.origin}/invite/${token}`;
-    navigator.clipboard.writeText(url);
-    toast.success('คัดลอก Invitation Link แล้ว');
-  };
-
-  const revokeInvite = async (inv: Invitation) => {
-    if (!confirm(`ยกเลิก invitation ของ ${inv.email}?`)) return;
-    try {
-      await api.post(`/invitations/${inv.id}/revoke`, { reason: 'Revoked by Manager' });
-      toast.success('ยกเลิก invitation แล้ว');
+      await api.patch(`/admin/teams/${teamId}/manager`, { managerId });
+      toast.success('Assign manager เรียบร้อย');
       await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
   };
 
-  if (loading) return (
-    <div className="space-y-4 max-w-5xl">
-      <Skeleton className="h-10 w-64" />
-      <Skeleton className="h-64 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  );
+  // Edit approval limit
+  const handleSaveLimit = async () => {
+    if (!editLimitUser) return;
+    setSavingLimit(true);
+    try {
+      const limit = newLimit === '' ? null : Number(newLimit);
+      await api.patch(`/admin/approval-authority/users/${editLimitUser.id}`, { limit });
+      toast.success(`อัปเดตวงเงินของ ${editLimitUser.name} เรียบร้อย`);
+      setEditLimitUser(null);
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingLimit(false); }
+  };
 
-  const members = team?.members ?? [];
-  const leads = members.filter((m) => m.isTeamLead);
-  const officersUnderManager = members.filter(
-    (m) => !m.isTeamLead && !leads.some((l) => l.id === m.reportsToId),
-  );
+  // Create Department
+  const handleCreateDept = async () => {
+    if (!deptName.trim() || !deptCode.trim()) { toast.error('กรุณากรอกชื่อและรหัส'); return; }
+    setSavingDept(true);
+    try {
+      await api.post('/admin/departments', { name: deptName.trim(), code: deptCode.trim().toUpperCase() });
+      toast.success(`สร้าง Department "${deptName}" เรียบร้อย`);
+      setShowCreateDept(false); setDeptName(''); setDeptCode('');
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingDept(false); }
+  };
 
-  const filteredInvitations = filterStatus === 'all'
-    ? invitations
-    : invitations.filter((inv) => inv.status === filterStatus);
+  // Create Team
+  const handleCreateTeam = async () => {
+    if (!teamName.trim() || !teamDeptId) { toast.error('กรุณากรอกชื่อทีมและเลือก Department'); return; }
+    setSavingTeam(true);
+    try {
+      await api.post('/admin/teams', {
+        name: teamName.trim(),
+        code: teamCode.trim().toUpperCase() || undefined,
+        departmentId: teamDeptId,
+      });
+      toast.success(`สร้าง Team "${teamName}" เรียบร้อย`);
+      setShowCreateTeam(false); setTeamName(''); setTeamCode(''); setTeamDeptId('');
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingTeam(false); }
+  };
 
-  const pendingCount = invitations.filter((inv) => inv.status === 'PENDING').length;
+  // Invite Manager
+  const handleInviteManager = async () => {
+    if (!mgrEmail.trim() || !mgrTeamId) { toast.error('กรุณากรอก Email และเลือก Team'); return; }
+    setSavingMgr(true);
+    try {
+      // หา role MANAGER id
+      const roleRes = await api.get<any>('/admin/users/_roles');
+      const roles: any[] = roleRes.data.data ?? [];
+      const managerRole = roles.find((r: any) => r.code === 'MANAGER');
+      if (!managerRole) throw new Error('ไม่พบ Role MANAGER ในระบบ');
+
+      await api.post('/invitations', {
+        email: mgrEmail.trim(),
+        name: mgrName.trim() || undefined,
+        roleId: managerRole.id,
+        teamId: mgrTeamId,
+        managerLevel: mgrLevel,
+        approvalLimit: mgrLimit ? Number(mgrLimit) : undefined,
+        channel: 'MANUAL',
+      });
+      toast.success(`ส่ง Invitation ให้ ${mgrEmail} (${LEVEL_LABEL[mgrLevel]}) เรียบร้อย`);
+      setShowInviteMgr(false);
+      setMgrEmail(''); setMgrName(''); setMgrLevel('SECTION'); setMgrLimit(''); setMgrTeamId('');
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingMgr(false); }
+  };
+
+  // All teams flat
+  const allTeams = depts.flatMap((d) => d.teams.map((t) => ({ ...t, deptName: d.name })));
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -168,324 +326,204 @@ export default function ManagerTeamPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="h-6 w-6 text-primary" />
-            ทีมของฉัน
-            {team && <span className="text-muted-foreground font-normal text-lg">— {team.name}</span>}
+            <Building2 className="h-6 w-6 text-emerald-500" />Teams & Departments
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {members.length} คน · {leads.length} Lead · {pendingCount} รอตอบรับ
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">จัดการโครงสร้างองค์กร Division → Department → Section → Officer</p>
         </div>
-        <Button onClick={() => setShowInvite(true)}>
-          <Plus className="h-4 w-4" />เชิญ Officer ใหม่
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" /></Button>
+          <Button variant="outline" size="sm" onClick={() => setShowCreateDept(true)}><Plus className="h-4 w-4" />สร้าง Department</Button>
+          <Button variant="outline" size="sm" onClick={() => setShowCreateTeam(true)}><Plus className="h-4 w-4" />สร้าง Team</Button>
+          <Button size="sm" onClick={() => setShowInviteMgr(true)}><Plus className="h-4 w-4" />เชิญ Manager</Button>
+        </div>
       </div>
 
-      {/* Team Hierarchy */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Users className="h-4 w-4 text-primary" />โครงสร้างทีม
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {members.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              ยังไม่มีสมาชิกในทีม — กด "เชิญ Officer ใหม่" เพื่อเริ่มต้น
-            </div>
-          ) : (
-            <>
-              {leads.map((lead) => {
-                const underLead = members.filter((m) => m.reportsToId === lead.id);
-                return (
-                  <div key={lead.id} className="border rounded-xl overflow-hidden">
-                    <div className="flex items-center gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
-                      <div className="h-9 w-9 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0">
-                        <Crown className="h-4 w-4 text-amber-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-sm">{lead.name}</span>
-                          <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-700 border-amber-300">
-                            Officer Lead
-                          </Badge>
-                          {!lead.isActive && <Badge variant="outline" className="text-[10px] text-red-600">Inactive</Badge>}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{lead.email}</div>
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button asChild variant="outline" size="sm" className="h-7 text-xs">
-                          <Link href={`/manager/users/${lead.id}`}>ดูงาน</Link>
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => handleDemote(lead)} disabled={demotingId === lead.id}>
-                          {demotingId === lead.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
-                          ถอด Lead
-                        </Button>
-                      </div>
-                    </div>
-                    {underLead.length === 0 ? (
-                      <div className="px-6 py-3 text-xs text-muted-foreground italic">
-                        ยังไม่มี Officer ในกลุ่มนี้
-                      </div>
-                    ) : (
-                      underLead.map((m) => (
-                        <MemberRow key={m.id} member={m} indent onPromote={handlePromote} promotingId={promotingId} leads={leads} />
-                      ))
-                    )}
-                  </div>
-                );
-              })}
+      {/* Legend */}
+      <div className="flex gap-3 flex-wrap">
+        {(Object.entries(LEVEL_LABEL) as [ManagerLevel, string][]).map(([level, label]) => (
+          <Badge key={level} variant="outline" className={`text-[10px] ${LEVEL_COLOR[level]}`}>
+            {label}
+          </Badge>
+        ))}
+        <span className="text-xs text-muted-foreground self-center">— ระดับ Manager</span>
+      </div>
 
-              {officersUnderManager.length > 0 && (
-                <div className="border rounded-xl overflow-hidden">
-                  <div className="px-3 py-2 bg-muted/40 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Officer (รายงานตรงถึง Manager)
-                  </div>
-                  {officersUnderManager.map((m) => (
-                    <MemberRow key={m.id} member={m} indent={false} onPromote={handlePromote} promotingId={promotingId} leads={leads} />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+      {/* Org Chart */}
+      {loading ? (
+        <div className="space-y-3">{[0,1,2].map((i) => <Skeleton key={i} className="h-32" />)}</div>
+      ) : depts.length === 0 ? (
+        <Card><CardContent className="py-16 text-center">
+          <Building2 className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">ยังไม่มี Department — กด "สร้าง Department" เพื่อเริ่มต้น</p>
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-3">
+          {depts.map((dept) => (
+            <OrgNode
+              key={dept.id} dept={dept} managers={managers}
+              onAssignManager={handleAssignManager}
+              onEditLimit={(user) => { setEditLimitUser(user); setNewLimit(user.approvalLimit ? String(Number(user.approvalLimit)) : ''); }}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Invitations Section */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Mail className="h-4 w-4 text-primary" />
-            รายการ Invitation
-            {pendingCount > 0 && (
-              <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-600 border-amber-200">
-                {pendingCount} รอตอบรับ
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-1 flex-wrap">
-            {(['all', 'PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED'] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setFilterStatus(s)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  filterStatus === s
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-              >
-                {s === 'all' ? 'ทั้งหมด' : s}
-              </button>
-            ))}
-          </div>
-
-          {filteredInvitations.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              ไม่มี invitation
-            </div>
-          ) : (
+      {/* Managers List */}
+      {managers.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />Managers ทั้งหมด ({managers.length} คน)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="space-y-2">
-              {filteredInvitations.map((inv) => {
-                const meta = STATUS_META[inv.status];
-                const StatusIcon = meta.icon;
-                return (
-                  <div key={inv.id} className="flex flex-wrap items-center gap-3 p-3 rounded-lg border bg-muted/10">
-                    <div className={`h-9 w-9 rounded-lg ${meta.color} flex items-center justify-center shrink-0`}>
-                      <StatusIcon className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{inv.email}</span>
-                        <Badge variant="outline" className={`text-[10px] ${meta.color}`}>
-                          {meta.label}
-                        </Badge>
-                        {inv.team && (
-                          <Badge variant="secondary" className="text-[10px]">{inv.team.name}</Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {inv.name && `${inv.name} · `}
-                        เชิญโดย {inv.invitedBy.name} {formatRelativeTime(inv.createdAt)}
-                      </div>
-                      {inv.status === 'PENDING' && (
-                        <div className="text-[10px] text-muted-foreground">
-                          หมดอายุ {formatDate(inv.expiresAt)}
-                        </div>
-                      )}
-                      {inv.status === 'ACCEPTED' && inv.acceptedAt && (
-                        <div className="text-[10px] text-emerald-600">
-                          ตอบรับแล้ว {formatRelativeTime(inv.acceptedAt)}
-                        </div>
-                      )}
-                      {inv.status === 'REVOKED' && inv.revokedReason && (
-                        <div className="text-[10px] text-red-600">
-                          เหตุผล: {inv.revokedReason}
-                        </div>
-                      )}
-                    </div>
-                    {inv.status === 'PENDING' && (
-                      <div className="flex gap-2 shrink-0">
-                        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyInviteLink(inv.token)}>
-                          <Copy className="h-3 w-3" />Copy Link
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => revokeInvite(inv)}>
-                          <X className="h-3 w-3" />ยกเลิก
-                        </Button>
-                      </div>
-                    )}
+              {managers.map((m) => (
+                <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/10 flex-wrap">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                    {m.name.slice(0, 1).toUpperCase()}
                   </div>
-                );
-              })}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{m.name}</span>
+                      {m.managerLevel && (
+                        <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[m.managerLevel]}`}>
+                          {LEVEL_LABEL[m.managerLevel]}
+                        </Badge>
+                      )}
+                      {!m.isActive && <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">{m.email}</div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">วงเงิน:</span>
+                    <span className="text-xs font-semibold">
+                      {m.approvalLimit ? formatMoney(Number(m.approvalLimit)) : 'ไม่จำกัด'}
+                    </span>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs"
+                      onClick={() => { setEditLimitUser(m); setNewLimit(m.approvalLimit ? String(Number(m.approvalLimit)) : ''); }}>
+                      <Edit2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Invite Dialog */}
-      {showInvite && (
-        <InviteOfficerDialog
-          team={team}
-          leads={leads}
-          onClose={() => setShowInvite(false)}
-          onCreated={(url, email) => {
-            setShowInvite(false);
-            navigator.clipboard.writeText(url);
-            toast.success(`สร้าง Invitation สำหรับ ${email} แล้ว — คัดลอก Link แล้ว`);
-            load();
-          }}
-        />
+      {/* ── Dialogs ── */}
+
+      {/* Create Department */}
+      <Dialog open={showCreateDept} onOpenChange={(o) => { if (!o) { setShowCreateDept(false); setDeptName(''); setDeptCode(''); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>สร้าง Department ใหม่</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label className="text-xs">ชื่อ Department</Label><Input value={deptName} onChange={(e) => setDeptName(e.target.value)} className="mt-1.5" placeholder="เช่น Sales Division" autoFocus /></div>
+            <div><Label className="text-xs">รหัส (Code)</Label><Input value={deptCode} onChange={(e) => setDeptCode(e.target.value.toUpperCase())} className="mt-1.5 font-mono" placeholder="เช่น SALES_DIV" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDept(false)} disabled={savingDept}>ยกเลิก</Button>
+            <Button onClick={handleCreateDept} disabled={savingDept || !deptName.trim() || !deptCode.trim()}>
+              {savingDept && <Loader2 className="h-4 w-4 animate-spin" />}สร้าง
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Team */}
+      <Dialog open={showCreateTeam} onOpenChange={(o) => { if (!o) { setShowCreateTeam(false); setTeamName(''); setTeamCode(''); setTeamDeptId(''); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>สร้าง Team ใหม่</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Department</Label>
+              <select value={teamDeptId} onChange={(e) => setTeamDeptId(e.target.value)}
+                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— เลือก Department —</option>
+                {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div><Label className="text-xs">ชื่อ Team</Label><Input value={teamName} onChange={(e) => setTeamName(e.target.value)} className="mt-1.5" placeholder="เช่น Section A" autoFocus /></div>
+            <div><Label className="text-xs">รหัส (Code) — optional</Label><Input value={teamCode} onChange={(e) => setTeamCode(e.target.value.toUpperCase())} className="mt-1.5 font-mono" placeholder="เช่น SEC_A" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateTeam(false)} disabled={savingTeam}>ยกเลิก</Button>
+            <Button onClick={handleCreateTeam} disabled={savingTeam || !teamName.trim() || !teamDeptId}>
+              {savingTeam && <Loader2 className="h-4 w-4 animate-spin" />}สร้าง
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Manager */}
+      <Dialog open={showInviteMgr} onOpenChange={(o) => { if (!o) setShowInviteMgr(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>เชิญ Manager ใหม่</DialogTitle>
+            <DialogDescription>Admin assign role + level + วงเงิน</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2"><Label className="text-xs">Email <span className="text-destructive">*</span></Label><Input type="email" value={mgrEmail} onChange={(e) => setMgrEmail(e.target.value)} className="mt-1.5" placeholder="manager@example.com" autoFocus /></div>
+              <div className="col-span-2"><Label className="text-xs">ชื่อ (optional)</Label><Input value={mgrName} onChange={(e) => setMgrName(e.target.value)} className="mt-1.5" placeholder="ชื่อ-นามสกุล" /></div>
+              <div>
+                <Label className="text-xs">ระดับ Manager <span className="text-destructive">*</span></Label>
+                <select value={mgrLevel} onChange={(e) => setMgrLevel(e.target.value as ManagerLevel)}
+                  className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="DIVISION">Division Manager</option>
+                  <option value="DEPARTMENT">Department Manager</option>
+                  <option value="SECTION">Section Manager</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">วงเงินอนุมัติ (฿)</Label>
+                <Input type="number" min="0" step="1000" value={mgrLimit} onChange={(e) => setMgrLimit(e.target.value)} className="mt-1.5" placeholder="ว่าง = ไม่จำกัด" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Team <span className="text-destructive">*</span></Label>
+                <select value={mgrTeamId} onChange={(e) => setMgrTeamId(e.target.value)}
+                  className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">— เลือก Team —</option>
+                  {allTeams.map((t) => <option key={t.id} value={t.id}>{t.deptName} → {t.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
+              <strong>Approval Flow:</strong> Section Manager → Department Manager → Division Manager → CEO<br />
+              <span className="mt-1 block">ถ้ายอดเกินวงเงิน Manager คนนั้นจะต้อง "ส่งต่อ" ขึ้นไปยังระดับถัดไป</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInviteMgr(false)} disabled={savingMgr}>ยกเลิก</Button>
+            <Button onClick={handleInviteManager} disabled={savingMgr || !mgrEmail.trim() || !mgrTeamId}>
+              {savingMgr && <Loader2 className="h-4 w-4 animate-spin" />}ส่ง Invitation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Approval Limit */}
+      {editLimitUser && (
+        <Dialog open onOpenChange={(o) => { if (!o) setEditLimitUser(null); }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>แก้ไขวงเงินอนุมัติ</DialogTitle>
+              <DialogDescription>{editLimitUser.name} — {editLimitUser.managerLevel ? LEVEL_LABEL[editLimitUser.managerLevel] : 'Manager'}</DialogDescription>
+            </DialogHeader>
+            <div>
+              <Label className="text-xs">วงเงิน (฿) — ปล่อยว่าง = ไม่จำกัด</Label>
+              <Input type="number" min="0" step="1000" value={newLimit} onChange={(e) => setNewLimit(e.target.value)} className="mt-1.5" autoFocus />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditLimitUser(null)} disabled={savingLimit}>ยกเลิก</Button>
+              <Button onClick={handleSaveLimit} disabled={savingLimit}>
+                {savingLimit && <Loader2 className="h-4 w-4 animate-spin" />}บันทึก
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
-  );
-}
-
-// ── Member Row ──────────────────────────────────────────────────────────────
-function MemberRow({ member, indent, onPromote, promotingId, leads }: {
-  member: TeamMember;
-  indent: boolean;
-  onPromote: (m: TeamMember) => void;
-  promotingId: string | null;
-  leads: TeamMember[];
-}) {
-  return (
-    <div className={`flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/20 transition-colors ${indent ? 'pl-8 bg-muted/10' : ''}`}>
-      {indent && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0 -ml-4" />}
-      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-xs font-bold text-primary">
-        {member.name.slice(0, 1).toUpperCase()}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{member.name}</span>
-          {!member.isActive && <Badge variant="outline" className="text-[10px] text-red-600">Inactive</Badge>}
-        </div>
-        <div className="text-xs text-muted-foreground">{member.email}</div>
-      </div>
-      <div className="flex gap-2 shrink-0">
-        <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-          <Link href={`/manager/users/${member.id}`}>ดูงาน</Link>
-        </Button>
-        {!leads.some((l) => l.id === member.reportsToId) && (
-          <Button variant="outline" size="sm" className="h-7 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
-            onClick={() => onPromote(member)} disabled={promotingId === member.id}>
-            {promotingId === member.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Star className="h-3 w-3" />}
-            ตั้งเป็น Lead
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Invite Officer Dialog ────────────────────────────────────────────────────
-function InviteOfficerDialog({ team, leads, onClose, onCreated }: {
-  team: MyTeam | null;
-  leads: TeamMember[];
-  onClose: () => void;
-  onCreated: (url: string, email: string) => void;
-}) {
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [reportsToId, setReportsToId] = useState('');
-  const [expiresInDays, setExpiresInDays] = useState(3);
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async () => {
-    if (!email.trim()) { toast.error('กรุณากรอก Email'); return; }
-    setSubmitting(true);
-    try {
-      const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>(
-        '/invitations',
-        {
-          email, name: name || undefined,
-          teamId: team?.id || undefined,
-          reportsToId: reportsToId || undefined,
-          channel: 'MANUAL',
-          expiresInDays,
-        },
-      );
-      const url = res.data.data?.invitationUrl || `${window.location.origin}/invite/${res.data.data?.token}`;
-      onCreated(url, email);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>เชิญ Officer {team ? `เข้าทีม ${team.name}` : 'ใหม่'}</DialogTitle>
-          <DialogDescription>Officer จะได้รับ Invitation Link เพื่อสร้าง Account</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="officer@example.com" className="mt-1.5" autoFocus />
-          </div>
-          <div>
-            <Label className="text-xs">ชื่อ (optional)</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อ-นามสกุล" className="mt-1.5" />
-          </div>
-
-          {leads.length > 0 && (
-            <div>
-              <Label className="text-xs">รายงานต่อ (สังกัด)</Label>
-              <select value={reportsToId} onChange={(e) => setReportsToId(e.target.value)}
-                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="">— รายงานตรงต่อ Manager —</option>
-                {leads.map((l) => (
-                  <option key={l.id} value={l.id}>📋 {l.name} (Officer Lead)</option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                เลือก Officer Lead ถ้าต้องการให้อยู่ในกลุ่มย่อย
-              </p>
-            </div>
-          )}
-
-          <div>
-            <Label className="text-xs">Link หมดอายุใน (วัน)</Label>
-            <Input type="number" min={1} max={30} value={expiresInDays}
-              onChange={(e) => setExpiresInDays(parseInt(e.target.value) || 3)} className="mt-1.5" />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>ยกเลิก</Button>
-          <Button onClick={submit} disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Mail className="h-4 w-4" />สร้าง Invitation
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

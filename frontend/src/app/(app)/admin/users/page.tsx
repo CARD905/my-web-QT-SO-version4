@@ -25,6 +25,7 @@ interface UserItem {
   id: string; name: string; email: string; phone?: string | null;
   isActive: boolean; isTeamLead: boolean; lastLoginAt?: string | null;
   createdAt: string; approvalLimit?: string | null;
+  managerLevel?: 'DIVISION' | 'DEPARTMENT' | 'SECTION' | null;
   role: { id: string; code: string; nameTh: string };
   team?: { id: string; name: string } | null;
   reportsTo?: { id: string; name: string } | null;
@@ -176,7 +177,18 @@ export default function AdminUsersPage() {
                         {user.role.nameTh}
                       </Badge>
                       {user.isTeamLead && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Lead</Badge>}
+                      {user.managerLevel && (
+                        <Badge variant="outline" className={`text-[10px] ${
+                          user.managerLevel === 'DIVISION'   ? 'bg-purple-50 text-purple-700 border-purple-300' :
+                          user.managerLevel === 'DEPARTMENT' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                                                'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        }`}>
+                          {user.managerLevel === 'DIVISION'   ? 'Division' :
+                          user.managerLevel === 'DEPARTMENT' ? 'Dept' : 'Section'}
+                        </Badge>
+                      )}
                       {!user.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
+                      
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
                     <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
