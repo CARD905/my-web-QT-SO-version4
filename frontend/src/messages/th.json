@@ -60,7 +60,17 @@
     "pendingSaleOrder": "Pending Sale Order",
     "specialDiscount": "ส่วนลดพิเศษ",
     "nav.myTeam": "ทีมของฉัน",
-    "nav.invitations": "คำเชิญ"
+    "nav.invitations": "คำเชิญ",
+    "nav.adminPanel":    "Admin Panel",
+    "nav.adminUsers":    "จัดการ Users",
+    "nav.adminSettings": "System Settings",
+    "nav.adminApproval": "Approval Authority",
+    "nav.adminTeams":    "Teams & Departments",
+    "nav.runningNumbers":"Running Numbers",
+    "nav.activityLogs":  "Activity Logs",
+    "nav.loginHistory":  "Login History",
+    "nav.approvalQueue": "Approval Queue"
+    
   },
   "login": {
     "title": "เข้าสู่ระบบ",

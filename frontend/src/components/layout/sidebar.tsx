@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
-  CheckSquare, Star, Mail,History,
+  CheckSquare, Star, Mail, History, Settings, Activity,
+  Key, BarChart3, LogIn,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -19,19 +20,28 @@ interface NavItem {
   icon: LucideIcon;
   requires?: { resource: string; action: string; scope?: 'OWN' | 'TEAM' | 'DEPARTMENT' | 'ALL' };
   onlyRoles?: string[];
+  excludeRoles?: string[];   // ✅ ใหม่ — ซ่อนถ้า role อยู่ใน list นี้
   children?: NavItem[];
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// NAV ITEMS — แบ่งตาม role ชัดเจน
+// ════════════════════════════════════════════════════════════════════════════
 const NAV_ITEMS: NavItem[] = [
+
+  // ── Dashboard (ทุก role เห็น — redirect ตาม role ใน page.tsx) ──────────
   {
     href: '/dashboard',
     labelKey: 'nav.dashboard',
     icon: LayoutDashboard,
     requires: { resource: 'dashboard', action: 'view', scope: 'OWN' },
   },
+
+  // ── BUSINESS SECTION — ไม่แสดงให้ ADMIN ──────────────────────────────────
   {
     labelKey: 'nav.quotations',
     icon: FileText,
+    excludeRoles: ['ADMIN'],
     requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
     children: [
       {
@@ -52,14 +62,32 @@ const NAV_ITEMS: NavItem[] = [
     href: '/sale-orders',
     labelKey: 'nav.saleOrders',
     icon: ClipboardList,
+    excludeRoles: ['ADMIN'],
     requires: { resource: 'saleOrder', action: 'view', scope: 'OWN' },
+  },
+  {
+    href: '/approval-queue',
+    labelKey: 'nav.approvalQueue',
+    icon: CheckSquare,
+    excludeRoles: ['ADMIN', 'OFFICER'],
+    requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
   },
   {
     href: '/special-discount',
     labelKey: 'nav.specialDiscount',
     icon: Star,
+    onlyRoles: ['CEO'],
     requires: { resource: 'quotation', action: 'approve', scope: 'ALL' },
   },
+  {
+    href: '/history',
+    labelKey: 'nav.history',
+    icon: History,
+    excludeRoles: ['ADMIN', 'OFFICER'],
+    requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
+  },
+
+  // ── MASTER DATA — ADMIN + CEO + MANAGER เห็น ─────────────────────────────
   {
     href: '/customers',
     labelKey: 'nav.customers',
@@ -72,37 +100,97 @@ const NAV_ITEMS: NavItem[] = [
     icon: Package,
     requires: { resource: 'product', action: 'view', scope: 'ALL' },
   },
-  // ✅ MANAGER เห็น My Team (invite:TEAM)
-  {
-    href: '/manager/team',
-    labelKey: 'nav.myTeam',
-    icon: Users,
-    requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
-    onlyRoles: ['MANAGER'],
-  },
-  {
-    href: '/history',
-    labelKey: 'nav.history',
-    icon: History,
-    requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
-  },
-  // ✅ ADMIN เห็น Invitations (invite:ALL)
-  {
-    href: '/admin/invitations',
-    labelKey: 'nav.invitations',
-    icon: Mail,
-    requires: { resource: 'user', action: 'invite', scope: 'ALL' },
-    onlyRoles: ['ADMIN', 'CEO']
-  },
   {
     href: '/company',
     labelKey: 'nav.company',
     icon: Building2,
     requires: { resource: 'company', action: 'view', scope: 'ALL' },
   },
-  { href: '/permissions', labelKey: 'nav.permissions', icon: Shield },
+
+  // ── MANAGER — ทีมของฉัน ──────────────────────────────────────────────────
+  {
+    href: '/team',
+    labelKey: 'nav.myTeam',
+    icon: Users,
+    onlyRoles: ['MANAGER'],
+    requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
+  },
+
+  // ── ADMIN PANEL — เฉพาะ ADMIN เห็น ──────────────────────────────────────
+  {
+    href: '/admin',
+    labelKey: 'nav.adminPanel',
+    icon: Shield,
+    onlyRoles: ['ADMIN'],
+    requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+    children: [
+      {
+        href: '/admin/users',
+        labelKey: 'nav.adminUsers',
+        icon: Users,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/settings',
+        labelKey: 'nav.adminSettings',
+        icon: Settings,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/approval',
+        labelKey: 'nav.adminApproval',
+        icon: Shield,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/teams',
+        labelKey: 'nav.adminTeams',
+        icon: Building2,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/invitations',
+        labelKey: 'nav.invitations',
+        icon: Mail,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/running-numbers',
+        labelKey: 'nav.runningNumbers',
+        icon: BarChart3,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/activity-logs',
+        labelKey: 'nav.activityLogs',
+        icon: Activity,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/login-history',
+        labelKey: 'nav.loginHistory',
+        icon: LogIn,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+    ],
+  },
+
+  // ── CEO เห็น invitations ─────────────────────────────────────────────────
+  {
+    href: '/admin/invitations',
+    labelKey: 'nav.invitations',
+    icon: Mail,
+    onlyRoles: ['CEO'],
+    requires: { resource: 'user', action: 'invite', scope: 'ALL' },
+  },
+
+  // ── Permissions (ทุก role เห็น) ──────────────────────────────────────────
+  { href: '/permissions', labelKey: 'nav.permissions', icon: Key },
 ];
 
+// ════════════════════════════════════════════════════════════════════════════
+// ROLE THEMES
+// ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
   brandLabel: string;
   tagline: string;
@@ -111,13 +199,16 @@ interface RoleTheme {
 }
 
 const ROLE_THEMES: Record<string, RoleTheme> = {
-  OFFICER:  { brandLabel: 'WISDOM', tagline: 'Officer',  accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
-  SALES:    { brandLabel: 'WISDOM', tagline: 'Sales',    accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
-  MANAGER:  { brandLabel: 'WISDOM', tagline: 'Manager',  accentColor: '#f59e0b', gradientStops: ['#fbbf24', '#f59e0b', '#f97316', '#ef4444'] },
-  ADMIN:    { brandLabel: 'WISDOM', tagline: 'Admin',    accentColor: '#ef4444', gradientStops: ['#fb7185', '#f43f5e', '#ef4444', '#dc2626'] },
-  CEO:      { brandLabel: 'WISDOM', tagline: 'CEO',      accentColor: '#d4a574', gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'] },
+  OFFICER: { brandLabel: 'WISDOM', tagline: 'Officer',  accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
+  SALES:   { brandLabel: 'WISDOM', tagline: 'Sales',    accentColor: '#06b6d4', gradientStops: ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1'] },
+  MANAGER: { brandLabel: 'WISDOM', tagline: 'Manager',  accentColor: '#f59e0b', gradientStops: ['#fbbf24', '#f59e0b', '#f97316', '#ef4444'] },
+  ADMIN:   { brandLabel: 'WISDOM', tagline: 'Admin',    accentColor: '#ef4444', gradientStops: ['#fb7185', '#f43f5e', '#ef4444', '#dc2626'] },
+  CEO:     { brandLabel: 'WISDOM', tagline: 'CEO',      accentColor: '#d4a574', gradientStops: ['#fde68a', '#d4a574', '#a855f7', '#ec4899'] },
 };
 
+// ════════════════════════════════════════════════════════════════════════════
+// AURORA LOGO
+// ════════════════════════════════════════════════════════════════════════════
 function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size?: number; uniqueId: string }) {
   const gradId = `aurora-${uniqueId}`;
   const [s1, s2, s3, s4] = theme.gradientStops;
@@ -143,14 +234,13 @@ function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// NAV COMPONENTS
+// ════════════════════════════════════════════════════════════════════════════
 interface NavItemViewProps {
-  item: NavItem;
-  pathname: string;
-  collapsed: boolean;
-  theme: RoleTheme;
-  t: (k: string) => string;
-  onMobileClose?: () => void;
-  level?: number;
+  item: NavItem; pathname: string; collapsed: boolean;
+  theme: RoleTheme; t: (k: string) => string;
+  onMobileClose?: () => void; level?: number;
 }
 
 function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
@@ -227,6 +317,9 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// SIDEBAR
+// ════════════════════════════════════════════════════════════════════════════
 interface SidebarProps {
   role?: string;
   mobileOpen?: boolean;
@@ -240,10 +333,15 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const [collapsed, setCollapsed] = useState(false);
   const roleCode = role?.code || initialRole || 'OFFICER';
   const theme = ROLE_THEMES[roleCode] || ROLE_THEMES.OFFICER;
+
   const filterItems = (items: NavItem[]): NavItem[] => {
     return items
       .filter((item) => {
+        // ✅ onlyRoles filter
         if (item.onlyRoles && !item.onlyRoles.includes(roleCode)) return false;
+        // ✅ excludeRoles filter
+        if (item.excludeRoles && item.excludeRoles.includes(roleCode)) return false;
+        // permission filter
         if (!item.requires) return true;
         if (loading) return true;
         if (!permissions || permissions.length === 0) return true;
@@ -276,11 +374,11 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         )}
       </div>
       {!showClose ? (
-        <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:scale-110 relative z-10" aria-label="Toggle sidebar">
+        <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:scale-110 relative z-10">
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       ) : (
-        <button onClick={onMobileClose} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:rotate-90 relative z-10" aria-label="Close menu">
+        <button onClick={onMobileClose} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:rotate-90 relative z-10">
           <X className="h-4 w-4" />
         </button>
       )}

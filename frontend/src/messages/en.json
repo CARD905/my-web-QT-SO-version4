@@ -59,7 +59,17 @@
     "quotationChecklist": "Checklist (Awaiting PO)",
     "specialDiscount": "Special Discount",
     "nav.myTeam": "My Team",
-    "nav.invitations": "Invitations"
+    "nav.invitations": "Invitations",
+    "nav.adminPanel":    "Admin Panel",
+    "nav.adminUsers":    "Manage Users",
+    "nav.adminSettings": "System Settings",
+    "nav.adminApproval": "Approval Authority",
+    "nav.adminTeams":    "Teams & Departments",
+    "nav.runningNumbers":"Running Numbers",
+    "nav.activityLogs":  "Activity Logs",
+    "nav.loginHistory":  "Login History",
+    "nav.approvalQueue": "Approval Queue"
+  
   },
   "login": {
     "title": "Sign In",
