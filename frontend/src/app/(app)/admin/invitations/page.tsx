@@ -316,7 +316,7 @@ function CreateInvitationDialog({
               className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">— เลือก Role —</option>
               {roles
-                .filter((r) => !['ADMIN'].includes(r.code)) // Admin ไม่ควร invite ADMIN อีก
+                .filter((r) => !['ADMIN','CEO'].includes(r.code)) // Admin ไม่ควร invite ADMIN อีก
                 .sort((a, b) => a.level - b.level)
                 .map((r) => (
                   <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
