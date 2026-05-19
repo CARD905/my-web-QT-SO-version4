@@ -48,6 +48,6 @@ export default auth((req: NextRequest & { auth: any }) => {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|invite|login).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|invite|invitations|login).*)',
   ],
 };

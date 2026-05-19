@@ -106,7 +106,7 @@ export default function AdminInvitationsPage() {
   };
 
   const copyUrl = (token: string) => {
-    const url = `${window.location.origin}/invite/${token}`;
+    const url = `${window.location.origin}/invitations/${token}`;
     navigator.clipboard.writeText(url);
     toast.success('Link copied to clipboard');
   };

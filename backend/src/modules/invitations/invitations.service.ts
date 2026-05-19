@@ -315,6 +315,6 @@ export const invitationsService = {
   // ============================================================
   getInvitationUrl(token: string): string {
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    return `${baseUrl}/invite/${token}`;
+    return `${baseUrl}/invitations/${token}`;
   },
 };
