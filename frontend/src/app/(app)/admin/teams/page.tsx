@@ -32,7 +32,7 @@ interface UserItem {
 
 interface TeamData {
   id: string; name: string; code?: string;
-  manager?: { id: string; name: string; managerLevel?: string } | null;
+  manager?: UserItem | null;
   _count?: { members: number };
   members?: UserItem[];
 }
@@ -65,25 +65,41 @@ function TeamNode({
   managers: UserItem[];
   officers: UserItem[];           // officers ที่ยังไม่มีทีม หรือทุก officer
   allTeams: { id: string; name: string; deptName: string }[];
-  onAssignManager: (teamId: string, managerId: string) => Promise<void>;
+  onAssignManager: (teamId: string, managerId: string, managerLevel: ManagerLevel) => Promise<void>;
   onEditLimit: (user: UserItem) => void;
   onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
   onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
   onRemoveUser: (userId: string, userName: string) => Promise<void>;
 }) {
-  const [selectedMgr, setSelectedMgr] = useState(team.manager?.id ?? '');
+  const managerByLevel = (['DIVISION', 'DEPARTMENT', 'SECTION'] as ManagerLevel[]).reduce((acc, level) => {
+    acc[level] = (team.members ?? []).find((m) => m.role.code === 'MANAGER' && m.managerLevel === level) ?? null;
+    if (!acc[level] && team.manager?.managerLevel === level) acc[level] = team.manager;
+    return acc;
+  }, {} as Record<ManagerLevel, UserItem | null>);
+  const [selectedManagers, setSelectedManagers] = useState<Record<ManagerLevel, string>>({
+    DIVISION: managerByLevel.DIVISION?.id ?? '',
+    DEPARTMENT: managerByLevel.DEPARTMENT?.id ?? '',
+    SECTION: managerByLevel.SECTION?.id ?? '',
+  });
   const [saving,        setSaving]     = useState(false);
   const [expanded,      setExpanded]   = useState(true);
   const [showAssignOfficer, setShowAssignOfficer] = useState(false);
   const [moveTarget,    setMoveTarget] = useState<UserItem | null>(null);
   const [officerSearch, setOfficerSearch] = useState('');
 
-  const mgrUser = managers.find((m) => m.id === selectedMgr);
+  useEffect(() => {
+    setSelectedManagers({
+      DIVISION: managerByLevel.DIVISION?.id ?? '',
+      DEPARTMENT: managerByLevel.DEPARTMENT?.id ?? '',
+      SECTION: managerByLevel.SECTION?.id ?? '',
+    });
+  }, [managerByLevel.DIVISION?.id, managerByLevel.DEPARTMENT?.id, managerByLevel.SECTION?.id]);
 
-  const handleAssign = async () => {
-    if (!selectedMgr || selectedMgr === team.manager?.id) return;
+  const handleAssign = async (level: ManagerLevel) => {
+    const selectedMgr = selectedManagers[level];
+    if (!selectedMgr || selectedMgr === managerByLevel[level]?.id) return;
     setSaving(true);
-    try { await onAssignManager(team.id, selectedMgr); }
+    try { await onAssignManager(team.id, selectedMgr, level); }
     finally { setSaving(false); }
   };
 
@@ -99,7 +115,7 @@ function TeamNode({
 
   // Members ในทีมนี้ (ยกเว้น manager)
   const teamOfficers = (team.members ?? []).filter(
-    (m) => m.id !== team.manager?.id,
+    (m) => m.role.code === 'OFFICER' || m.role.code === 'SALES',
   );
 
   return (
@@ -121,19 +137,15 @@ function TeamNode({
             </Badge>
           </div>
 
-          {/* Current Manager */}
-          {team.manager && (
-            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-              <Crown className="h-3 w-3 text-amber-500" />
-              <span className="text-xs text-muted-foreground">Manager:</span>
-              <span className="text-xs font-medium">{team.manager.name}</span>
-              {team.manager.managerLevel && (
-                <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[team.manager.managerLevel as ManagerLevel] ?? ''}`}>
-                  {LEVEL_LABEL[team.manager.managerLevel as ManagerLevel] ?? team.manager.managerLevel}
-                </Badge>
-              )}
-            </div>
-          )}
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            <Crown className="h-3 w-3 text-amber-500" />
+            <span className="text-xs text-muted-foreground">Managers:</span>
+            {(['DIVISION', 'DEPARTMENT', 'SECTION'] as ManagerLevel[]).map((level) => (
+              <Badge key={level} variant="outline" className={`text-[9px] ${managerByLevel[level] ? LEVEL_COLOR[level] : ''}`}>
+                {LEVEL_LABEL[level]}: {managerByLevel[level]?.name ?? 'ว่าง'}
+              </Badge>
+            ))}
+          </div>
         </div>
 
         {/* Add Officer button */}
@@ -147,37 +159,60 @@ function TeamNode({
         <div className="border-t px-3 pb-3 space-y-3">
 
           {/* ── Assign Manager ── */}
-          <div className="flex items-center gap-2 flex-wrap pt-2">
-            <span className="text-[11px] text-muted-foreground font-medium shrink-0">Assign Manager:</span>
-            <select value={selectedMgr} onChange={(e) => setSelectedMgr(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-[160px]">
-              <option value="">— เลือก Manager —</option>
-              {managers.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.managerLevel ? LEVEL_LABEL[m.managerLevel] ?? m.managerLevel : 'Manager'})
-                </option>
-              ))}
-            </select>
-            <Button size="sm" className="h-8 text-xs" onClick={handleAssign}
-              disabled={saving || !selectedMgr || selectedMgr === team.manager?.id}>
-              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              Assign
-            </Button>
+          <div className="grid gap-2 pt-2">
+            {(['DIVISION', 'DEPARTMENT', 'SECTION'] as ManagerLevel[]).map((level) => {
+              const currentManager = managerByLevel[level];
+              const selectedManagerId = selectedManagers[level];
+              const selectedManager = managers.find((m) => m.id === selectedManagerId);
+              const limitUser = selectedManager ?? currentManager;
+              return (
+                <div key={level} className="rounded-lg border bg-background p-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[level]}`}>{LEVEL_LABEL[level]}</Badge>
+                    <select
+                      value={selectedManagerId}
+                      onChange={(e) => setSelectedManagers((prev) => ({ ...prev, [level]: e.target.value }))}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-[170px]"
+                    >
+                      <option value="">เลือก Manager</option>
+                      {managers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}{m.team ? ` - ${m.team.name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <Button size="sm" className="h-8 text-xs" onClick={() => handleAssign(level)}
+                      disabled={saving || !selectedManagerId || selectedManagerId === currentManager?.id}>
+                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Assign
+                    </Button>
+                    {currentManager && (
+                      <>
+                        <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setMoveTarget(currentManager)}>
+                          <ArrowRightLeft className="h-3 w-3" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8 text-xs text-red-600" onClick={() => onRemoveUser(currentManager.id, currentManager.name)}>
+                          <UserMinus className="h-3 w-3" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {limitUser && (
+                    <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span>วงเงิน:</span>
+                      <span className="font-semibold text-foreground">
+                        {limitUser.approvalLimit ? formatMoney(Number(limitUser.approvalLimit)) : 'ไม่จำกัด'}
+                      </span>
+                      <button onClick={() => onEditLimit(limitUser)}
+                        className="text-primary hover:underline flex items-center gap-0.5">
+                        <Edit2 className="h-2.5 w-2.5" />แก้ไข
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {/* Limit ของ Manager ที่เลือก */}
-          {mgrUser && (
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground">วงเงิน Manager:</span>
-              <span className="text-[10px] font-semibold">
-                {mgrUser.approvalLimit ? formatMoney(Number(mgrUser.approvalLimit)) : 'ไม่จำกัด'}
-              </span>
-              <button onClick={() => onEditLimit(mgrUser)}
-                className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-                <Edit2 className="h-2.5 w-2.5" />แก้ไข
-              </button>
-            </div>
-          )}
 
           {/* ── Officer Members ── */}
           <div>
@@ -351,7 +386,7 @@ function OrgNode({
   managers: UserItem[];
   officers: UserItem[];
   allTeams: { id: string; name: string; deptName: string }[];
-  onAssignManager: (teamId: string, managerId: string) => Promise<void>;
+  onAssignManager: (teamId: string, managerId: string, managerLevel: ManagerLevel) => Promise<void>;
   onEditLimit: (user: UserItem) => void;
   onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
   onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
@@ -430,15 +465,19 @@ export default function AdminTeamsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [deptRes, mgrRes, offRes] = await Promise.all([
+      const [deptRes, mgrRes, offRes, salesRes] = await Promise.all([
         api.get<any>('/admin/departments'),
         api.get<any>('/admin/users?roleCode=MANAGER&limit=100'),
         api.get<any>('/admin/users?roleCode=OFFICER&limit=200'),
+        api.get<any>('/admin/users?roleCode=SALES&limit=200'),
       ]);
 
       const deptsRaw: DeptData[] = deptRes.data.data ?? [];
       const allManagers: UserItem[] = mgrRes.data.data ?? [];
-      const allOfficers: UserItem[] = offRes.data.data ?? [];
+      const allOfficers: UserItem[] = [
+        ...(offRes.data.data ?? []),
+        ...(salesRes.data.data ?? []),
+      ];
 
       // โหลด members ของแต่ละทีม
       const allTeamIds = deptsRaw.flatMap(d => d.teams.map(t => t.id));
@@ -472,8 +511,8 @@ export default function AdminTeamsPage() {
   useEffect(() => { load(); }, [load]);
 
   // ─── Handlers ────────────────────────────────────────────
-  const handleAssignManager = async (teamId: string, managerId: string) => {
-    await api.patch(`/admin/teams/${teamId}/manager`, { managerId });
+  const handleAssignManager = async (teamId: string, managerId: string, managerLevel: ManagerLevel) => {
+    await api.patch(`/admin/teams/${teamId}/manager`, { managerId, managerLevel });
     toast.success('Assign manager เรียบร้อย');
     await load();
   };

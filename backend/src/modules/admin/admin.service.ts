@@ -14,6 +14,74 @@ export interface AdminUser {
 
 // ✅ Role ที่ได้รับการปกป้อง — มีได้เพียง 1 account และห้ามปิด/เปลี่ยน
 const PROTECTED_ROLES = ['ADMIN', 'CEO'];
+const MANAGER_LEVELS = ['DIVISION', 'DEPARTMENT', 'SECTION'] as const;
+type ManagerLevel = (typeof MANAGER_LEVELS)[number];
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
+function getParentManagerLevel(level: ManagerLevel) {
+  if (level === 'SECTION') return 'DEPARTMENT';
+  if (level === 'DEPARTMENT') return 'DIVISION';
+  return null;
+}
+
+async function getTeamApproverId(teamId: string, tx: DbClient = prisma) {
+  const managers = await tx.user.findMany({
+    where: {
+      teamId,
+      deletedAt: null,
+      isActive: true,
+      role: { code: 'MANAGER' },
+      managerLevel: { in: ['SECTION', 'DEPARTMENT', 'DIVISION'] },
+    },
+    select: { id: true, managerLevel: true },
+  });
+  return (
+    managers.find((manager) => manager.managerLevel === 'SECTION')?.id ??
+    managers.find((manager) => manager.managerLevel === 'DEPARTMENT')?.id ??
+    managers.find((manager) => manager.managerLevel === 'DIVISION')?.id ??
+    null
+  );
+}
+
+async function syncTeamReporting(teamId: string, tx: DbClient = prisma) {
+  const managers = await tx.user.findMany({
+    where: { teamId, deletedAt: null, role: { code: 'MANAGER' } },
+    select: { id: true, managerLevel: true },
+  });
+
+  const managerByLevel = new Map(managers.map((manager) => [manager.managerLevel, manager.id]));
+  const ceo = await tx.user.findFirst({
+    where: { role: { code: 'CEO' }, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+
+  for (const manager of managers) {
+    if (!manager.managerLevel) continue;
+    const parentLevel = getParentManagerLevel(manager.managerLevel as ManagerLevel);
+    const reportsToId = parentLevel ? managerByLevel.get(parentLevel) ?? ceo?.id ?? null : ceo?.id ?? null;
+    await tx.user.update({
+      where: { id: manager.id },
+      data: { reportsToId },
+    });
+  }
+
+  const officerApproverId =
+    managerByLevel.get('SECTION') ?? managerByLevel.get('DEPARTMENT') ?? managerByLevel.get('DIVISION') ?? ceo?.id ?? null;
+
+  await tx.user.updateMany({
+    where: {
+      teamId,
+      deletedAt: null,
+      role: { code: { in: ['OFFICER', 'SALES'] } },
+    },
+    data: { reportsToId: officerApproverId },
+  });
+
+  await tx.team.update({
+    where: { id: teamId },
+    data: { managerId: managerByLevel.get('SECTION') ?? managerByLevel.get('DEPARTMENT') ?? managerByLevel.get('DIVISION') ?? null },
+  });
+}
 
 export const adminService = {
   // ============================================================
@@ -87,7 +155,33 @@ export const adminService = {
         teams: {
           where: { deletedAt: null },
           include: {
-            manager: { select: { id: true, name: true, managerLevel: true, approvalLimit: true } },
+            manager: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                approvalLimit: true,
+                managerLevel: true,
+                isActive: true,
+                role: { select: { code: true, nameTh: true } },
+                team: { select: { id: true, name: true } },
+              },
+            },
+            members: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                approvalLimit: true,
+                managerLevel: true,
+                isActive: true,
+                role: { select: { code: true, nameTh: true } },
+                team: { select: { id: true, name: true } },
+                reportsTo: { select: { id: true, name: true } },
+              },
+              orderBy: [{ role: { level: 'asc' } }, { name: 'asc' }],
+            },
             _count: { select: { members: true } },
           },
         },
@@ -126,7 +220,7 @@ export const adminService = {
     return team;
   },
 
-  async assignTeamManager(teamId: string, managerId: string, currentUser: AdminUser, req?: Request) {
+  async assignTeamManager(teamId: string, managerId: string, currentUser: AdminUser, req?: Request, managerLevel?: ManagerLevel) {
     const [team, manager] = await Promise.all([
       prisma.team.findUnique({ where: { id: teamId } }),
       prisma.user.findFirst({ where: { id: managerId, deletedAt: null }, include: { role: true } }),
@@ -136,11 +230,133 @@ export const adminService = {
     if (manager.role.code !== 'MANAGER') {
       throw new AppError(400, 'INVALID_ROLE', 'User must have MANAGER role');
     }
-    const updated = await prisma.team.update({ where: { id: teamId }, data: { managerId } });
+
+    const level = managerLevel ?? (manager.managerLevel as ManagerLevel | null);
+    if (!level || !MANAGER_LEVELS.includes(level)) {
+      throw new AppError(400, 'MANAGER_LEVEL_REQUIRED', 'Manager level is required');
+    }
+
+    const conflictingManager = await prisma.user.findFirst({
+      where: {
+        id: { not: managerId },
+        teamId,
+        deletedAt: null,
+        role: { code: 'MANAGER' },
+        managerLevel: level,
+      },
+      select: { id: true, name: true },
+    });
+    if (conflictingManager) {
+      throw new AppError(409, 'TEAM_MANAGER_LEVEL_EXISTS', `${level} Manager already assigned to ${team.name}`);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const oldTeamId = manager.teamId;
+      const user = await tx.user.update({
+        where: { id: managerId },
+        data: { teamId, managerLevel: level },
+      });
+
+      await syncTeamReporting(teamId, tx);
+      if (oldTeamId && oldTeamId !== teamId) {
+        await syncTeamReporting(oldTeamId, tx);
+      }
+
+      return tx.team.findUnique({
+        where: { id: teamId },
+        include: {
+          manager: { select: { id: true, name: true, managerLevel: true } },
+          members: {
+            where: { deletedAt: null },
+            select: {
+              id: true, name: true, email: true, approvalLimit: true, managerLevel: true, isActive: true,
+              role: { select: { code: true, nameTh: true } },
+              team: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }) ?? user;
+    });
+
     await logActivity(prisma, {
       userId: currentUser.id, action: 'team.assignManager',
       entityType: 'Team', entityId: teamId,
-      description: `Assigned ${manager.name} as manager of ${team.name}`, req,
+      description: `Assigned ${manager.name} as ${level} manager of ${team.name}`, req,
+    });
+    return updated;
+  },
+
+  async assignUserToTeam(userId: string, teamId: string | null, currentUser: AdminUser, req?: Request) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: { role: true, team: true },
+    });
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+    if (!['OFFICER', 'SALES', 'MANAGER'].includes(user.role.code)) {
+      throw new AppError(400, 'INVALID_ROLE', 'Only managers and officers can be assigned to a team');
+    }
+
+    const previousTeamId = user.teamId;
+    if (teamId) {
+      const team = await prisma.team.findFirst({ where: { id: teamId, deletedAt: null } });
+      if (!team) throw new AppError(404, 'TEAM_NOT_FOUND', 'Team not found');
+
+      if (user.role.code === 'MANAGER') {
+        if (!user.managerLevel || !MANAGER_LEVELS.includes(user.managerLevel as ManagerLevel)) {
+          throw new AppError(400, 'MANAGER_LEVEL_REQUIRED', 'Manager level is required before assigning to a team');
+        }
+
+        const conflict = await prisma.user.findFirst({
+          where: {
+            id: { not: userId },
+            teamId,
+            deletedAt: null,
+            role: { code: 'MANAGER' },
+            managerLevel: user.managerLevel,
+          },
+          select: { id: true, name: true },
+        });
+        if (conflict) {
+          throw new AppError(409, 'TEAM_MANAGER_LEVEL_EXISTS', `${user.managerLevel} Manager already assigned to ${team.name}`);
+        }
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const reportsToId = teamId && user.role.code !== 'MANAGER'
+        ? await getTeamApproverId(teamId, tx)
+        : null;
+
+      const data: Prisma.UserUpdateInput = {
+        team: teamId ? { connect: { id: teamId } } : { disconnect: true },
+        reportsTo: reportsToId ? { connect: { id: reportsToId } } : { disconnect: true },
+      };
+
+      const next = await tx.user.update({
+        where: { id: userId },
+        data,
+        include: {
+          role: { select: { code: true, nameTh: true } },
+          team: { select: { id: true, name: true } },
+          reportsTo: { select: { id: true, name: true } },
+        },
+      });
+
+      if (teamId) await syncTeamReporting(teamId, tx);
+      if (previousTeamId && previousTeamId !== teamId) await syncTeamReporting(previousTeamId, tx);
+
+      return next;
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: teamId ? 'team.assignUser' : 'team.removeUser',
+      entityType: 'User',
+      entityId: userId,
+      description: teamId
+        ? `Assigned ${user.name} to team ${teamId}`
+        : `Removed ${user.name} from team ${previousTeamId ?? '-'}`,
+      req,
     });
     return updated;
   },

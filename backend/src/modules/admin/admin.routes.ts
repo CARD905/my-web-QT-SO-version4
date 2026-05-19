@@ -11,7 +11,6 @@ import { asyncHandler } from '../../middleware/error';
 import { AppError, success, created } from '../../utils/response';
 import { validate } from '../../middleware/validate';
 import { adminService } from './admin.service';
-import { prisma } from '../../config/prisma';
 
 // ── ดึง sub-routers เดิมมาใช้ต่อ ────────────────────────────────────────────
 import usersAdminRoutes from './users-admin/users-admin.routes';
@@ -167,8 +166,8 @@ router.patch('/teams/:teamId/manager',
   requireAnyPermission(['user', 'update', 'ALL']),
   asyncHandler(async (req, res) => {
     const user = adminOnly(req);
-    const { managerId } = req.body as { managerId: string };
-    const data = await adminService.assignTeamManager(req.params.teamId, managerId, user, req);
+    const { managerId, managerLevel } = req.body as { managerId: string; managerLevel?: 'DIVISION' | 'DEPARTMENT' | 'SECTION' };
+    const data = await adminService.assignTeamManager(req.params.teamId, managerId, user, req, managerLevel);
     return success(res, data, 'Team manager assigned');
   }),
 );
@@ -217,11 +216,8 @@ router.patch('/document-counters',
 router.patch('/users/:userId/team', requireAnyPermission(['user', 'update', 'ALL']),
   asyncHandler(async (req, res) => {
     const user = adminOnly(req);
-    const { teamId } = req.body;
-    const data = await prisma.user.update({
-      where: { id: req.params.userId },
-      data: { teamId: teamId ?? null },
-    });
+    const { teamId } = req.body as { teamId?: string | null };
+    const data = await adminService.assignUserToTeam(req.params.userId, teamId ?? null, user, req);
     return success(res, data, teamId ? 'Assigned to team' : 'Removed from team');
   }),
 );

@@ -17,8 +17,14 @@ router.use(requireRole('MANAGER', 'ADMIN', 'CEO'));
 router.get('/my-team', asyncHandler(async (req, res) => {
   const user = req.user as { id: string; roleCode?: string };
 
+  const manager = await prisma.user.findFirst({
+    where: { id: user.id, deletedAt: null },
+    select: { teamId: true },
+  });
+  if (!manager?.teamId) throw new AppError(404, 'NO_TEAM', 'เธเธธเธ“เธขเธฑเธเนเธกเนเธกเธตเธ—เธตเธก เธเธฃเธธเธ“เธฒเธ•เธดเธ”เธ•เนเธญ Admin');
+
   const team = await prisma.team.findFirst({
-    where: { managerId: user.id, deletedAt: null },
+    where: { id: manager.teamId, deletedAt: null },
     include: {
       members: {
         where: {
@@ -55,7 +61,11 @@ router.patch('/team-members/:id/promote-lead', asyncHandler(async (req, res) => 
     },
   });
   if (!member) throw new AppError(404, 'NOT_FOUND', 'ไม่พบ User');
-  if (member.team?.managerId !== managerId) {
+  const manager = await prisma.user.findFirst({
+    where: { id: managerId, deletedAt: null },
+    select: { teamId: true },
+  });
+  if (!manager?.teamId || member.teamId !== manager.teamId) {
     throw new AppError(403, 'FORBIDDEN', 'User นี้ไม่ได้อยู่ในทีมของคุณ');
   }
   if (member.role?.code !== 'OFFICER') {
@@ -90,7 +100,11 @@ router.patch('/team-members/:id/demote-lead', asyncHandler(async (req, res) => {
     include: { team: true },
   });
   if (!member) throw new AppError(404, 'NOT_FOUND', 'ไม่พบ User');
-  if (member.team?.managerId !== managerId) {
+  const manager = await prisma.user.findFirst({
+    where: { id: managerId, deletedAt: null },
+    select: { teamId: true },
+  });
+  if (!manager?.teamId || member.teamId !== manager.teamId) {
     throw new AppError(403, 'FORBIDDEN', 'User นี้ไม่ได้อยู่ในทีมของคุณ');
   }
 
