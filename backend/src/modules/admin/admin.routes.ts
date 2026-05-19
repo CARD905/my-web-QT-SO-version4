@@ -214,5 +214,16 @@ router.patch('/document-counters',
     return success(res, data, 'Counter reset successful');
   }),
 );
+router.patch('/users/:userId/team', requireAnyPermission(['user', 'update', 'ALL']),
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    const { teamId } = req.body;
+    const data = await prisma.user.update({
+      where: { id: req.params.userId },
+      data: { teamId: teamId ?? null },
+    });
+    return success(res, data, teamId ? 'Assigned to team' : 'Removed from team');
+  }),
+);
 
 export default router;

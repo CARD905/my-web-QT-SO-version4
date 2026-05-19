@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Building2, Plus, ChevronDown, ChevronRight, Users,
-  Shield, Edit2, Loader2, RefreshCw, Crown, X, Check,
+  Shield, Edit2, Loader2, RefreshCw, Crown, Check,
+  UserPlus, UserMinus, ArrowRightLeft, Trash2, Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,57 +20,347 @@ import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { formatMoney } from '@/lib/utils';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface TeamMember {
+// ─── Types ───────────────────────────────────────────────────
+interface UserItem {
   id: string; name: string; email: string;
   approvalLimit: string | null;
   managerLevel: 'DIVISION' | 'DEPARTMENT' | 'SECTION' | null;
   role: { code: string; nameTh: string };
+  team?: { id: string; name: string } | null;
   isActive: boolean;
 }
 
 interface TeamData {
-  id: string; name: string; code?: string; description?: string;
+  id: string; name: string; code?: string;
   manager?: { id: string; name: string; managerLevel?: string } | null;
   _count?: { members: number };
+  members?: UserItem[];
 }
 
 interface DeptData {
-  id: string; name: string; code: string; description?: string;
+  id: string; name: string; code: string;
   teams: TeamData[];
 }
 
 type ManagerLevel = 'DIVISION' | 'DEPARTMENT' | 'SECTION';
 
 const LEVEL_COLOR: Record<ManagerLevel, string> = {
-  DIVISION:   'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300',
-  DEPARTMENT: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300',
-  SECTION:    'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300',
+  DIVISION:   'bg-purple-100 text-purple-700 border-purple-300',
+  DEPARTMENT: 'bg-blue-100 text-blue-700 border-blue-300',
+  SECTION:    'bg-emerald-100 text-emerald-700 border-emerald-300',
 };
-
 const LEVEL_LABEL: Record<ManagerLevel, string> = {
   DIVISION:   'Division Manager',
   DEPARTMENT: 'Department Manager',
   SECTION:    'Section Manager',
 };
 
-// ─── OrgNode — แสดง 1 department พร้อม teams ────────────────────────────────
+// ─── TeamNode ────────────────────────────────────────────────
+function TeamNode({
+  team, managers, officers, allTeams,
+  onAssignManager, onEditLimit,
+  onAssignOfficer, onMoveUser, onRemoveUser,
+}: {
+  team: TeamData;
+  managers: UserItem[];
+  officers: UserItem[];           // officers ที่ยังไม่มีทีม หรือทุก officer
+  allTeams: { id: string; name: string; deptName: string }[];
+  onAssignManager: (teamId: string, managerId: string) => Promise<void>;
+  onEditLimit: (user: UserItem) => void;
+  onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
+  onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
+  onRemoveUser: (userId: string, userName: string) => Promise<void>;
+}) {
+  const [selectedMgr, setSelectedMgr] = useState(team.manager?.id ?? '');
+  const [saving,        setSaving]     = useState(false);
+  const [expanded,      setExpanded]   = useState(true);
+  const [showAssignOfficer, setShowAssignOfficer] = useState(false);
+  const [moveTarget,    setMoveTarget] = useState<UserItem | null>(null);
+  const [officerSearch, setOfficerSearch] = useState('');
+
+  const mgrUser = managers.find((m) => m.id === selectedMgr);
+
+  const handleAssign = async () => {
+    if (!selectedMgr || selectedMgr === team.manager?.id) return;
+    setSaving(true);
+    try { await onAssignManager(team.id, selectedMgr); }
+    finally { setSaving(false); }
+  };
+
+  // Officers ที่ยังไม่ได้อยู่ในทีมนี้ (สำหรับ assign)
+  const availableOfficers = officers.filter(
+    (o) => o.role.code === 'OFFICER' || o.role.code === 'SALES',
+  ).filter((o) => o.team?.id !== team.id);
+
+  const filteredAvailable = availableOfficers.filter(
+    (o) => o.name.toLowerCase().includes(officerSearch.toLowerCase()) ||
+           o.email.toLowerCase().includes(officerSearch.toLowerCase()),
+  );
+
+  // Members ในทีมนี้ (ยกเว้น manager)
+  const teamOfficers = (team.members ?? []).filter(
+    (m) => m.id !== team.manager?.id,
+  );
+
+  return (
+    <div className="rounded-lg border bg-muted/10 overflow-hidden">
+      {/* Team header */}
+      <div className="p-3 flex items-start gap-3 flex-wrap">
+        <button onClick={() => setExpanded(v => !v)} className="mt-1 shrink-0">
+          {expanded
+            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-sm font-semibold">{team.name}</span>
+            {team.code && <span className="text-[10px] text-muted-foreground font-mono">{team.code}</span>}
+            <Badge variant="outline" className="text-[9px]">
+              {teamOfficers.length} officer{teamOfficers.length !== 1 ? 's' : ''}
+            </Badge>
+          </div>
+
+          {/* Current Manager */}
+          {team.manager && (
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <Crown className="h-3 w-3 text-amber-500" />
+              <span className="text-xs text-muted-foreground">Manager:</span>
+              <span className="text-xs font-medium">{team.manager.name}</span>
+              {team.manager.managerLevel && (
+                <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[team.manager.managerLevel as ManagerLevel] ?? ''}`}>
+                  {LEVEL_LABEL[team.manager.managerLevel as ManagerLevel] ?? team.manager.managerLevel}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add Officer button */}
+        <Button size="sm" variant="outline" className="h-7 text-xs shrink-0"
+          onClick={() => setShowAssignOfficer(true)}>
+          <UserPlus className="h-3 w-3" />เพิ่ม Officer
+        </Button>
+      </div>
+
+      {expanded && (
+        <div className="border-t px-3 pb-3 space-y-3">
+
+          {/* ── Assign Manager ── */}
+          <div className="flex items-center gap-2 flex-wrap pt-2">
+            <span className="text-[11px] text-muted-foreground font-medium shrink-0">Assign Manager:</span>
+            <select value={selectedMgr} onChange={(e) => setSelectedMgr(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-[160px]">
+              <option value="">— เลือก Manager —</option>
+              {managers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.managerLevel ? LEVEL_LABEL[m.managerLevel] ?? m.managerLevel : 'Manager'})
+                </option>
+              ))}
+            </select>
+            <Button size="sm" className="h-8 text-xs" onClick={handleAssign}
+              disabled={saving || !selectedMgr || selectedMgr === team.manager?.id}>
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              Assign
+            </Button>
+          </div>
+
+          {/* Limit ของ Manager ที่เลือก */}
+          {mgrUser && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-muted-foreground">วงเงิน Manager:</span>
+              <span className="text-[10px] font-semibold">
+                {mgrUser.approvalLimit ? formatMoney(Number(mgrUser.approvalLimit)) : 'ไม่จำกัด'}
+              </span>
+              <button onClick={() => onEditLimit(mgrUser)}
+                className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+                <Edit2 className="h-2.5 w-2.5" />แก้ไข
+              </button>
+            </div>
+          )}
+
+          {/* ── Officer Members ── */}
+          <div>
+            <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 uppercase tracking-wide">
+              Officers ในทีม ({teamOfficers.length})
+            </p>
+            {teamOfficers.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground italic py-2">ยังไม่มี Officer ในทีมนี้</p>
+            ) : (
+              <div className="space-y-1.5">
+                {teamOfficers.map((officer) => (
+                  <div key={officer.id} className="flex items-center gap-2 p-2 rounded-lg bg-background border group">
+                    <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${officer.isActive ? 'bg-blue-500' : 'bg-slate-300'}`}>
+                      {officer.name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{officer.name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{officer.email}</p>
+                    </div>
+                    {!officer.isActive && (
+                      <Badge variant="outline" className="text-[9px] bg-red-50 text-red-600 border-red-200 shrink-0">Inactive</Badge>
+                    )}
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        onClick={() => setMoveTarget(officer)}
+                        className="h-6 w-6 rounded flex items-center justify-center hover:bg-blue-50 text-blue-600 transition-colors"
+                        title="ย้ายทีม">
+                        <ArrowRightLeft className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => onRemoveUser(officer.id, officer.name)}
+                        className="h-6 w-6 rounded flex items-center justify-center hover:bg-red-50 text-red-500 transition-colors"
+                        title="ลบออกจากทีม">
+                        <UserMinus className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Dialog: Assign Officer ── */}
+      <Dialog open={showAssignOfficer} onOpenChange={(o) => { if (!o) { setShowAssignOfficer(false); setOfficerSearch(''); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>เพิ่ม Officer เข้าทีม "{team.name}"</DialogTitle>
+            <DialogDescription>เลือก Officer ที่ต้องการเพิ่มเข้าทีม</DialogDescription>
+          </DialogHeader>
+          <div>
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input value={officerSearch} onChange={(e) => setOfficerSearch(e.target.value)}
+                placeholder="ค้นหาชื่อหรือ email..." className="pl-9 h-9 text-sm" autoFocus />
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1.5">
+              {filteredAvailable.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">
+                  {officerSearch ? 'ไม่พบ Officer ที่ค้นหา' : 'ไม่มี Officer ที่ยังไม่ได้อยู่ในทีมนี้'}
+                </p>
+              ) : (
+                filteredAvailable.map((officer) => (
+                  <div key={officer.id} className="flex items-center gap-3 p-2.5 rounded-lg border hover:bg-muted/30 cursor-pointer transition-colors group"
+                    onClick={async () => {
+                      await onAssignOfficer(officer.id, team.id);
+                      setShowAssignOfficer(false);
+                      setOfficerSearch('');
+                    }}>
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${officer.isActive ? 'bg-blue-500' : 'bg-slate-300'}`}>
+                      {officer.name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{officer.name}</p>
+                      <p className="text-[11px] text-muted-foreground">{officer.email}</p>
+                      {officer.team && (
+                        <p className="text-[10px] text-amber-600 mt-0.5">⚠️ ปัจจุบันอยู่ทีม: {officer.team.name}</p>
+                      )}
+                    </div>
+                    <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 opacity-0 group-hover:opacity-100">
+                      เพิ่ม
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowAssignOfficer(false); setOfficerSearch(''); }}>ปิด</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Move User ── */}
+      {moveTarget && (
+        <Dialog open onOpenChange={(o) => { if (!o) setMoveTarget(null); }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>ย้ายทีม</DialogTitle>
+              <DialogDescription>{moveTarget.name} — ปัจจุบันอยู่ทีม "{team.name}"</DialogDescription>
+            </DialogHeader>
+            <MoveTeamSelect
+              userId={moveTarget.id}
+              currentTeamId={team.id}
+              allTeams={allTeams}
+              onMove={async (newTeamId) => {
+                await onMoveUser(moveTarget.id, newTeamId);
+                setMoveTarget(null);
+              }}
+              onClose={() => setMoveTarget(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ─── MoveTeamSelect Component ─────────────────────────────────
+function MoveTeamSelect({
+  userId, currentTeamId, allTeams, onMove, onClose,
+}: {
+  userId: string;
+  currentTeamId: string;
+  allTeams: { id: string; name: string; deptName: string }[];
+  onMove: (teamId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [moving, setMoving] = useState(false);
+
+  const handleMove = async () => {
+    if (!selectedTeamId) return;
+    setMoving(true);
+    try { await onMove(selectedTeamId); }
+    finally { setMoving(false); }
+  };
+
+  return (
+    <>
+      <div>
+        <Label className="text-xs">ทีมใหม่ <span className="text-destructive">*</span></Label>
+        <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
+          className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+          <option value="">— เลือกทีมที่ต้องการย้ายไป —</option>
+          {allTeams.filter((t) => t.id !== currentTeamId).map((t) => (
+            <option key={t.id} value={t.id}>{t.deptName} → {t.name}</option>
+          ))}
+        </select>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={moving}>ยกเลิก</Button>
+        <Button onClick={handleMove} disabled={moving || !selectedTeamId} className="bg-blue-600 hover:bg-blue-700">
+          {moving && <Loader2 className="h-4 w-4 animate-spin" />}
+          <ArrowRightLeft className="h-4 w-4" />ย้ายทีม
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ─── OrgNode ─────────────────────────────────────────────────
 function OrgNode({
-  dept,
-  managers,
-  onAssignManager,
-  onEditLimit,
+  dept, managers, officers, allTeams,
+  onAssignManager, onEditLimit,
+  onAssignOfficer, onMoveUser, onRemoveUser,
 }: {
   dept: DeptData;
-  managers: TeamMember[];
-  onAssignManager: (teamId: string, managerId: string) => void;
-  onEditLimit: (user: TeamMember) => void;
+  managers: UserItem[];
+  officers: UserItem[];
+  allTeams: { id: string; name: string; deptName: string }[];
+  onAssignManager: (teamId: string, managerId: string) => Promise<void>;
+  onEditLimit: (user: UserItem) => void;
+  onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
+  onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
+  onRemoveUser: (userId: string, userName: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(true);
 
   return (
     <div className="border rounded-xl overflow-hidden">
-      {/* Department Header */}
       <button onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-3 px-4 py-3 bg-muted/40 hover:bg-muted/60 transition-colors text-left">
         {open ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
@@ -88,8 +379,11 @@ function OrgNode({
           ) : (
             dept.teams.map((team) => (
               <TeamNode
-                key={team.id} team={team} managers={managers}
+                key={team.id} team={team}
+                managers={managers} officers={officers} allTeams={allTeams}
                 onAssignManager={onAssignManager} onEditLimit={onEditLimit}
+                onAssignOfficer={onAssignOfficer}
+                onMoveUser={onMoveUser} onRemoveUser={onRemoveUser}
               />
             ))
           )}
@@ -99,154 +393,119 @@ function OrgNode({
   );
 }
 
-function TeamNode({
-  team, managers, onAssignManager, onEditLimit,
-}: {
-  team: TeamData;
-  managers: TeamMember[];
-  onAssignManager: (teamId: string, managerId: string) => void;
-  onEditLimit: (user: TeamMember) => void;
-}) {
-  const [selectedMgr, setSelectedMgr] = useState(team.manager?.id ?? '');
-  const [saving, setSaving] = useState(false);
-
-  const handleAssign = async () => {
-    if (!selectedMgr || selectedMgr === team.manager?.id) return;
-    setSaving(true);
-    try {
-      await onAssignManager(team.id, selectedMgr);
-    } finally { setSaving(false); }
-  };
-
-  // หา manager user object
-  const mgrUser = managers.find((m) => m.id === selectedMgr);
-
-  return (
-    <div className="rounded-lg border bg-muted/10 p-3">
-      <div className="flex items-start gap-3 flex-wrap">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="text-sm font-medium">{team.name}</span>
-            {team.code && <span className="text-[10px] text-muted-foreground font-mono">{team.code}</span>}
-            {team._count && (
-              <Badge variant="outline" className="text-[9px]">{team._count.members} คน</Badge>
-            )}
-          </div>
-          {team.manager && (
-            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-              <Crown className="h-3 w-3 text-amber-500" />
-              <span className="text-xs text-muted-foreground">หัวหน้าปัจจุบัน:</span>
-              <span className="text-xs font-medium">{team.manager.name}</span>
-              {team.manager.managerLevel && (
-                <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[team.manager.managerLevel as ManagerLevel] ?? ''}`}>
-                  {LEVEL_LABEL[team.manager.managerLevel as ManagerLevel] ?? team.manager.managerLevel}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Assign Manager */}
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <select value={selectedMgr}
-            onChange={(e) => setSelectedMgr(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs min-w-[180px]">
-            <option value="">— เลือก Manager —</option>
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.managerLevel ? LEVEL_LABEL[m.managerLevel] ?? m.managerLevel : 'Manager'})
-              </option>
-            ))}
-          </select>
-          <Button size="sm" className="h-8 text-xs"
-            onClick={handleAssign}
-            disabled={saving || !selectedMgr || selectedMgr === team.manager?.id}>
-            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-            Assign
-          </Button>
-        </div>
-      </div>
-
-      {/* Show selected manager limit */}
-      {mgrUser && (
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-muted-foreground">วงเงินอนุมัติ:</span>
-          <span className="text-[10px] font-semibold">
-            {mgrUser.approvalLimit ? formatMoney(Number(mgrUser.approvalLimit)) : 'ไม่จำกัด'}
-          </span>
-          <button onClick={() => onEditLimit(mgrUser)}
-            className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-            <Edit2 className="h-2.5 w-2.5" />แก้ไข
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Main Page
-// ════════════════════════════════════════════════════════════════════════════
+// ─── Main Page ────────────────────────────────────────────────
 export default function AdminTeamsPage() {
-  const [depts, setDepts] = useState<DeptData[]>([]);
-  const [managers, setManagers] = useState<TeamMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [depts,    setDepts]    = useState<DeptData[]>([]);
+  const [managers, setManagers] = useState<UserItem[]>([]);
+  const [officers, setOfficers] = useState<UserItem[]>([]);
+  const [loading,  setLoading]  = useState(true);
 
-  // Create Department dialog
+  // Create Department
   const [showCreateDept, setShowCreateDept] = useState(false);
   const [deptName, setDeptName] = useState('');
   const [deptCode, setDeptCode] = useState('');
   const [savingDept, setSavingDept] = useState(false);
 
-  // Create Team dialog
+  // Create Team
   const [showCreateTeam, setShowCreateTeam] = useState(false);
-  const [teamName, setTeamName] = useState('');
-  const [teamCode, setTeamCode] = useState('');
+  const [teamName,  setTeamName]  = useState('');
+  const [teamCode,  setTeamCode]  = useState('');
   const [teamDeptId, setTeamDeptId] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
 
-  // Create Manager (Invite) dialog
+  // Invite Manager
   const [showInviteMgr, setShowInviteMgr] = useState(false);
   const [mgrEmail, setMgrEmail] = useState('');
-  const [mgrName, setMgrName] = useState('');
+  const [mgrName,  setMgrName]  = useState('');
   const [mgrLevel, setMgrLevel] = useState<ManagerLevel>('SECTION');
   const [mgrLimit, setMgrLimit] = useState('');
   const [mgrTeamId, setMgrTeamId] = useState('');
   const [savingMgr, setSavingMgr] = useState(false);
 
-  // Edit limit dialog
-  const [editLimitUser, setEditLimitUser] = useState<TeamMember | null>(null);
+  // Edit limit
+  const [editLimitUser, setEditLimitUser] = useState<UserItem | null>(null);
   const [newLimit, setNewLimit] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [deptRes, usersRes] = await Promise.all([
+      const [deptRes, mgrRes, offRes] = await Promise.all([
         api.get<any>('/admin/departments'),
         api.get<any>('/admin/users?roleCode=MANAGER&limit=100'),
+        api.get<any>('/admin/users?roleCode=OFFICER&limit=200'),
       ]);
-      setDepts(deptRes.data.data ?? []);
-      // Filter เฉพาะ MANAGER role
-      const allUsers: TeamMember[] = usersRes.data.data ?? [];
-      setManagers(allUsers);
+
+      const deptsRaw: DeptData[] = deptRes.data.data ?? [];
+      const allManagers: UserItem[] = mgrRes.data.data ?? [];
+      const allOfficers: UserItem[] = offRes.data.data ?? [];
+
+      // โหลด members ของแต่ละทีม
+      const allTeamIds = deptsRaw.flatMap(d => d.teams.map(t => t.id));
+      const membersByTeam: Record<string, UserItem[]> = {};
+
+      await Promise.all(
+        allTeamIds.map(async (teamId) => {
+          try {
+            const res = await api.get<any>(`/admin/users?teamId=${teamId}&limit=100`);
+            membersByTeam[teamId] = res.data.data ?? [];
+          } catch { membersByTeam[teamId] = []; }
+        })
+      );
+
+      // inject members เข้า dept.teams
+      const deptsWithMembers = deptsRaw.map(dept => ({
+        ...dept,
+        teams: dept.teams.map(team => ({
+          ...team,
+          members: membersByTeam[team.id] ?? [],
+        })),
+      }));
+
+      setDepts(deptsWithMembers);
+      setManagers(allManagers);
+      setOfficers(allOfficers);
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // Assign team manager
+  // ─── Handlers ────────────────────────────────────────────
   const handleAssignManager = async (teamId: string, managerId: string) => {
+    await api.patch(`/admin/teams/${teamId}/manager`, { managerId });
+    toast.success('Assign manager เรียบร้อย');
+    await load();
+  };
+
+  // ✅ Assign Officer เข้าทีม
+  const handleAssignOfficer = async (userId: string, teamId: string) => {
     try {
-      await api.patch(`/admin/teams/${teamId}/manager`, { managerId });
-      toast.success('Assign manager เรียบร้อย');
+      await api.patch(`/admin/users/${userId}/team`, { teamId });
+      toast.success('เพิ่ม Officer เข้าทีมเรียบร้อย');
       await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
   };
 
-  // Edit approval limit
+  // ✅ ย้ายทีม
+  const handleMoveUser = async (userId: string, newTeamId: string) => {
+    try {
+      await api.patch(`/admin/users/${userId}/team`, { teamId: newTeamId });
+      toast.success('ย้ายทีมเรียบร้อย');
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); throw err; }
+  };
+
+  // ✅ ลบออกจากทีม
+  const handleRemoveUser = async (userId: string, userName: string) => {
+    if (!confirm(`ลบ ${userName} ออกจากทีม?\nUser จะยังคงอยู่ในระบบแต่ไม่ได้สังกัดทีมใด`)) return;
+    try {
+      await api.patch(`/admin/users/${userId}/team`, { teamId: null });
+      toast.success(`ลบ ${userName} ออกจากทีมเรียบร้อย`);
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+  };
+
   const handleSaveLimit = async () => {
     if (!editLimitUser) return;
     setSavingLimit(true);
@@ -260,7 +519,6 @@ export default function AdminTeamsPage() {
     finally { setSavingLimit(false); }
   };
 
-  // Create Department
   const handleCreateDept = async () => {
     if (!deptName.trim() || !deptCode.trim()) { toast.error('กรุณากรอกชื่อและรหัส'); return; }
     setSavingDept(true);
@@ -273,7 +531,6 @@ export default function AdminTeamsPage() {
     finally { setSavingDept(false); }
   };
 
-  // Create Team
   const handleCreateTeam = async () => {
     if (!teamName.trim() || !teamDeptId) { toast.error('กรุณากรอกชื่อทีมและเลือก Department'); return; }
     setSavingTeam(true);
@@ -290,22 +547,18 @@ export default function AdminTeamsPage() {
     finally { setSavingTeam(false); }
   };
 
-  // Invite Manager
   const handleInviteManager = async () => {
     if (!mgrEmail.trim() || !mgrTeamId) { toast.error('กรุณากรอก Email และเลือก Team'); return; }
     setSavingMgr(true);
     try {
-      // หา role MANAGER id
       const roleRes = await api.get<any>('/admin/users/_roles');
       const roles: any[] = roleRes.data.data ?? [];
       const managerRole = roles.find((r: any) => r.code === 'MANAGER');
       if (!managerRole) throw new Error('ไม่พบ Role MANAGER ในระบบ');
 
       await api.post('/invitations', {
-        email: mgrEmail.trim(),
-        name: mgrName.trim() || undefined,
-        roleId: managerRole.id,
-        teamId: mgrTeamId,
+        email: mgrEmail.trim(), name: mgrName.trim() || undefined,
+        roleId: managerRole.id, teamId: mgrTeamId,
         managerLevel: mgrLevel,
         approvalLimit: mgrLimit ? Number(mgrLimit) : undefined,
         channel: 'MANUAL',
@@ -317,8 +570,12 @@ export default function AdminTeamsPage() {
     finally { setSavingMgr(false); }
   };
 
-  // All teams flat
-  const allTeams = depts.flatMap((d) => d.teams.map((t) => ({ ...t, deptName: d.name })));
+  const allTeams = depts.flatMap((d) => d.teams.map((t) => ({ id: t.id, name: t.name, deptName: d.name })));
+
+  // Officers ที่ไม่มีทีม
+  const unassignedOfficers = officers.filter(
+    (o) => !o.team && (o.role.code === 'OFFICER' || o.role.code === 'SALES'),
+  );
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -328,7 +585,9 @@ export default function AdminTeamsPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Building2 className="h-6 w-6 text-emerald-500" />Teams & Departments
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">จัดการโครงสร้างองค์กร Division → Department → Section → Officer</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            จัดการโครงสร้างองค์กร Division → Department → Section → Officer
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" /></Button>
@@ -339,18 +598,38 @@ export default function AdminTeamsPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap items-center">
         {(Object.entries(LEVEL_LABEL) as [ManagerLevel, string][]).map(([level, label]) => (
-          <Badge key={level} variant="outline" className={`text-[10px] ${LEVEL_COLOR[level]}`}>
-            {label}
-          </Badge>
+          <Badge key={level} variant="outline" className={`text-[10px] ${LEVEL_COLOR[level]}`}>{label}</Badge>
         ))}
-        <span className="text-xs text-muted-foreground self-center">— ระดับ Manager</span>
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <ArrowRightLeft className="h-3 w-3" />Hover officer เพื่อย้ายทีม / ลบออก
+        </span>
       </div>
+
+      {/* Unassigned Officers */}
+      {unassignedOfficers.length > 0 && (
+        <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/50">
+          <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />Officers ที่ยังไม่ได้สังกัดทีม ({unassignedOfficers.length} คน)
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {unassignedOfficers.map((o) => (
+              <div key={o.id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-amber-200 text-xs">
+                <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center text-[9px] font-bold text-blue-600">
+                  {o.name.slice(0, 1)}
+                </div>
+                {o.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Org Chart */}
       {loading ? (
-        <div className="space-y-3">{[0,1,2].map((i) => <Skeleton key={i} className="h-32" />)}</div>
+        <div className="space-y-3">{[0,1,2].map((i) => <Skeleton key={i} className="h-40" />)}</div>
       ) : depts.length === 0 ? (
         <Card><CardContent className="py-16 text-center">
           <Building2 className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
@@ -360,15 +639,20 @@ export default function AdminTeamsPage() {
         <div className="space-y-3">
           {depts.map((dept) => (
             <OrgNode
-              key={dept.id} dept={dept} managers={managers}
-              onAssignManager={handleAssignManager}
-              onEditLimit={(user) => { setEditLimitUser(user); setNewLimit(user.approvalLimit ? String(Number(user.approvalLimit)) : ''); }}
+              key={dept.id} dept={dept}
+              managers={managers} officers={officers} allTeams={allTeams}
+              onAssignManager={handleAssignManager} onEditLimit={(user) => {
+                setEditLimitUser(user);
+                setNewLimit(user.approvalLimit ? String(Math.round(Number(user.approvalLimit))) : '');
+              }}
+              onAssignOfficer={handleAssignOfficer}
+              onMoveUser={handleMoveUser} onRemoveUser={handleRemoveUser}
             />
           ))}
         </div>
       )}
 
-      {/* Managers List */}
+      {/* Managers list */}
       {managers.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -379,7 +663,7 @@ export default function AdminTeamsPage() {
           <CardContent>
             <div className="space-y-2">
               {managers.map((m) => (
-                <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/10 flex-wrap">
+                <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/10 flex-wrap group">
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
                     {m.name.slice(0, 1).toUpperCase()}
                   </div>
@@ -391,6 +675,7 @@ export default function AdminTeamsPage() {
                           {LEVEL_LABEL[m.managerLevel]}
                         </Badge>
                       )}
+                      {m.team && <Badge variant="secondary" className="text-[9px]">{m.team.name}</Badge>}
                       {!m.isActive && <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
                     </div>
                     <div className="text-[10px] text-muted-foreground">{m.email}</div>
@@ -401,7 +686,7 @@ export default function AdminTeamsPage() {
                       {m.approvalLimit ? formatMoney(Number(m.approvalLimit)) : 'ไม่จำกัด'}
                     </span>
                     <Button size="sm" variant="ghost" className="h-7 text-xs"
-                      onClick={() => { setEditLimitUser(m); setNewLimit(m.approvalLimit ? String(Number(m.approvalLimit)) : ''); }}>
+                      onClick={() => { setEditLimitUser(m); setNewLimit(m.approvalLimit ? String(Math.round(Number(m.approvalLimit))) : ''); }}>
                       <Edit2 className="h-3 w-3" />
                     </Button>
                   </div>
@@ -414,7 +699,6 @@ export default function AdminTeamsPage() {
 
       {/* ── Dialogs ── */}
 
-      {/* Create Department */}
       <Dialog open={showCreateDept} onOpenChange={(o) => { if (!o) { setShowCreateDept(false); setDeptName(''); setDeptCode(''); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>สร้าง Department ใหม่</DialogTitle></DialogHeader>
@@ -431,7 +715,6 @@ export default function AdminTeamsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Team */}
       <Dialog open={showCreateTeam} onOpenChange={(o) => { if (!o) { setShowCreateTeam(false); setTeamName(''); setTeamCode(''); setTeamDeptId(''); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>สร้าง Team ใหม่</DialogTitle></DialogHeader>
@@ -456,7 +739,6 @@ export default function AdminTeamsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Invite Manager */}
       <Dialog open={showInviteMgr} onOpenChange={(o) => { if (!o) setShowInviteMgr(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -466,9 +748,9 @@ export default function AdminTeamsPage() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><Label className="text-xs">Email <span className="text-destructive">*</span></Label><Input type="email" value={mgrEmail} onChange={(e) => setMgrEmail(e.target.value)} className="mt-1.5" placeholder="manager@example.com" autoFocus /></div>
-              <div className="col-span-2"><Label className="text-xs">ชื่อ (optional)</Label><Input value={mgrName} onChange={(e) => setMgrName(e.target.value)} className="mt-1.5" placeholder="ชื่อ-นามสกุล" /></div>
+              <div className="col-span-2"><Label className="text-xs">ชื่อ (optional)</Label><Input value={mgrName} onChange={(e) => setMgrName(e.target.value)} className="mt-1.5" /></div>
               <div>
-                <Label className="text-xs">ระดับ Manager <span className="text-destructive">*</span></Label>
+                <Label className="text-xs">ระดับ Manager</Label>
                 <select value={mgrLevel} onChange={(e) => setMgrLevel(e.target.value as ManagerLevel)}
                   className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="DIVISION">Division Manager</option>
@@ -489,10 +771,6 @@ export default function AdminTeamsPage() {
                 </select>
               </div>
             </div>
-            <div className="p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
-              <strong>Approval Flow:</strong> Section Manager → Department Manager → Division Manager → CEO<br />
-              <span className="mt-1 block">ถ้ายอดเกินวงเงิน Manager คนนั้นจะต้อง "ส่งต่อ" ขึ้นไปยังระดับถัดไป</span>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowInviteMgr(false)} disabled={savingMgr}>ยกเลิก</Button>
@@ -503,7 +781,6 @@ export default function AdminTeamsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Approval Limit */}
       {editLimitUser && (
         <Dialog open onOpenChange={(o) => { if (!o) setEditLimitUser(null); }}>
           <DialogContent className="sm:max-w-sm">
