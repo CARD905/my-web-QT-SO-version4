@@ -53,7 +53,7 @@ export const adminService = {
   },
 
   // ============================================================
-  // GET ROLES
+  // GET ROLES / TEAMS
   // ============================================================
   async getRoles() {
     return prisma.role.findMany({
@@ -63,9 +63,6 @@ export const adminService = {
     });
   },
 
-  // ============================================================
-  // GET TEAMS
-  // ============================================================
   async getTeams() {
     return prisma.team.findMany({
       where: { deletedAt: null, isActive: true },
@@ -80,7 +77,7 @@ export const adminService = {
   },
 
   // ============================================================
-  // GET DEPARTMENTS
+  // DEPARTMENTS
   // ============================================================
   async getDepartments() {
     return prisma.department.findMany({
@@ -98,13 +95,9 @@ export const adminService = {
     });
   },
 
-  // ============================================================
-  // CREATE DEPARTMENT
-  // ============================================================
   async createDepartment(data: { name: string; code: string; description?: string }, currentUser: AdminUser, req?: Request) {
     const existing = await prisma.department.findFirst({ where: { code: data.code } });
     if (existing) throw new AppError(409, 'CODE_EXISTS', `Department code "${data.code}" already exists`);
-
     const dept = await prisma.department.create({ data });
     await logActivity(prisma, {
       userId: currentUser.id, action: 'department.create',
@@ -115,17 +108,15 @@ export const adminService = {
   },
 
   // ============================================================
-  // CREATE TEAM
+  // TEAMS
   // ============================================================
   async createTeam(data: { name: string; code?: string; departmentId: string; description?: string }, currentUser: AdminUser, req?: Request) {
     if (data.code) {
       const existing = await prisma.team.findFirst({ where: { code: data.code } });
       if (existing) throw new AppError(409, 'CODE_EXISTS', `Team code "${data.code}" already exists`);
     }
-
     const dept = await prisma.department.findUnique({ where: { id: data.departmentId } });
     if (!dept) throw new AppError(404, 'NOT_FOUND', 'Department not found');
-
     const team = await prisma.team.create({ data: { ...data, code: data.code || null } });
     await logActivity(prisma, {
       userId: currentUser.id, action: 'team.create',
@@ -135,9 +126,6 @@ export const adminService = {
     return team;
   },
 
-  // ============================================================
-  // ASSIGN TEAM MANAGER
-  // ============================================================
   async assignTeamManager(teamId: string, managerId: string, currentUser: AdminUser, req?: Request) {
     const [team, manager] = await Promise.all([
       prisma.team.findUnique({ where: { id: teamId } }),
@@ -146,20 +134,14 @@ export const adminService = {
     if (!team) throw new AppError(404, 'NOT_FOUND', 'Team not found');
     if (!manager) throw new AppError(404, 'NOT_FOUND', 'Manager not found');
     if (manager.role.code !== 'MANAGER') {
-      throw new AppError(400, 'INVALID_ROLE', 'User must have MANAGER role to be assigned as team manager');
+      throw new AppError(400, 'INVALID_ROLE', 'User must have MANAGER role');
     }
-
-    const updated = await prisma.team.update({
-      where: { id: teamId },
-      data: { managerId },
-    });
-
+    const updated = await prisma.team.update({ where: { id: teamId }, data: { managerId } });
     await logActivity(prisma, {
       userId: currentUser.id, action: 'team.assignManager',
       entityType: 'Team', entityId: teamId,
       description: `Assigned ${manager.name} as manager of ${team.name}`, req,
     });
-
     return updated;
   },
 
@@ -200,7 +182,6 @@ export const adminService = {
       entityType: 'User', entityId: userId,
       description: `Changed role of ${user.name}: ${user.role.code} → ${role.code}`, req,
     });
-
     return updated;
   },
 
@@ -214,7 +195,6 @@ export const adminService = {
     });
     if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
-    // ✅ ห้ามปิดตัวเอง
     if (userId === currentUser.id) {
       throw new AppError(400, 'SELF_ACTION', 'Cannot deactivate yourself');
     }
@@ -234,7 +214,6 @@ export const adminService = {
       entityType: 'User', entityId: userId,
       description: `${updated.isActive ? 'Activated' : 'Deactivated'} user ${user.name}`, req,
     });
-
     return updated;
   },
 
@@ -247,7 +226,6 @@ export const adminService = {
 
     const bcrypt = await import('bcrypt');
     const hash = await bcrypt.hash(newPassword, 12);
-
     await prisma.user.update({ where: { id: userId }, data: { password: hash } });
 
     await logActivity(prisma, {
@@ -255,7 +233,6 @@ export const adminService = {
       entityType: 'User', entityId: userId,
       description: `Reset password for ${user.name}`, req,
     });
-
     return { success: true };
   },
 
@@ -278,7 +255,26 @@ export const adminService = {
     });
   },
 
-  async updateApprovalLimit(userId: string, limit: number | null, currentUser: AdminUser, req?: Request) {
+  // ✅ ตรงกับ routes: updateRoleApprovalLimit(roleId, limit, user, req)
+  async updateRoleApprovalLimit(roleId: string, limit: number | null, currentUser: AdminUser, req?: Request) {
+    const role = await prisma.role.findUnique({ where: { id: roleId } });
+    if (!role) throw new AppError(404, 'NOT_FOUND', 'Role not found');
+
+    const updated = await prisma.role.update({
+      where: { id: roleId },
+      data: { defaultApprovalLimit: limit },
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id, action: 'role.updateApprovalLimit',
+      entityType: 'Role', entityId: roleId,
+      description: `Updated default approval limit of role ${role.code}: ${limit ?? 'unlimited'}`, req,
+    });
+    return updated;
+  },
+
+  // ✅ ตรงกับ routes: updateUserApprovalLimit(userId, limit, user, req)
+  async updateUserApprovalLimit(userId: string, limit: number | null, currentUser: AdminUser, req?: Request) {
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       include: { role: true },
@@ -295,7 +291,6 @@ export const adminService = {
       entityType: 'User', entityId: userId,
       description: `Updated approval limit of ${user.name}: ${limit ?? 'unlimited'}`, req,
     });
-
     return updated;
   },
 
@@ -320,7 +315,6 @@ export const adminService = {
       prisma.activityLog.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
       prisma.activityLog.count({ where }),
     ]);
-
     return { data, meta: buildPaginationMeta(total, page, limit) };
   },
 
@@ -331,12 +325,8 @@ export const adminService = {
     const { skip, take, page, limit } = getPaginationParams(query);
     const where: Prisma.LoginHistoryWhereInput = {};
 
-    if (query.search) {
-      where.email = { contains: query.search, mode: 'insensitive' };
-    }
-    if (query.success !== undefined) {
-      where.success = query.success === 'true';
-    }
+    if (query.search) where.email = { contains: query.search, mode: 'insensitive' };
+    if (query.success !== undefined) where.success = query.success === true || query.success === 'true';
 
     const [data, total] = await Promise.all([
       prisma.loginHistory.findMany({
@@ -346,38 +336,56 @@ export const adminService = {
       }),
       prisma.loginHistory.count({ where }),
     ]);
-
     return { data, meta: buildPaginationMeta(total, page, limit) };
   },
 
   // ============================================================
   // SYSTEM SETTINGS
   // ============================================================
-  async getSettings(group?: string) {
+  // ✅ ตรงกับ routes: getSystemSettings()
+  async getSystemSettings(group?: string) {
     return prisma.systemSetting.findMany({
       where: group ? { group } : undefined,
       orderBy: [{ group: 'asc' }, { key: 'asc' }],
     });
   },
 
-  async updateSetting(key: string, value: string, currentUser: AdminUser, req?: Request) {
+  // ✅ ตรงกับ routes: bulkUpdateSettings(updates, user, req)
+  async bulkUpdateSettings(updates: { key: string; value: string }[], currentUser: AdminUser, req?: Request) {
+    const results = [];
+    for (const { key, value } of updates) {
+      const setting = await prisma.systemSetting.upsert({
+        where: { key },
+        update: { value, updatedById: currentUser.id },
+        create: { key, value, label: key, updatedById: currentUser.id },
+      });
+      results.push(setting);
+    }
+    await logActivity(prisma, {
+      userId: currentUser.id, action: 'settings.bulkUpdate',
+      entityType: 'SystemSetting',
+      description: `Bulk updated ${updates.length} settings`, req,
+    });
+    return results;
+  },
+
+  // ✅ ตรงกับ routes: updateSystemSetting(key, value, user, req)
+  async updateSystemSetting(key: string, value: string, currentUser: AdminUser, req?: Request) {
     const setting = await prisma.systemSetting.upsert({
       where: { key },
       update: { value, updatedById: currentUser.id },
       create: { key, value, label: key, updatedById: currentUser.id },
     });
-
     await logActivity(prisma, {
       userId: currentUser.id, action: 'settings.update',
       entityType: 'SystemSetting', entityId: setting.id,
       description: `Updated setting ${key} = ${value}`, req,
     });
-
     return setting;
   },
 
   // ============================================================
-  // DOCUMENT COUNTER
+  // DOCUMENT COUNTERS
   // ============================================================
   async getDocumentCounters() {
     const year = new Date().getFullYear();
@@ -387,20 +395,18 @@ export const adminService = {
     });
   },
 
-  async resetDocumentCounter(type: string, currentUser: AdminUser, req?: Request) {
-    const year = new Date().getFullYear();
-    const counter = await prisma.documentCounter.upsert({
+  // ✅ ตรงกับ routes: resetDocumentCounter(type, year, counter, user, req) — 5 args
+  async resetDocumentCounter(type: string, year: number, counter: number, currentUser: AdminUser, req?: Request) {
+    const updated = await prisma.documentCounter.upsert({
       where: { type_year: { type, year } },
-      update: { counter: 0 },
-      create: { type, year, counter: 0 },
+      update: { counter },
+      create: { type, year, counter },
     });
-
     await logActivity(prisma, {
       userId: currentUser.id, action: 'documentCounter.reset',
-      entityType: 'DocumentCounter', entityId: counter.id,
-      description: `Reset ${type} counter for ${year}`, req,
+      entityType: 'DocumentCounter', entityId: updated.id,
+      description: `Reset ${type} counter for ${year} to ${counter}`, req,
     });
-
-    return counter;
+    return updated;
   },
 };
