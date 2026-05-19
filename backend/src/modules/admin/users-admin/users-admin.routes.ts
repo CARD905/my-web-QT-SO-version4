@@ -62,6 +62,12 @@ router.post(
   asyncHandler(usersAdminController.resetPassword),
 );
 
+router.post(
+  '/:id/force-logout',
+  requirePermission('user', 'update', 'ALL'),
+  asyncHandler(usersAdminController.forceLogout),
+);
+
 // ✅ เพิ่มใหม่
 router.delete(
   '/:id',

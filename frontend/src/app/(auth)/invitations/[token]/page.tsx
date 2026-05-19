@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, AlertCircle, Mail } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, Mail, Phone } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,7 @@ export default function AcceptInvitationPage() {
   const [loading, setLoading] = useState(true);
 
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +75,7 @@ export default function AcceptInvitationPage() {
       const res = await fetch(`${API_URL}/invitations/accept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, name, password }),
+        body: JSON.stringify({ token, name, phone: phone.trim() || null, password }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -179,6 +180,18 @@ export default function AcceptInvitationPage() {
                 placeholder="Full name"
                 className="mt-1.5"
               />
+            </div>
+            <div>
+              <Label className="text-xs">Phone Number</Label>
+              <div className="relative mt-1.5">
+                <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Phone number"
+                  className="pl-9"
+                />
+              </div>
             </div>
             <div>
               <Label className="text-xs">Password (min 8 characters)</Label>

@@ -44,6 +44,12 @@ export const usersAdminController = {
     return success(res, null, 'Password reset successfully');
   },
 
+  async forceLogout(req: Request, res: Response) {
+    const actor = requireUser(req);
+    await usersAdminService.forceLogout(req.params.id, actor.id, req);
+    return success(res, null, 'User logged out from all devices');
+  },
+
   // ✅ เพิ่มใหม่
   async remove(req: Request, res: Response) {
     const actor = requireUser(req);

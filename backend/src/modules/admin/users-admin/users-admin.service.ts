@@ -196,6 +196,25 @@ export const usersAdminService = {
     });
   },
 
+  async forceLogout(id: string, actorId: string, req?: Request) {
+    const user = await prisma.user.findFirst({ where: { id, deletedAt: null } });
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+
+    await prisma.refreshToken.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    await logActivity(prisma, {
+      userId: actorId,
+      action: 'user.force_logout',
+      entityType: 'User',
+      entityId: id,
+      description: `Forced logout for ${user.email}`,
+      req,
+    });
+  },
+
   // ✅ เพิ่มใหม่ — Soft delete user
   async remove(id: string, actorId: string, req?: Request) {
     if (id === actorId) {

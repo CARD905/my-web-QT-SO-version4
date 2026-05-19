@@ -180,7 +180,7 @@ export const adminService = {
                 team: { select: { id: true, name: true } },
                 reportsTo: { select: { id: true, name: true } },
               },
-              orderBy: [{ role: { level: 'asc' } }, { name: 'asc' }],
+              orderBy: { name: 'asc' },
             },
             _count: { select: { members: true } },
           },
@@ -524,6 +524,7 @@ export const adminService = {
         { description: { contains: query.search, mode: 'insensitive' } },
       ];
     }
+    if (query.userId) where.userId = query.userId;
     if (query.entityType) where.entityType = query.entityType;
     if (query.action) where.action = { contains: query.action, mode: 'insensitive' };
 

@@ -42,22 +42,28 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     (async () => {
       try {
-        // ✅ ใช้ any แล้ว cast เอาเอง — หลีกเลี่ยง meta type error
-        const [usersRes, logsRes, loginRes, teamsRes] = await Promise.all([
+        const [usersRes, logsRes, loginRes, teamsRes] = await Promise.allSettled([
           api.get<any>('/admin/users?limit=1'),
           api.get<any>('/admin/activity-logs?limit=5'),
           api.get<any>('/admin/login-history?success=false&limit=1'),
           api.get<any>('/admin/departments'),
         ]);
 
-        const departments = teamsRes.data.data ?? [];
+        const users = usersRes.status === 'fulfilled' ? usersRes.value.data : null;
+        const logs = logsRes.status === 'fulfilled' ? logsRes.value.data : null;
+        const failedLogins = loginRes.status === 'fulfilled' ? loginRes.value.data : null;
+        const departments = teamsRes.status === 'fulfilled' ? (teamsRes.value.data.data ?? []) : [];
         setStats({
-          totalUsers:       usersRes.data.meta?.total ?? 0,
-          totalTeams:       departments.reduce((acc: number, d: any) => acc + (d.teams?.length ?? 0), 0),
+          totalUsers: users?.meta?.total ?? 0,
+          totalTeams: departments.reduce((acc: number, d: any) => acc + (d.teams?.length ?? 0), 0),
           totalDepartments: departments.length,
-          failedLogins:     loginRes.data.meta?.total ?? 0,
-          recentLogs:       logsRes.data.data ?? [],
+          failedLogins: failedLogins?.meta?.total ?? 0,
+          recentLogs: logs?.data ?? [],
         });
+
+        if ([usersRes, logsRes, loginRes, teamsRes].some((result) => result.status === 'rejected')) {
+          toast.warning('บางข้อมูลใน Dashboard โหลดไม่สำเร็จ');
+        }
       } catch (err) {
         toast.error(getApiErrorMessage(err));
       } finally {

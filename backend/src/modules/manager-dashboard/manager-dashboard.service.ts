@@ -361,7 +361,18 @@ export const managerDashboardService = {
     if (!allowed) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0 }, byStatus: [], recent: [] };
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
-      include: { role: { select: { code: true, nameTh: true } }, team: { select: { id: true, name: true } }, reportsTo: { select: { id: true, name: true } } },
+      include: {
+        role: { select: { id: true, code: true, nameTh: true, level: true } },
+        team: {
+          select: {
+            id: true,
+            name: true,
+            _count: { select: { members: true } },
+          },
+        },
+        reportsTo: { select: { id: true, name: true } },
+        _count: { select: { reports: true } },
+      },
     });
     if (!user) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0 }, byStatus: [], recent: [] };
     const monthStart = startOfMonth();
@@ -373,7 +384,23 @@ export const managerDashboardService = {
       prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, quotationNo: true, status: true, grandTotal: true, createdAt: true } }),
     ]);
     return {
-      user: { id: user.id, name: user.name, email: user.email, role: { code: user.role.code, nameTh: user.role.nameTh }, team: user.team, reportsTo: user.reportsTo, isActive: user.isActive },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: { id: user.role.id, code: user.role.code, nameTh: user.role.nameTh },
+        team: user.team ? { id: user.team.id, name: user.team.name, size: user.team._count.members } : null,
+        reportsTo: user.reportsTo,
+        isActive: user.isActive,
+        isTeamLead: user.isTeamLead,
+        lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+        createdAt: user.createdAt.toISOString(),
+        approvalLimit: user.approvalLimit?.toString() ?? null,
+        managerLevel: user.managerLevel,
+        approvalTier: user.role.level,
+        position: user.managerLevel ? `${user.managerLevel} Manager` : user.role.nameTh,
+      },
       totals: { quotations: totalCount, approvedValue: Number(approvedAgg._sum.grandTotal ?? 0), thisMonth: thisMonthCount },
       byStatus: byStatusRaw.map((s) => ({ status: s.status, count: s._count.id })),
       recent: recent.map((q) => ({ id: q.id, quotationNo: q.quotationNo, status: q.status, grandTotal: Number(q.grandTotal), createdAt: q.createdAt.toISOString() })),

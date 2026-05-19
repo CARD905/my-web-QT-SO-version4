@@ -140,9 +140,7 @@ export function ManagerDetailPage() {
       if (userData?.user) {
         setSelectedRoleId(userData.user.role.id);
         // โหลด approval limit จาก user จริง
-        if (userData.user.approvalLimit) {
-          setQuotLimit(String(Math.round(Number(userData.user.approvalLimit))));
-        }
+        setQuotLimit(userData.user.approvalLimit ? String(Math.round(Number(userData.user.approvalLimit))) : '');
       }
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setLoading(false); }
@@ -152,7 +150,7 @@ export function ManagerDetailPage() {
   const loadActivityLogs = async () => {
     setLogsLoading(true);
     try {
-      const res = await api.get<any>(`/admin/activity-logs?search=${userId}&limit=20`);
+      const res = await api.get<any>(`/admin/activity-logs?userId=${userId}&limit=20`);
       setActivityLogs(res.data.data ?? []);
     } catch (err) {
       // ถ้า endpoint ไม่มี ใช้ empty array
@@ -179,6 +177,7 @@ export function ManagerDetailPage() {
     if (data?.user) {
       loadActivityLogs();
       if (data.user.team?.id) loadTeamMembers(data.user.team.id);
+      else setTeamMembers([]);
     }
   }, [data?.user?.id]);
 
@@ -243,9 +242,9 @@ export function ManagerDetailPage() {
     try {
       await api.post(`/admin/users/${userId}/force-logout`);
       toast.success('Force logout เรียบร้อย — user จะต้อง login ใหม่ทุกอุปกรณ์');
+      await loadActivityLogs();
     } catch (err) {
-      // endpoint อาจยังไม่มี
-      toast.info('Force logout ยังไม่รองรับ — กรุณาติดต่อผู้ดูแลระบบ');
+      toast.error(getApiErrorMessage(err));
     } finally { setActionLoading(false); }
   };
 
@@ -439,8 +438,10 @@ export function ManagerDetailPage() {
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Quick Actions</p>
               <div className="space-y-0.5">
                 {[
+                  { icon: Edit,          label: 'Edit Manager',        action: () => setActiveSection('approval') },
                   { icon: Shield,        label: 'Change Role',        action: () => !isProtected && setShowAssignRole(true), disabled: isProtected },
                   { icon: Sliders,       label: 'Edit Approval Limit', action: () => setShowEditLimits(true) },
+                  { icon: UserPlus,      label: 'Assign Team Members', action: () => { window.location.href = '/admin/teams'; } },
                   { icon: Key,           label: 'Reset Password',      action: () => setShowResetPw(true) },
                   { icon: LogOut,        label: 'Force Logout',         action: () => setShowForceLogout(true), color: 'text-amber-600 hover:bg-amber-50' },
                   { icon: Lock,          label: 'Lock Account',         action: () => setShowConfirmLock(true), color: 'text-red-500 hover:bg-red-50', disabled: isProtected || !user.isActive },
@@ -548,6 +549,11 @@ export function ManagerDetailPage() {
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
                 <SectionHeader icon={GitBranch} title="Team Hierarchy"
                   subtitle="ทีมและสมาชิกที่อยู่ภายใต้ Manager"
+                  action={
+                    <Link href="/admin/teams" className="h-7 px-3 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 flex items-center gap-1.5">
+                      <UserPlus className="h-3 w-3" />Assign Officer
+                    </Link>
+                  }
                 />
 
                 {/* Manager info */}
