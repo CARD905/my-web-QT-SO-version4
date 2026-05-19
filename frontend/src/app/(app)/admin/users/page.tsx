@@ -34,12 +34,15 @@ interface UserItem {
 interface RoleOption { id: string; code: string; nameTh: string; level: number; }
 
 const ROLE_COLOR: Record<string, string> = {
-  ADMIN:    'bg-red-100 text-red-700 border-red-300',
-  CEO:      'bg-purple-100 text-purple-700 border-purple-300',
-  MANAGER:  'bg-amber-100 text-amber-700 border-amber-300',
-  OFFICER:  'bg-blue-100 text-blue-700 border-blue-300',
-  SALES:    'bg-blue-100 text-blue-700 border-blue-300',
+  ADMIN:   'bg-red-100 text-red-700 border-red-300',
+  CEO:     'bg-purple-100 text-purple-700 border-purple-300',
+  MANAGER: 'bg-amber-100 text-amber-700 border-amber-300',
+  OFFICER: 'bg-blue-100 text-blue-700 border-blue-300',
+  SALES:   'bg-blue-100 text-blue-700 border-blue-300',
 };
+
+// ✅ Role ที่ได้รับการปกป้อง — ห้ามปิด/เปลี่ยน
+const PROTECTED_ROLES = ['ADMIN', 'CEO'];
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -50,7 +53,6 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState('');
   const [page, setPage] = useState(1);
 
-  // Dialog states
   const [resetTarget, setResetTarget] = useState<UserItem | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [resetting, setResetting] = useState(false);
@@ -120,7 +122,6 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-5 max-w-6xl">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -140,7 +141,6 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -153,81 +153,89 @@ export default function AdminUsersPage() {
         </select>
       </div>
 
-      {/* User List */}
       {loading ? (
         <div className="space-y-2">{[0,1,2,3,4].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : users.length === 0 ? (
         <Card><CardContent className="py-16 text-center text-muted-foreground text-sm">ไม่พบ user</CardContent></Card>
       ) : (
         <div className="space-y-2">
-          {users.map((user) => (
-            <Card key={user.id} className={!user.isActive ? 'opacity-60' : ''}>
-              <CardContent className="p-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Avatar */}
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                    {user.name.slice(0, 1).toUpperCase()}
-                  </div>
+          {users.map((user) => {
+            const isProtected = PROTECTED_ROLES.includes(user.role.code);
+            return (
+              <Card key={user.id} className={!user.isActive ? 'opacity-60' : ''}>
+                <CardContent className="p-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                      {user.name.slice(0, 1).toUpperCase()}
+                    </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{user.name}</span>
-                      <Badge variant="outline" className={`text-[10px] ${ROLE_COLOR[user.role.code] ?? ''}`}>
-                        {user.role.nameTh}
-                      </Badge>
-                      {user.isTeamLead && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Lead</Badge>}
-                      {user.managerLevel && (
-                        <Badge variant="outline" className={`text-[10px] ${
-                          user.managerLevel === 'DIVISION'   ? 'bg-purple-50 text-purple-700 border-purple-300' :
-                          user.managerLevel === 'DEPARTMENT' ? 'bg-blue-50 text-blue-700 border-blue-300' :
-                                                                'bg-emerald-50 text-emerald-700 border-emerald-300'
-                        }`}>
-                          {user.managerLevel === 'DIVISION'   ? 'Division' :
-                          user.managerLevel === 'DEPARTMENT' ? 'Dept' : 'Section'}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{user.name}</span>
+                        <Badge variant="outline" className={`text-[10px] ${ROLE_COLOR[user.role.code] ?? ''}`}>
+                          {user.role.nameTh}
                         </Badge>
-                      )}
-                      {!user.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
-                      
+                        {/* ✅ Badge บอกว่าเป็น Protected account */}
+                        {isProtected && (
+                          <Badge variant="outline" className="text-[9px] bg-slate-50 text-slate-600 border-slate-300">
+                            🔒 Protected
+                          </Badge>
+                        )}
+                        {user.isTeamLead && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Lead</Badge>}
+                        {user.managerLevel && (
+                          <Badge variant="outline" className={`text-[10px] ${
+                            user.managerLevel === 'DIVISION'   ? 'bg-purple-50 text-purple-700 border-purple-300' :
+                            user.managerLevel === 'DEPARTMENT' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                                                                  'bg-emerald-50 text-emerald-700 border-emerald-300'
+                          }`}>
+                            {user.managerLevel === 'DIVISION' ? 'Division' : user.managerLevel === 'DEPARTMENT' ? 'Dept' : 'Section'}
+                          </Badge>
+                        )}
+                        {!user.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
+                        {user.team && <span>👥 {user.team.name}</span>}
+                        {user.lastLoginAt ? <span>เข้าสู่ระบบล่าสุด {formatDate(user.lastLoginAt)}</span> : <span>ยังไม่เคย login</span>}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
-                      {user.team && <span>👥 {user.team.name}</span>}
-                      {user.lastLoginAt ? <span>เข้าสู่ระบบล่าสุด {formatDate(user.lastLoginAt)}</span> : <span>ยังไม่เคย login</span>}
-                    </div>
-                  </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2 shrink-0 flex-wrap">
-                    <Button variant="outline" size="sm" className="h-8 text-xs"
-                      onClick={() => { setAssignRoleTarget(user); setSelectedRoleId(user.role.id); }}>
-                      <Shield className="h-3 w-3" />Role
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-8 text-xs"
-                      onClick={() => setResetTarget(user)}>
-                      <Key className="h-3 w-3" />Reset PW
-                    </Button>
-                    <Button variant="outline" size="sm"
-                      onClick={() => handleToggleActive(user)}
-                      disabled={togglingId === user.id}
-                      className={`h-8 text-xs ${user.isActive ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}>
-                      {togglingId === user.id
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
-                      {user.isActive ? 'ปิด' : 'เปิด'}
-                    </Button>
-                    <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
-                      <Link href={`/users/${user.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                    </Button>
+                    <div className="flex gap-2 shrink-0 flex-wrap">
+                      {/* ✅ ซ่อนปุ่ม Role ถ้าเป็น Protected */}
+                      {!isProtected && (
+                        <Button variant="outline" size="sm" className="h-8 text-xs"
+                          onClick={() => { setAssignRoleTarget(user); setSelectedRoleId(user.role.id); }}>
+                          <Shield className="h-3 w-3" />Role
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" className="h-8 text-xs"
+                        onClick={() => setResetTarget(user)}>
+                        <Key className="h-3 w-3" />Reset PW
+                      </Button>
+                      {/* ✅ ซ่อนปุ่ม Toggle ถ้าเป็น Protected */}
+                      {!isProtected && (
+                        <Button variant="outline" size="sm"
+                          onClick={() => handleToggleActive(user)}
+                          disabled={togglingId === user.id}
+                          className={`h-8 text-xs ${user.isActive ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}>
+                          {togglingId === user.id
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                          {user.isActive ? 'ปิด' : 'เปิด'}
+                        </Button>
+                      )}
+                      <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
+                        <Link href={`/users/${user.id}`}><ChevronRight className="h-4 w-4" /></Link>
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      {/* Pagination */}
       {meta && meta.totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => { setPage(page - 1); load(page - 1); }}>ก่อนหน้า</Button>
@@ -259,7 +267,7 @@ export default function AdminUsersPage() {
         </Dialog>
       )}
 
-      {/* Assign Role Dialog */}
+      {/* Assign Role Dialog — ✅ กรอง ADMIN/CEO ออก */}
       {assignRoleTarget && (
         <Dialog open onOpenChange={(o) => { if (!o) { setAssignRoleTarget(null); setSelectedRoleId(''); } }}>
           <DialogContent className="sm:max-w-sm">
@@ -271,7 +279,9 @@ export default function AdminUsersPage() {
               <Label className="text-xs">Role ใหม่</Label>
               <select value={selectedRoleId} onChange={(e) => setSelectedRoleId(e.target.value)}
                 className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                {roles.map((r) => <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>)}
+                {roles
+                  .filter((r) => !PROTECTED_ROLES.includes(r.code)) // ✅ ไม่แสดง ADMIN/CEO
+                  .map((r) => <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>)}
               </select>
             </div>
             <DialogFooter>

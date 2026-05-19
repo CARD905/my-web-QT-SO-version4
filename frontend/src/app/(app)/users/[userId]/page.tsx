@@ -38,6 +38,9 @@ interface UserDetailData {
 
 interface RoleOption { id: string; code: string; nameTh: string; level: number; }
 
+// ✅ Role ที่ได้รับการปกป้อง
+const PROTECTED_ROLES = ['ADMIN', 'CEO'];
+
 export default function UserDetailPage() {
   const params = useParams();
   const userId = params.userId as string;
@@ -118,6 +121,7 @@ export default function UserDetailPage() {
   );
 
   const { user, totals, byStatus, recent } = data;
+  const isProtected = PROTECTED_ROLES.includes(user.role.code);
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -135,6 +139,12 @@ export default function UserDetailPage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-bold">{user.name}</h1>
+                {/* ✅ Protected badge */}
+                {isProtected && (
+                  <Badge className="bg-white/20 text-white border-white/30 text-xs">
+                    🔒 Protected Account
+                  </Badge>
+                )}
                 {user.isTeamLead && (
                   <Badge className="bg-amber-400/30 text-amber-100 border-amber-400/50 text-xs">
                     <Crown className="h-3 w-3 mr-1" />Lead
@@ -149,24 +159,42 @@ export default function UserDetailPage() {
                 {user.reportsTo && <span>↑ {user.reportsTo.name}</span>}
               </div>
             </div>
+
             {/* Admin actions */}
             <div className="flex flex-col gap-2 shrink-0">
+              {/* ✅ ซ่อนปุ่ม เปลี่ยน Role ถ้าเป็น Protected */}
+              {!isProtected && (
+                <Button size="sm" variant="secondary" className="text-xs h-8"
+                  onClick={() => setShowAssignRole(true)}>
+                  <Shield className="h-3 w-3" />เปลี่ยน Role
+                </Button>
+              )}
+              {/* Reset Password — ทำได้เสมอ */}
               <Button size="sm" variant="secondary" className="text-xs h-8"
-                onClick={() => { setShowAssignRole(true); }}>
-                <Shield className="h-3 w-3" />เปลี่ยน Role
-              </Button>
-              <Button size="sm" variant="secondary" className="text-xs h-8" onClick={() => setShowResetPw(true)}>
+                onClick={() => setShowResetPw(true)}>
                 <Key className="h-3 w-3" />Reset Password
               </Button>
-              <Button size="sm" variant="secondary" className={`text-xs h-8 ${user.isActive ? 'text-red-600' : 'text-emerald-600'}`}
-                onClick={handleToggleActive} disabled={toggling}>
-                {toggling ? <Loader2 className="h-3 w-3 animate-spin" /> : user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
-                {user.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-              </Button>
+              {/* ✅ ซ่อนปุ่ม Toggle ถ้าเป็น Protected */}
+              {!isProtected && (
+                <Button size="sm" variant="secondary"
+                  className={`text-xs h-8 ${user.isActive ? 'text-red-600' : 'text-emerald-600'}`}
+                  onClick={handleToggleActive} disabled={toggling}>
+                  {toggling ? <Loader2 className="h-3 w-3 animate-spin" /> : user.isActive ? <UserX className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                  {user.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
       </Card>
+
+      {/* ✅ Banner สำหรับ Protected account */}
+      {isProtected && (
+        <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-800/30 text-sm text-slate-600 dark:text-slate-400">
+          <span>🔒</span>
+          <span>Account นี้เป็น <strong>{user.role.nameTh}</strong> — ไม่สามารถเปลี่ยน Role หรือปิดการใช้งานได้ (สามารถ Reset Password ได้)</span>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -263,28 +291,32 @@ export default function UserDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Assign Role Dialog */}
-      <Dialog open={showAssignRole} onOpenChange={(o) => { if (!o) setShowAssignRole(false); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>เปลี่ยน Role</DialogTitle>
-            <DialogDescription>{user.name} — ปัจจุบัน: {user.role.nameTh}</DialogDescription>
-          </DialogHeader>
-          <div>
-            <Label className="text-xs">Role ใหม่</Label>
-            <select value={selectedRoleId} onChange={(e) => setSelectedRoleId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              {roles.map((r) => <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>)}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAssignRole(false)} disabled={assigning}>ยกเลิก</Button>
-            <Button onClick={handleAssignRole} disabled={assigning || !selectedRoleId}>
-              {assigning && <Loader2 className="h-4 w-4 animate-spin" />}ยืนยัน
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Assign Role Dialog — ✅ กรอง ADMIN/CEO ออก */}
+      {!isProtected && (
+        <Dialog open={showAssignRole} onOpenChange={(o) => { if (!o) setShowAssignRole(false); }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>เปลี่ยน Role</DialogTitle>
+              <DialogDescription>{user.name} — ปัจจุบัน: {user.role.nameTh}</DialogDescription>
+            </DialogHeader>
+            <div>
+              <Label className="text-xs">Role ใหม่</Label>
+              <select value={selectedRoleId} onChange={(e) => setSelectedRoleId(e.target.value)}
+                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                {roles
+                  .filter((r) => !PROTECTED_ROLES.includes(r.code)) // ✅ ไม่แสดง ADMIN/CEO
+                  .map((r) => <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>)}
+              </select>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAssignRole(false)} disabled={assigning}>ยกเลิก</Button>
+              <Button onClick={handleAssignRole} disabled={assigning || !selectedRoleId}>
+                {assigning && <Loader2 className="h-4 w-4 animate-spin" />}ยืนยัน
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
