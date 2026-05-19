@@ -30,6 +30,7 @@ export const usersAdminService = {
 
     const where: Prisma.UserWhereInput = { deletedAt: null };
     if (query.roleId) where.roleId = query.roleId;
+    if (query.roleCode) where.role = { code: query.roleCode };
     if (query.teamId) where.teamId = query.teamId;
     if (query.isActive !== undefined) where.isActive = query.isActive;
     if (query.search) {

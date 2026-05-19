@@ -479,29 +479,7 @@ export default function AdminTeamsPage() {
         ...(salesRes.data.data ?? []),
       ];
 
-      // โหลด members ของแต่ละทีม
-      const allTeamIds = deptsRaw.flatMap(d => d.teams.map(t => t.id));
-      const membersByTeam: Record<string, UserItem[]> = {};
-
-      await Promise.all(
-        allTeamIds.map(async (teamId) => {
-          try {
-            const res = await api.get<any>(`/admin/users?teamId=${teamId}&limit=100`);
-            membersByTeam[teamId] = res.data.data ?? [];
-          } catch { membersByTeam[teamId] = []; }
-        })
-      );
-
-      // inject members เข้า dept.teams
-      const deptsWithMembers = deptsRaw.map(dept => ({
-        ...dept,
-        teams: dept.teams.map(team => ({
-          ...team,
-          members: membersByTeam[team.id] ?? [],
-        })),
-      }));
-
-      setDepts(deptsWithMembers);
+      setDepts(deptsRaw);
       setManagers(allManagers);
       setOfficers(allOfficers);
     } catch (err) { toast.error(getApiErrorMessage(err)); }
