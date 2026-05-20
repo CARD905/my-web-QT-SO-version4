@@ -100,6 +100,17 @@ router.patch('/approval-authority/roles/:roleId',
   }),
 );
 
+router.patch('/approval-authority/manager-levels/:managerLevel',
+  requireAnyPermission(['user', 'update', 'ALL']),
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    const { limit } = req.body as { limit: number | null };
+    const managerLevel = req.params.managerLevel as 'DIVISION' | 'DEPARTMENT' | 'SECTION';
+    const data = await adminService.updateManagerLevelApprovalLimit(managerLevel, limit, user, req);
+    return success(res, data, 'Manager level approval limit updated');
+  }),
+);
+
 router.patch('/approval-authority/users/:userId',
   requireAnyPermission(['user', 'update', 'ALL']),
   asyncHandler(async (req, res) => {
@@ -111,6 +122,14 @@ router.patch('/approval-authority/users/:userId',
 );
 
 // ─── Activity Logs ────────────────────────────────────────────────────────────
+router.get('/activity-log-users',
+  requireAnyPermission(['user', 'view', 'ALL']),
+  asyncHandler(async (req, res) => {
+    const data = await adminService.getActivityLogUsers(req.query as any);
+    return success(res, data);
+  }),
+);
+
 router.get('/activity-logs',
   requireAnyPermission(['user', 'view', 'ALL']),
   asyncHandler(async (req, res) => {

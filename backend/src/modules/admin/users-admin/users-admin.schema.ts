@@ -14,6 +14,7 @@ export const updateUserSchema = z.object({
 export const listUsersQuerySchema = paginationSchema.extend({
   roleId: z.string().cuid().optional(),
   roleCode: z.string().min(1).max(50).optional(),
+  excludeRoleCode: z.string().min(1).max(50).optional(),
   teamId: z.string().cuid().optional(),
   isActive: z.coerce.boolean().optional(),
 });

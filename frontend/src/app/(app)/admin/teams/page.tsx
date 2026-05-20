@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Building2, Plus, ChevronDown, ChevronRight, Users,
-  Shield, Edit2, Loader2, RefreshCw, Crown, Check,
+  Shield, Loader2, RefreshCw, Crown, Check,
   UserPlus, UserMinus, ArrowRightLeft, Trash2, Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatMoney } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────
 interface UserItem {
@@ -58,7 +57,7 @@ const LEVEL_LABEL: Record<ManagerLevel, string> = {
 // ─── TeamNode ────────────────────────────────────────────────
 function TeamNode({
   team, managers, officers, allTeams,
-  onAssignManager, onEditLimit,
+  onAssignManager,
   onAssignOfficer, onMoveUser, onRemoveUser,
 }: {
   team: TeamData;
@@ -66,7 +65,6 @@ function TeamNode({
   officers: UserItem[];           // officers ที่ยังไม่มีทีม หรือทุก officer
   allTeams: { id: string; name: string; deptName: string }[];
   onAssignManager: (teamId: string, managerId: string, managerLevel: ManagerLevel) => Promise<void>;
-  onEditLimit: (user: UserItem) => void;
   onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
   onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
   onRemoveUser: (userId: string, userName: string) => Promise<void>;
@@ -86,6 +84,7 @@ function TeamNode({
   const [showAssignOfficer, setShowAssignOfficer] = useState(false);
   const [moveTarget,    setMoveTarget] = useState<UserItem | null>(null);
   const [officerSearch, setOfficerSearch] = useState('');
+  const availableManagers = managers.filter((m) => !m.team || m.team.id === team.id);
 
   useEffect(() => {
     setSelectedManagers({
@@ -106,7 +105,7 @@ function TeamNode({
   // Officers ที่ยังไม่ได้อยู่ในทีมนี้ (สำหรับ assign)
   const availableOfficers = officers.filter(
     (o) => o.role.code === 'OFFICER' || o.role.code === 'SALES',
-  ).filter((o) => o.team?.id !== team.id);
+  ).filter((o) => !o.team);
 
   const filteredAvailable = availableOfficers.filter(
     (o) => o.name.toLowerCase().includes(officerSearch.toLowerCase()) ||
@@ -163,8 +162,6 @@ function TeamNode({
             {(['DIVISION', 'DEPARTMENT', 'SECTION'] as ManagerLevel[]).map((level) => {
               const currentManager = managerByLevel[level];
               const selectedManagerId = selectedManagers[level];
-              const selectedManager = managers.find((m) => m.id === selectedManagerId);
-              const limitUser = selectedManager ?? currentManager;
               return (
                 <div key={level} className="rounded-lg border bg-background p-2">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -175,7 +172,7 @@ function TeamNode({
                       className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-[170px]"
                     >
                       <option value="">เลือก Manager</option>
-                      {managers.map((m) => (
+                      {availableManagers.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.name}{m.team ? ` - ${m.team.name}` : ''}
                         </option>
@@ -197,18 +194,6 @@ function TeamNode({
                       </>
                     )}
                   </div>
-                  {limitUser && (
-                    <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                      <span>วงเงิน:</span>
-                      <span className="font-semibold text-foreground">
-                        {limitUser.approvalLimit ? formatMoney(Number(limitUser.approvalLimit)) : 'ไม่จำกัด'}
-                      </span>
-                      <button onClick={() => onEditLimit(limitUser)}
-                        className="text-primary hover:underline flex items-center gap-0.5">
-                        <Edit2 className="h-2.5 w-2.5" />แก้ไข
-                      </button>
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -290,9 +275,6 @@ function TeamNode({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{officer.name}</p>
                       <p className="text-[11px] text-muted-foreground">{officer.email}</p>
-                      {officer.team && (
-                        <p className="text-[10px] text-amber-600 mt-0.5">⚠️ ปัจจุบันอยู่ทีม: {officer.team.name}</p>
-                      )}
                     </div>
                     <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 opacity-0 group-hover:opacity-100">
                       เพิ่ม
@@ -379,7 +361,7 @@ function MoveTeamSelect({
 // ─── OrgNode ─────────────────────────────────────────────────
 function OrgNode({
   dept, managers, officers, allTeams,
-  onAssignManager, onEditLimit,
+  onAssignManager,
   onAssignOfficer, onMoveUser, onRemoveUser,
 }: {
   dept: DeptData;
@@ -387,7 +369,6 @@ function OrgNode({
   officers: UserItem[];
   allTeams: { id: string; name: string; deptName: string }[];
   onAssignManager: (teamId: string, managerId: string, managerLevel: ManagerLevel) => Promise<void>;
-  onEditLimit: (user: UserItem) => void;
   onAssignOfficer: (userId: string, teamId: string) => Promise<void>;
   onMoveUser: (userId: string, newTeamId: string) => Promise<void>;
   onRemoveUser: (userId: string, userName: string) => Promise<void>;
@@ -416,7 +397,7 @@ function OrgNode({
               <TeamNode
                 key={team.id} team={team}
                 managers={managers} officers={officers} allTeams={allTeams}
-                onAssignManager={onAssignManager} onEditLimit={onEditLimit}
+                onAssignManager={onAssignManager}
                 onAssignOfficer={onAssignOfficer}
                 onMoveUser={onMoveUser} onRemoveUser={onRemoveUser}
               />
@@ -425,6 +406,73 @@ function OrgNode({
         </div>
       )}
     </div>
+  );
+}
+
+function AccountStatusList({
+  title,
+  icon: Icon,
+  unassigned,
+  assigned,
+}: {
+  title: string;
+  icon: typeof Shield;
+  unassigned: UserItem[];
+  assigned: UserItem[];
+}) {
+  const renderAccount = (user: UserItem, showTeam: boolean) => (
+    <div key={user.id} className="flex items-center gap-2 rounded-lg border bg-background px-2.5 py-2">
+      <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+        {user.name.slice(0, 1).toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className="text-xs font-medium truncate">{user.name}</p>
+          {user.managerLevel && (
+            <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[user.managerLevel]}`}>
+              {LEVEL_LABEL[user.managerLevel]}
+            </Badge>
+          )}
+          {!user.isActive && <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
+        </div>
+        <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+      </div>
+      {showTeam && user.team && <Badge variant="secondary" className="text-[9px] shrink-0">{user.team.name}</Badge>}
+    </div>
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Icon className="h-4 w-4 text-primary" />{title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-2">
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-amber-700">ยังไม่มีทีม</p>
+            <Badge variant="outline" className="text-[10px]">{unassigned.length} คน</Badge>
+          </div>
+          <div className="space-y-2">
+            {unassigned.length === 0 ? (
+              <p className="text-xs text-muted-foreground rounded-lg border border-dashed p-3 text-center">ไม่มี account ที่รอจัดทีม</p>
+            ) : unassigned.map((user) => renderAccount(user, false))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-emerald-700">มีทีมแล้ว</p>
+            <Badge variant="outline" className="text-[10px]">{assigned.length} คน</Badge>
+          </div>
+          <div className="space-y-2">
+            {assigned.length === 0 ? (
+              <p className="text-xs text-muted-foreground rounded-lg border border-dashed p-3 text-center">ยังไม่มี account ในทีม</p>
+            ) : assigned.map((user) => renderAccount(user, true))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -453,14 +501,8 @@ export default function AdminTeamsPage() {
   const [mgrEmail, setMgrEmail] = useState('');
   const [mgrName,  setMgrName]  = useState('');
   const [mgrLevel, setMgrLevel] = useState<ManagerLevel>('SECTION');
-  const [mgrLimit, setMgrLimit] = useState('');
   const [mgrTeamId, setMgrTeamId] = useState('');
   const [savingMgr, setSavingMgr] = useState(false);
-
-  // Edit limit
-  const [editLimitUser, setEditLimitUser] = useState<UserItem | null>(null);
-  const [newLimit, setNewLimit] = useState('');
-  const [savingLimit, setSavingLimit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -523,19 +565,6 @@ export default function AdminTeamsPage() {
     } catch (err) { toast.error(getApiErrorMessage(err)); }
   };
 
-  const handleSaveLimit = async () => {
-    if (!editLimitUser) return;
-    setSavingLimit(true);
-    try {
-      const limit = newLimit === '' ? null : Number(newLimit);
-      await api.patch(`/admin/approval-authority/users/${editLimitUser.id}`, { limit });
-      toast.success(`อัปเดตวงเงินของ ${editLimitUser.name} เรียบร้อย`);
-      setEditLimitUser(null);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setSavingLimit(false); }
-  };
-
   const handleCreateDept = async () => {
     if (!deptName.trim() || !deptCode.trim()) { toast.error('กรุณากรอกชื่อและรหัส'); return; }
     setSavingDept(true);
@@ -577,21 +606,25 @@ export default function AdminTeamsPage() {
         email: mgrEmail.trim(), name: mgrName.trim() || undefined,
         roleId: managerRole.id, teamId: mgrTeamId,
         managerLevel: mgrLevel,
-        approvalLimit: mgrLimit ? Number(mgrLimit) : undefined,
         channel: 'MANUAL',
       });
       toast.success(`ส่ง Invitation ให้ ${mgrEmail} (${LEVEL_LABEL[mgrLevel]}) เรียบร้อย`);
       setShowInviteMgr(false);
-      setMgrEmail(''); setMgrName(''); setMgrLevel('SECTION'); setMgrLimit(''); setMgrTeamId('');
+      setMgrEmail(''); setMgrName(''); setMgrLevel('SECTION'); setMgrTeamId('');
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setSavingMgr(false); }
   };
 
   const allTeams = depts.flatMap((d) => d.teams.map((t) => ({ id: t.id, name: t.name, deptName: d.name })));
 
-  // Officers ที่ไม่มีทีม
+  const unassignedManagers = managers.filter((m) => !m.team);
+  const assignedManagers = managers.filter((m) => m.team);
+
   const unassignedOfficers = officers.filter(
     (o) => !o.team && (o.role.code === 'OFFICER' || o.role.code === 'SALES'),
+  );
+  const assignedOfficers = officers.filter(
+    (o) => o.team && (o.role.code === 'OFFICER' || o.role.code === 'SALES'),
   );
 
   return (
@@ -625,24 +658,20 @@ export default function AdminTeamsPage() {
         </span>
       </div>
 
-      {/* Unassigned Officers */}
-      {unassignedOfficers.length > 0 && (
-        <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/50">
-          <p className="text-xs font-semibold text-amber-800 mb-2 flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5" />Officers ที่ยังไม่ได้สังกัดทีม ({unassignedOfficers.length} คน)
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {unassignedOfficers.map((o) => (
-              <div key={o.id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white border border-amber-200 text-xs">
-                <div className="h-4 w-4 rounded-full bg-blue-100 flex items-center justify-center text-[9px] font-bold text-blue-600">
-                  {o.name.slice(0, 1)}
-                </div>
-                {o.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="space-y-4">
+        <AccountStatusList
+          title="Manager Accounts"
+          icon={Shield}
+          unassigned={unassignedManagers}
+          assigned={assignedManagers}
+        />
+        <AccountStatusList
+          title="Officer Accounts"
+          icon={Users}
+          unassigned={unassignedOfficers}
+          assigned={assignedOfficers}
+        />
+      </div>
 
       {/* Org Chart */}
       {loading ? (
@@ -658,60 +687,12 @@ export default function AdminTeamsPage() {
             <OrgNode
               key={dept.id} dept={dept}
               managers={managers} officers={officers} allTeams={allTeams}
-              onAssignManager={handleAssignManager} onEditLimit={(user) => {
-                setEditLimitUser(user);
-                setNewLimit(user.approvalLimit ? String(Math.round(Number(user.approvalLimit))) : '');
-              }}
+              onAssignManager={handleAssignManager}
               onAssignOfficer={handleAssignOfficer}
               onMoveUser={handleMoveUser} onRemoveUser={handleRemoveUser}
             />
           ))}
         </div>
-      )}
-
-      {/* Managers list */}
-      {managers.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Shield className="h-4 w-4 text-primary" />Managers ทั้งหมด ({managers.length} คน)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {managers.map((m) => (
-                <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/10 flex-wrap group">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                    {m.name.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium">{m.name}</span>
-                      {m.managerLevel && (
-                        <Badge variant="outline" className={`text-[9px] ${LEVEL_COLOR[m.managerLevel]}`}>
-                          {LEVEL_LABEL[m.managerLevel]}
-                        </Badge>
-                      )}
-                      {m.team && <Badge variant="secondary" className="text-[9px]">{m.team.name}</Badge>}
-                      {!m.isActive && <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">{m.email}</div>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">วงเงิน:</span>
-                    <span className="text-xs font-semibold">
-                      {m.approvalLimit ? formatMoney(Number(m.approvalLimit)) : 'ไม่จำกัด'}
-                    </span>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs"
-                      onClick={() => { setEditLimitUser(m); setNewLimit(m.approvalLimit ? String(Math.round(Number(m.approvalLimit))) : ''); }}>
-                      <Edit2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       )}
 
       {/* ── Dialogs ── */}
@@ -760,13 +741,13 @@ export default function AdminTeamsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>เชิญ Manager ใหม่</DialogTitle>
-            <DialogDescription>Admin assign role + level + วงเงิน</DialogDescription>
+            <DialogDescription>Admin assign role + level + team</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2"><Label className="text-xs">Email <span className="text-destructive">*</span></Label><Input type="email" value={mgrEmail} onChange={(e) => setMgrEmail(e.target.value)} className="mt-1.5" placeholder="manager@example.com" autoFocus /></div>
               <div className="col-span-2"><Label className="text-xs">ชื่อ (optional)</Label><Input value={mgrName} onChange={(e) => setMgrName(e.target.value)} className="mt-1.5" /></div>
-              <div>
+              <div className="col-span-2">
                 <Label className="text-xs">ระดับ Manager</Label>
                 <select value={mgrLevel} onChange={(e) => setMgrLevel(e.target.value as ManagerLevel)}
                   className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
@@ -774,10 +755,6 @@ export default function AdminTeamsPage() {
                   <option value="DEPARTMENT">Department Manager</option>
                   <option value="SECTION">Section Manager</option>
                 </select>
-              </div>
-              <div>
-                <Label className="text-xs">วงเงินอนุมัติ (฿)</Label>
-                <Input type="number" min="0" step="1000" value={mgrLimit} onChange={(e) => setMgrLimit(e.target.value)} className="mt-1.5" placeholder="ว่าง = ไม่จำกัด" />
               </div>
               <div className="col-span-2">
                 <Label className="text-xs">Team <span className="text-destructive">*</span></Label>
@@ -798,26 +775,6 @@ export default function AdminTeamsPage() {
         </DialogContent>
       </Dialog>
 
-      {editLimitUser && (
-        <Dialog open onOpenChange={(o) => { if (!o) setEditLimitUser(null); }}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>แก้ไขวงเงินอนุมัติ</DialogTitle>
-              <DialogDescription>{editLimitUser.name} — {editLimitUser.managerLevel ? LEVEL_LABEL[editLimitUser.managerLevel] : 'Manager'}</DialogDescription>
-            </DialogHeader>
-            <div>
-              <Label className="text-xs">วงเงิน (฿) — ปล่อยว่าง = ไม่จำกัด</Label>
-              <Input type="number" min="0" step="1000" value={newLimit} onChange={(e) => setNewLimit(e.target.value)} className="mt-1.5" autoFocus />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditLimitUser(null)} disabled={savingLimit}>ยกเลิก</Button>
-              <Button onClick={handleSaveLimit} disabled={savingLimit}>
-                {savingLimit && <Loader2 className="h-4 w-4 animate-spin" />}บันทึก
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }

@@ -18,6 +18,12 @@ const MANAGER_LEVELS = ['DIVISION', 'DEPARTMENT', 'SECTION'] as const;
 type ManagerLevel = (typeof MANAGER_LEVELS)[number];
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
+const MANAGER_LEVEL_LABEL: Record<ManagerLevel, string> = {
+  DIVISION: 'Division Manager',
+  DEPARTMENT: 'Department Manager',
+  SECTION: 'Section Manager',
+};
+
 function getParentManagerLevel(level: ManagerLevel) {
   if (level === 'SECTION') return 'DEPARTMENT';
   if (level === 'DEPARTMENT') return 'DIVISION';
@@ -456,7 +462,7 @@ export const adminService = {
   // APPROVAL AUTHORITY
   // ============================================================
   async getApprovalAuthority() {
-    return prisma.user.findMany({
+    const users = await prisma.user.findMany({
       where: {
         deletedAt: null, isActive: true,
         role: { code: { in: ['MANAGER', 'CEO'] } },
@@ -469,6 +475,51 @@ export const adminService = {
         team: { select: { id: true, name: true } },
       },
     });
+
+    const managerLevels = MANAGER_LEVELS.map((level) => {
+      const levelUsers = users.filter((user) => user.role.code === 'MANAGER' && user.managerLevel === level);
+      const limitValues = Array.from(new Set(levelUsers.map((user) => user.approvalLimit?.toString() ?? null)));
+
+      return {
+        level,
+        label: MANAGER_LEVEL_LABEL[level],
+        approvalLimit: limitValues.length === 1 ? limitValues[0] : null,
+        isMixed: limitValues.length > 1,
+        userCount: levelUsers.length,
+      };
+    });
+
+    return { managerLevels, users };
+  },
+
+  async updateManagerLevelApprovalLimit(managerLevel: ManagerLevel, limit: number | null, currentUser: AdminUser, req?: Request) {
+    if (!MANAGER_LEVELS.includes(managerLevel)) {
+      throw new AppError(400, 'INVALID_MANAGER_LEVEL', 'Invalid manager level');
+    }
+
+    const result = await prisma.user.updateMany({
+      where: {
+        deletedAt: null,
+        role: { code: 'MANAGER' },
+        managerLevel,
+      },
+      data: { approvalLimit: limit },
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: 'managerLevel.updateApprovalLimit',
+      entityType: 'ManagerLevel',
+      entityId: managerLevel,
+      description: `Updated approval limit of ${managerLevel} managers: ${limit ?? 'unlimited'} (${result.count} user(s))`,
+      req,
+    });
+
+    return {
+      managerLevel,
+      approvalLimit: limit,
+      updatedUsers: result.count,
+    };
   },
 
   // ✅ ตรงกับ routes: updateRoleApprovalLimit(roleId, limit, user, req)
@@ -513,6 +564,75 @@ export const adminService = {
   // ============================================================
   // ACTIVITY LOGS
   // ============================================================
+  async getActivityLogUsers(query: any) {
+    const where: Prisma.ActivityLogWhereInput = {
+      userId: { not: null },
+    };
+
+    if (query.search) {
+      where.OR = [
+        { userName: { contains: query.search, mode: 'insensitive' } },
+        { userEmail: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+    if (query.entityType) where.entityType = query.entityType;
+    if (query.action) where.action = { contains: query.action, mode: 'insensitive' };
+
+    const [counts, latestLogs] = await Promise.all([
+      prisma.activityLog.groupBy({
+        by: ['userId'],
+        where,
+        _count: { _all: true },
+        _max: { createdAt: true },
+      }),
+      prisma.activityLog.findMany({
+        where,
+        distinct: ['userId'],
+        orderBy: [{ userId: 'asc' }, { createdAt: 'desc' }],
+        select: {
+          userId: true,
+          action: true,
+          entityType: true,
+          description: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const userIds = counts.map((item) => item.userId).filter((id): id is string => Boolean(id));
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds }, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        managerLevel: true,
+        isActive: true,
+        role: { select: { code: true, nameTh: true } },
+        team: { select: { id: true, name: true } },
+      },
+    });
+
+    const userMap = new Map(users.map((user) => [user.id, user]));
+    const latestMap = new Map(latestLogs.filter((log) => log.userId).map((log) => [log.userId!, log]));
+
+    return counts
+      .map((item) => {
+        if (!item.userId) return null;
+        const user = userMap.get(item.userId);
+        if (!user) return null;
+        return {
+          ...user,
+          activityCount: item._count._all,
+          lastActivityAt: item._max.createdAt,
+          lastActivity: latestMap.get(item.userId) ?? null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => new Date(b.lastActivityAt ?? 0).getTime() - new Date(a.lastActivityAt ?? 0).getTime());
+  },
+
   async getActivityLogs(query: any) {
     const { skip, take, page, limit } = getPaginationParams(query);
     const where: Prisma.ActivityLogWhereInput = {};
@@ -529,7 +649,24 @@ export const adminService = {
     if (query.action) where.action = { contains: query.action, mode: 'insensitive' };
 
     const [data, total] = await Promise.all([
-      prisma.activityLog.findMany({ where, skip, take, orderBy: { createdAt: 'desc' } }),
+      prisma.activityLog.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              managerLevel: true,
+              role: { select: { code: true, nameTh: true } },
+              team: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
       prisma.activityLog.count({ where }),
     ]);
     return { data, meta: buildPaginationMeta(total, page, limit) };
@@ -542,14 +679,30 @@ export const adminService = {
     const { skip, take, page, limit } = getPaginationParams(query);
     const where: Prisma.LoginHistoryWhereInput = {};
 
-    if (query.search) where.email = { contains: query.search, mode: 'insensitive' };
+    if (query.search) {
+      where.OR = [
+        { email: { contains: query.search, mode: 'insensitive' } },
+        { user: { name: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
     if (query.success !== undefined) where.success = query.success === true || query.success === 'true';
 
     const [data, total] = await Promise.all([
       prisma.loginHistory.findMany({
         where, skip, take,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { id: true, name: true } } },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              managerLevel: true,
+              role: { select: { code: true, nameTh: true } },
+              team: { select: { id: true, name: true } },
+            },
+          },
+        },
       }),
       prisma.loginHistory.count({ where }),
     ]);

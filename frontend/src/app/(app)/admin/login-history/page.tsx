@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LogIn, Search, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { LogIn, Search, RefreshCw, CheckCircle2, XCircle, Monitor } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
+
+type ManagerLevel = 'DIVISION' | 'DEPARTMENT' | 'SECTION';
 
 interface LoginHistoryItem {
   id: string;
@@ -20,14 +22,41 @@ interface LoginHistoryItem {
   userAgent?: string;
   reason?: string;
   createdAt: string;
-  user?: { id: string; name: string } | null;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    managerLevel?: ManagerLevel | null;
+    role: { code: string; nameTh: string };
+    team?: { id: string; name: string } | null;
+  } | null;
 }
 
 const REASON_LABEL: Record<string, string> = {
-  WRONG_PASSWORD:   'รหัสผ่านผิด',
-  USER_NOT_FOUND:   'ไม่พบ User',
+  WRONG_PASSWORD: 'รหัสผ่านผิด',
+  USER_NOT_FOUND: 'ไม่พบ User',
   ACCOUNT_DISABLED: 'Account ถูกปิด',
 };
+
+const ROLE_COLOR: Record<string, string> = {
+  ADMIN: 'bg-red-100 text-red-700 border-red-300',
+  CEO: 'bg-purple-100 text-purple-700 border-purple-300',
+  MANAGER: 'bg-amber-100 text-amber-700 border-amber-300',
+  OFFICER: 'bg-blue-100 text-blue-700 border-blue-300',
+  SALES: 'bg-blue-100 text-blue-700 border-blue-300',
+};
+
+const LEVEL_LABEL: Record<ManagerLevel, string> = {
+  DIVISION: 'Division Manager',
+  DEPARTMENT: 'Department Manager',
+  SECTION: 'Section Manager',
+};
+
+function getPosition(log: LoginHistoryItem) {
+  if (!log.user) return 'Unknown';
+  if (log.user.role.code === 'MANAGER' && log.user.managerLevel) return LEVEL_LABEL[log.user.managerLevel];
+  return log.user.role.nameTh || log.user.role.code;
+}
 
 export default function AdminLoginHistoryPage() {
   const [logs, setLogs] = useState<LoginHistoryItem[]>([]);
@@ -46,17 +75,19 @@ export default function AdminLoginHistoryPage() {
       if (filter === 'success') params.set('success', 'true');
       if (filter === 'fail') params.set('success', 'false');
       if (search) params.set('search', search);
-      // ✅ ใช้ endpoint ที่ถูกต้อง
       const res = await api.get<any>(`/admin/login-history?${params}`);
       setLogs(res.data.data ?? []);
       setMeta(res.data.meta);
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setLoading(false); }
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    const t = setTimeout(() => { setPage(1); load(1); }, 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => { setPage(1); load(1); }, 300);
+    return () => clearTimeout(timer);
   }, [search, filter]);
 
   return (
@@ -75,24 +106,29 @@ export default function AdminLoginHistoryPage() {
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="ค้นหา email..." className="pl-9" value={search}
-            onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            placeholder="ค้นหา email หรือชื่อ user..."
+            className="pl-9"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
         <div className="flex gap-1">
-          {(['all', 'success', 'fail'] as const).map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${filter === f ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}>
-              {f === 'all' ? 'ทั้งหมด' : f === 'success' ? '✅ สำเร็จ' : '❌ ล้มเหลว'}
+          {(['all', 'success', 'fail'] as const).map((item) => (
+            <button
+              key={item}
+              onClick={() => setFilter(item)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${filter === item ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'}`}
+            >
+              {item === 'all' ? 'ทั้งหมด' : item === 'success' ? 'สำเร็จ' : 'ล้มเหลว'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Summary badges */}
       {meta && (
         <div className="flex gap-3 flex-wrap text-xs">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 text-emerald-700 dark:text-emerald-300">
@@ -106,42 +142,45 @@ export default function AdminLoginHistoryPage() {
         </div>
       )}
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-4 space-y-2">{[0,1,2,3,4].map((i) => <Skeleton key={i} className="h-14" />)}</div>
+            <div className="p-4 space-y-2">{[0, 1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-16" />)}</div>
           ) : logs.length === 0 ? (
             <div className="py-16 text-center text-muted-foreground text-sm">ไม่มีข้อมูล</div>
           ) : (
             <div className="divide-y">
               {logs.map((log) => (
                 <div key={log.id} className={`flex items-start gap-3 p-3 hover:bg-muted/20 ${!log.success ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${log.success ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                  <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${log.success ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
                     {log.success
                       ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                       : <XCircle className="h-4 w-4 text-red-600" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold">{log.email}</span>
-                      {log.user?.name && (
-                        <Badge variant="outline" className="text-[9px] py-0">{log.user.name}</Badge>
+                      <span className="text-sm font-semibold">{log.user?.name ?? log.email}</span>
+                      <span className="text-xs text-muted-foreground">{log.email}</span>
+                      {log.user && (
+                        <Badge variant="outline" className={`text-[9px] ${ROLE_COLOR[log.user.role.code] ?? ''}`}>
+                          {getPosition(log)}
+                        </Badge>
                       )}
+                      {log.user?.team && <Badge variant="secondary" className="text-[9px]">{log.user.team.name}</Badge>}
                       {log.success ? (
-                        <Badge variant="outline" className="text-[9px] py-0 bg-emerald-50 text-emerald-700 border-emerald-300">✅ สำเร็จ</Badge>
+                        <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-300">สำเร็จ</Badge>
                       ) : (
-                        <Badge variant="outline" className="text-[9px] py-0 bg-red-50 text-red-700 border-red-300">
-                          ❌ {log.reason ? (REASON_LABEL[log.reason] ?? log.reason) : 'ล้มเหลว'}
+                        <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300">
+                          {log.reason ? (REASON_LABEL[log.reason] ?? log.reason) : 'ล้มเหลว'}
                         </Badge>
                       )}
                     </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
+                    <div className="text-[10px] text-muted-foreground mt-1 flex gap-3 flex-wrap">
                       <span>{formatDate(log.createdAt)}</span>
                       {log.ipAddress && <span>IP: {log.ipAddress}</span>}
                       {log.userAgent && (
-                        <span className="truncate max-w-[300px]" title={log.userAgent}>
-                          {log.userAgent.split(' ')[0]}
+                        <span className="inline-flex items-center gap-1 truncate max-w-[360px]" title={log.userAgent}>
+                          <Monitor className="h-3 w-3" />{log.userAgent}
                         </span>
                       )}
                     </div>
@@ -153,7 +192,6 @@ export default function AdminLoginHistoryPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
       {meta && meta.totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
           <Button variant="outline" size="sm" disabled={page <= 1}
