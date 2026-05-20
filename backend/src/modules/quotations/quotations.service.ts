@@ -370,17 +370,41 @@ export const quotationsService = {
     const grandTotal = Number(existing.grandTotal);
     const isResubmit = existing.status === 'REJECTED';
 
-    // หา approver คนแรกในสายงาน (Section Manager ของ officer)
-    const next = await findNextApprover(prisma as any, userId, grandTotal);
-    if (!next) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติในสายงาน กรุณาติดต่อ Admin');
+    // For resubmit: route directly to the manager who rejected (skip Section Manager if already escalated).
+    // For fresh submit: find the first approver in the chain (Section Manager).
+    let targetApproverId: string | null = null;
+    let targetApproverName = '';
+    let targetStatus: 'PENDING' | 'PENDING_ESCALATED' = 'PENDING';
+
+    if (isResubmit && existing.rejectedById) {
+      const rejector = await prisma.user.findUnique({
+        where: { id: existing.rejectedById },
+        select: { id: true, name: true, managerLevel: true, role: { select: { code: true } } },
+      });
+      if (rejector && !isOfficer(rejector.role.code)) {
+        targetApproverId = rejector.id;
+        targetApproverName = rejector.name;
+        targetStatus = rejector.managerLevel === 'SECTION' ? 'PENDING' : 'PENDING_ESCALATED';
+      }
+    }
+
+    if (!targetApproverId) {
+      const found = await findNextApprover(prisma as any, userId, grandTotal);
+      if (!found) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติในสายงาน กรุณาติดต่อ Admin');
+      targetApproverId = found.approverId;
+      targetApproverName = found.approverName;
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
         data: {
-          status: 'PENDING',
+          status: targetStatus,
           submittedAt: new Date(),
-          currentApproverId: next.approverId,
+          currentApproverId: targetApproverId,
+          rejectedById: null,
+          rejectedAt: null,
+          rejectionReason: null,
         },
         include: quotationDetailInclude,
       });
@@ -392,7 +416,7 @@ export const quotationsService = {
       }
 
       await createNotification(tx, {
-        userId: next.approverId,
+        userId: targetApproverId!,
         type: isResubmit ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
         title: isResubmit ? '🔄 Quotation resubmitted' : '📋 Quotation รออนุมัติ',
         message: `${q.quotationNo} จาก ${q.customerCompany} (${q.grandTotal} ${q.currency})`,
@@ -406,7 +430,7 @@ export const quotationsService = {
     await logActivity(prisma, {
       userId, action: isResubmit ? 'quotation.resubmit' : 'quotation.submit',
       entityType: 'Quotation', entityId: updated.id,
-      description: `${isResubmit ? 'Resubmitted' : 'Submitted'} ${updated.quotationNo} → ${next.approverName}`,
+      description: `${isResubmit ? 'Resubmitted' : 'Submitted'} ${updated.quotationNo} → ${targetApproverName}`,
       req,
     });
 

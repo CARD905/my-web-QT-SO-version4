@@ -27,18 +27,16 @@ router.get('/my-team', asyncHandler(async (req, res) => {
     where: { id: manager.teamId, deletedAt: null },
     include: {
       members: {
-        where: {
-          deletedAt: null,
-          role: { code: 'OFFICER' }, // ✅ แสดงเฉพาะ OFFICER เท่านั้น ไม่รวม MANAGER
-        },
+        where: { deletedAt: null },
         select: {
           id: true, name: true, email: true, phone: true,
           isActive: true, isTeamLead: true, reportsToId: true,
-          lastLoginAt: true,
+          lastLoginAt: true, managerLevel: true, approvalLimit: true,
           reportsTo: { select: { id: true, name: true } },
           role: { select: { code: true, nameTh: true } },
           _count: { select: { createdQuotations: true } },
         },
+        orderBy: [{ role: { level: 'asc' } }, { name: 'asc' }],
       },
     },
   });

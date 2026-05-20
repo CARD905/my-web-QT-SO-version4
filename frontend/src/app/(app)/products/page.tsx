@@ -189,6 +189,7 @@ interface PricingResult {
   actualMarginPct: number;
   barSugPct: number;
   marketBarPct: number | null;
+  lastBarPct: number | null;
   insights: { type: 'ok' | 'warn' | 'info'; text: string }[];
 }
 
@@ -200,59 +201,73 @@ type ModalView = 'form' | 'analyzer';
 
 function runPricingEngine(p: PricingInputs): PricingResult | null {
   const { costPrice, lastPrice, marketPrice, targetMarginPct } = p;
-  const base = Math.max(costPrice, lastPrice);
-  if (!base && !marketPrice) return null;
+  if (!costPrice && !lastPrice && !marketPrice) return null;
 
-  const minP = base > 0 ? Math.round(base / (1 - targetMarginPct / 100)) : 0;
-  let sug = 0;
   const insights: PricingResult['insights'] = [];
+  let sug = 0;
+  let minP = 0;
 
-  if (base && marketPrice) {
-    // Blend: cost-based margin 60% + market anchor 40%
-    const costBased   = base / (1 - targetMarginPct / 100);
-    const marketBased = marketPrice * 0.95;
-    sug = Math.round(costBased * 0.6 + marketBased * 0.4);
-    sug = Math.max(sug, minP);
-    insights.push({ type: 'ok', text: 'ถ่วงน้ำหนัก: ต้นทุน+margin 60% + ราคาตลาด 40% — สมดุลกำไรและการแข่งขัน' });
-  } else if (base) {
-    sug = minP;
-    insights.push({ type: 'info', text: 'คำนวณจากต้นทุน + margin เป้าหมาย — เพิ่มราคาตลาดเพื่อปรับแข่งขันได้ดีขึ้น' });
+  if (costPrice > 0) {
+    // Standard price = purely cost-based + target margin
+    minP = Math.round(costPrice / (1 - targetMarginPct / 100));
+    sug  = minP;
+    insights.push({ type: 'ok', text: 'คำนวณจากต้นทุน + target margin — ราคาขั้นต่ำที่ยังได้กำไรตามเป้าหมาย' });
+
+    // Last price: comparison insight only — does not affect the calculated price
+    if (lastPrice > 0) {
+      const ratio = lastPrice / sug;
+      if (ratio > 1.1)
+        insights.push({ type: 'ok',   text: `Last price สูงกว่า standard ${((ratio - 1) * 100).toFixed(0)}% — ลูกค้าเคยยอมรับราคาที่สูงกว่า อาจเพิ่ม margin ได้` });
+      else if (ratio > 1.02)
+        insights.push({ type: 'info', text: `Last price สูงกว่า standard ${((ratio - 1) * 100).toFixed(0)}% — ราคาที่เคยขายสอดคล้องกับ standard` });
+      else if (ratio >= 0.93)
+        insights.push({ type: 'ok',   text: `Last price ใกล้เคียง standard (${ratio >= 1 ? '+' : ''}${((ratio - 1) * 100).toFixed(0)}%) — ราคาสอดคล้องกับประสบการณ์การขาย` });
+      else
+        insights.push({ type: 'warn', text: `Last price ต่ำกว่า standard ${((1 - ratio) * 100).toFixed(0)}% — เคยขายต่ำกว่าเป้า ตรวจสอบเหตุผล (ส่วนลดพิเศษ / ต้นทุนสูงขึ้น?)` });
+    }
+  } else if (lastPrice > 0) {
+    // No cost price — last price as fallback reference only
+    minP = lastPrice;
+    sug  = lastPrice;
+    insights.push({ type: 'warn', text: 'ไม่มีต้นทุน — ใช้ Last price เป็นฐานอ้างอิง ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
   } else {
+    // Only market price
     sug = Math.round(marketPrice * 0.9);
     insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุน — ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
   }
 
-  // Market position insights
-  if (marketPrice && sug) {
+  // Market position: informational only — does not change the calculated price
+  if (marketPrice > 0 && sug > 0) {
     const ratio = sug / marketPrice;
-    if (ratio > 1.1)
+    if (ratio > 1.15)
       insights.push({ type: 'warn', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — ควรลด target margin หรือเพิ่ม value proposition` });
     else if (ratio > 1.02)
       insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — premium positioning ตรวจสอบว่าตลาดยอมรับได้` });
-    else if (ratio >= 0.9)
-      insights.push({ type: 'ok', text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(0)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
+    else if (ratio >= 0.88)
+      insights.push({ type: 'ok',   text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(0)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
     else
-      insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาตั้งสูงขึ้นเพื่อเพิ่ม margin` });
+      insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาเพิ่ม target margin` });
   }
 
   // Margin check
-  const actualMarginPct = base && sug ? ((sug - base) / sug) * 100 : 0;
-  if (base) {
+  const actualMarginPct = costPrice > 0 && sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
+  if (costPrice > 0) {
     if (actualMarginPct >= targetMarginPct)
-      insights.push({ type: 'ok', text: `margin จริง ${actualMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+      insights.push({ type: 'ok',   text: `margin จริง ${actualMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
     else
       insights.push({ type: 'warn', text: `margin จริง ${actualMarginPct.toFixed(1)}% < target ${targetMarginPct}% — ราคาต่ำกว่าเป้าหมาย` });
   }
 
-  const hi = Math.max(sug, marketPrice, minP) * 1.1 || 1;
+  // Bar visualization — include last price as a third marker
+  const hi = Math.max(sug, marketPrice || 0, lastPrice || 0, minP) * 1.1 || 1;
   const lo = Math.max(minP * 0.85, 0);
   const rng = hi - lo || 1;
-  const barSugPct   = Math.min(100, Math.max(0, ((sug - lo) / rng) * 100));
-  const marketBarPct = marketPrice
-    ? Math.min(100, Math.max(0, ((marketPrice - lo) / rng) * 100))
-    : null;
+  const pct = (v: number) => Math.min(100, Math.max(0, ((v - lo) / rng) * 100));
+  const barSugPct    = pct(sug);
+  const marketBarPct = marketPrice > 0 ? pct(marketPrice) : null;
+  const lastBarPct   = lastPrice > 0   ? pct(lastPrice)   : null;
 
-  return { baseCost: base, minPrice: minP, suggestedPrice: sug, actualMarginPct, barSugPct, marketBarPct, insights };
+  return { baseCost: costPrice || lastPrice, minPrice: minP, suggestedPrice: sug, actualMarginPct, barSugPct, marketBarPct, lastBarPct, insights };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -340,7 +355,7 @@ function PricingAnalyzer({
 
         <div className="space-y-1.5">
           <Label className="text-xs flex items-center gap-1.5 text-muted-foreground">
-            <TrendingUp className="h-3 w-3" /> Last purchase price
+            <TrendingUp className="h-3 w-3" /> Last price
           </Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">฿</span>
@@ -428,8 +443,15 @@ function PricingAnalyzer({
             <div className="relative h-2 bg-muted rounded-full overflow-visible">
               <div className="absolute left-0 top-0 h-full rounded-full bg-primary transition-all duration-500"
                 style={{ width: `${result.barSugPct}%` }} />
+              {/* Standard price marker */}
               <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-primary ring-2 ring-background transition-all duration-500 shadow-sm"
                 style={{ left: `${result.barSugPct}%` }} />
+              {/* Last price marker */}
+              {result.lastBarPct !== null && (
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-violet-500 ring-2 ring-background transition-all duration-500"
+                  style={{ left: `${result.lastBarPct}%` }} />
+              )}
+              {/* Market price marker */}
               {result.marketBarPct !== null && (
                 <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-background transition-all duration-500"
                   style={{ left: `${result.marketBarPct}%` }} />
@@ -441,6 +463,11 @@ function PricingAnalyzer({
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-2 h-2 rounded-full bg-primary" /> standard
                 </span>
+                {result.lastBarPct !== null && (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-violet-500" /> last
+                  </span>
+                )}
                 {result.marketBarPct !== null && (
                   <span className="flex items-center gap-1">
                     <span className="inline-block w-2 h-2 rounded-full bg-amber-400" /> ตลาด

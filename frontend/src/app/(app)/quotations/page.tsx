@@ -22,7 +22,7 @@ import type { ApiResponse, Quotation } from '@/types/api';
 export default function QuotationsPage() {
   const t       = useT();
   const confirm = useConfirm(); // ✅ ใช้แทน window.confirm
-  const { can, role } = usePermissions();
+  const { can, role, user } = usePermissions();
 
   const [list,    setList]    = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -256,7 +256,6 @@ export default function QuotationsPage() {
         <div className="grid gap-3">
           {list.map((q) => {
             const isEscalated  = q.status === 'PENDING_ESCALATED';
-            const isManagerOnly = role?.code === 'MANAGER';
             const isApprovable =
               canApprove &&
               ((q.status === 'PENDING' && (canApproveAll || role?.code === 'MANAGER')) ||
@@ -309,10 +308,10 @@ export default function QuotationsPage() {
                           {q.version > 1 && (
                             <span className="text-xs text-muted-foreground">v{q.version}</span>
                           )}
-                          {isEscalated && isManagerOnly && (
+                          {isEscalated && q.currentApprover && q.currentApprover.id !== user?.id && (
                             <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">
                               <Lock className="h-2.5 w-2.5 mr-1" />
-                              รอ CEO อนุมัติ
+                              รอ {q.currentApprover.name} อนุมัติ
                             </Badge>
                           )}
                         </div>
