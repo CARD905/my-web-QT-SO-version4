@@ -254,6 +254,7 @@ export default function QuotationDetailPage() {
   const [acting, setActing] = useState<string | null>(null);
   const [showApprovePopover, setShowApprovePopover] = useState(false);
   const [showRejectPopover, setShowRejectPopover] = useState(false);
+  const [showEscalatePopover, setShowEscalatePopover] = useState(false);
   const [showPrintView, setShowPrintView] = useState(false);
 
   const load = async () => {
@@ -296,6 +297,12 @@ export default function QuotationDetailPage() {
     catch (err) { toast.error(getApiErrorMessage(err)); } finally { setActing(null); }
   };
 
+  const handleEscalate = async (comment: string) => {
+    setActing('escalate');
+    try { await api.post(`/quotations/${id}/escalate`, { comment }); toast.success('ส่งต่อให้ผู้มีอำนาจอนุมัติถัดไปเรียบร้อย'); setShowEscalatePopover(false); await load(); }
+    catch (err) { toast.error(getApiErrorMessage(err)); } finally { setActing(null); }
+  };
+
   // ✅ Renew — สร้าง Draft ใหม่ v+1
   const handleRenew = async () => {
     if (!q) return;
@@ -327,21 +334,36 @@ export default function QuotationDetailPage() {
   const userId = session?.user?.id;
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
+  const isCeo = role?.code === 'CEO';
   const isSpecialDiscountPendingCEO = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO';
 
   const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
   const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated) && !isSpecialDiscountPendingCEO;
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
-  // ✅ Renew — เฉพาะ EXPIRED และเป็นเจ้าของ
   const canRenew  = q.status === 'EXPIRED' && isOwner;
 
-  const canApproveThis = (() => {
-    if (!isElevated) return false;
-    if (q.status === 'PENDING') return can('quotation', 'approve', 'TEAM') || can('quotation', 'approve', 'ALL');
-    if (q.status === 'PENDING_ESCALATED') return can('quotation', 'approve', 'ALL');
-    return false;
+  // ── Approval logic ──────────────────────────────────────────────────────
+  // The designated approver is tracked in q.currentApprover.
+  // Only CEO can bypass the currentApprover check. ADMIN has no approval authority.
+  const isCurrentApprover = !!(userId && q.currentApprover?.id === userId);
+  const isPendingStatus = ['PENDING', 'PENDING_ESCALATED'].includes(q.status as string);
+  const canApproveThis = isPendingStatus && (isCurrentApprover || isCeo);
+
+  // Does the current approver's limit get exceeded by this quotation?
+  const approverLimit = Number(q.currentApprover?.approvalLimit ?? 0);
+  const grandTotalNum = Number(q.grandTotal);
+  const exceedsApproverLimit = isCurrentApprover && !isCeo && approverLimit > 0 && grandTotalNum > approverLimit;
+
+  // Label for next level manager (used in escalate button + popover)
+  const nextLevelTitle = (() => {
+    const lv = q.currentApprover?.managerLevel;
+    if (lv === 'SECTION') return 'Department Manager';
+    if (lv === 'DEPARTMENT') return 'Division Manager';
+    if (lv === 'DIVISION') return 'CEO';
+    return 'ผู้มีอำนาจอนุมัติถัดไป';
   })();
+
   const showCommentThread = COMMENT_ALLOWED_STATUSES.includes(q.status as string);
 
   // ── Print View ──────────────────────────────────────────────────────────
@@ -461,12 +483,45 @@ export default function QuotationDetailPage() {
       )}
       {q.status === 'PENDING' && (
         <Card className="border-amber-500/50 bg-amber-500/5">
-          <CardContent className="pt-4 flex gap-3">
+          <CardContent className="pt-4 flex gap-3 items-start">
             <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div>
-              <p className="text-sm mt-1">ส่งเมื่อ {formatDate(q.submittedAt)} · รอ Manager ตรวจสอบ</p>
-              {!isElevated && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}
+              <p className="text-sm mt-1">
+                ส่งเมื่อ {formatDate(q.submittedAt)} · รอ{' '}
+                <span className="font-semibold">{q.currentApprover?.name || 'Manager'}</span>
+                {q.currentApprover?.role?.nameTh ? ` (${q.currentApprover.role.nameTh})` : ''} ตรวจสอบ
+              </p>
+              {isCurrentApprover && (
+                <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                  {exceedsApproverLimit
+                    ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
+                    : `✓ มูลค่า ${formatMoney(grandTotalNum, q.currency)} อยู่ในวงเงินของคุณ${approverLimit > 0 ? ` (${formatMoney(approverLimit)})` : ''} — สามารถอนุมัติได้เลย`}
+                </div>
+              )}
+              {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {q.status === 'PENDING_ESCALATED' && (
+        <Card className="border-blue-500/50 bg-blue-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <Send className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-blue-700 dark:text-blue-400">ส่งต่อขออนุมัติระดับถัดไป</div>
+              <p className="text-sm mt-1">
+                รอ <span className="font-semibold">{q.currentApprover?.name || 'Manager'}</span>
+                {q.currentApprover?.role?.nameTh ? ` (${q.currentApprover.role.nameTh})` : ''} พิจารณา
+              </p>
+              {isCurrentApprover && (
+                <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                  {exceedsApproverLimit
+                    ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
+                    : `✓ มูลค่า ${formatMoney(grandTotalNum, q.currency)} อยู่ในวงเงินของคุณ${approverLimit > 0 ? ` (${formatMoney(approverLimit)})` : ''} — สามารถอนุมัติได้เลย`}
+                </div>
+              )}
+              {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">Quotation นี้กำลังรอการพิจารณาจาก Manager ระดับสูงขึ้น</p>}
             </div>
           </CardContent>
         </Card>
@@ -653,15 +708,47 @@ export default function QuotationDetailPage() {
 
         {canApproveThis && (
           <div className="flex justify-end gap-3 pb-2">
-            <Button variant="destructive" onClick={() => { setShowApprovePopover(false); setShowRejectPopover(true); }} disabled={acting !== null}><X className="h-4 w-4" />Reject</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setShowRejectPopover(false); setShowApprovePopover(true); }} disabled={acting !== null}><Check className="h-4 w-4" />Approve</Button>
+            <Button
+              variant="destructive"
+              onClick={() => { setShowApprovePopover(false); setShowEscalatePopover(false); setShowRejectPopover(true); }}
+              disabled={acting !== null}
+            >
+              <X className="h-4 w-4" />Reject
+            </Button>
+            {exceedsApproverLimit ? (
+              <Button
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={() => { setShowRejectPopover(false); setShowApprovePopover(false); setShowEscalatePopover(true); }}
+                disabled={acting !== null}
+              >
+                <Send className="h-4 w-4" />ส่งต่อ {nextLevelTitle}
+              </Button>
+            ) : (
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => { setShowRejectPopover(false); setShowEscalatePopover(false); setShowApprovePopover(true); }}
+                disabled={acting !== null}
+              >
+                <Check className="h-4 w-4" />Approve
+              </Button>
+            )}
           </div>
         )}
       </div>
 
       {showCommentThread && <CommentThread quotationId={id} />}
       {showApprovePopover && <ConfirmPopover title={`อนุมัติ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งให้อัปโหลด PO ที่หน้า Checklist" confirmLabel="✓ Approve" onClose={() => setShowApprovePopover(false)} onConfirm={handleApprove} loading={acting === 'approve'} />}
-      {showRejectPopover && <ConfirmPopover title={`ปฏิเสธ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งและสามารถแก้ไขแล้วส่งใหม่ได้" confirmLabel="✕ Reject" confirmVariant="destructive" requireComment onClose={() => setShowRejectPopover(false)} onConfirm={handleReject} loading={acting === 'reject'} />}
+      {showRejectPopover && <ConfirmPopover title={`ปฏิเสธ ${q.quotationNo}?`} description="Officer จะได้รับแจ้งและสามารถแก้ไขแล้วส่งใหม่ได้ทันที ไม่ผ่านขั้นตอน" confirmLabel="✕ Reject" confirmVariant="destructive" requireComment onClose={() => setShowRejectPopover(false)} onConfirm={handleReject} loading={acting === 'reject'} />}
+      {showEscalatePopover && (
+        <ConfirmPopover
+          title={`ส่งต่อ ${q.quotationNo} ให้ ${nextLevelTitle}?`}
+          description={`มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — ส่งต่อให้ ${nextLevelTitle} พิจารณาต่อ`}
+          confirmLabel={`ส่งต่อ ${nextLevelTitle}`}
+          onClose={() => setShowEscalatePopover(false)}
+          onConfirm={handleEscalate}
+          loading={acting === 'escalate'}
+        />
+      )}
     </div>
   );
 }

@@ -33,7 +33,7 @@ function isOfficer(roleCode: string): boolean {
 }
 
 function isManagerOrAbove(roleCode: string): boolean {
-  return ['MANAGER', 'ADMIN', 'CEO', 'APPROVER'].includes(roleCode);
+  return ['MANAGER', 'CEO', 'APPROVER'].includes(roleCode);
 }
 
 export const saleOrdersService = {

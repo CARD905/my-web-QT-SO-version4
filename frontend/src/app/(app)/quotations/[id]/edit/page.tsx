@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDateInput, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
+import { cn, formatDateInput, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
 import type { ApiResponse, Customer, DiscountType, Product, Quotation } from '@/types/api';
 
 interface LineItem {
@@ -25,6 +25,7 @@ interface LineItem {
   quantity: number;
   unit: string;
   unitPrice: number;
+  minUnitPrice: number; // ราคาขั้นต่ำจาก master data (0 = ไม่มีข้อจำกัด)
   discount: number;
   discountType: DiscountType;
 }
@@ -36,6 +37,7 @@ const newItem = (): LineItem => ({
   quantity: 1,
   unit: 'pcs',
   unitPrice: 0,
+  minUnitPrice: 0,
   discount: 0,
   discountType: 'PERCENTAGE',
 });
@@ -95,19 +97,24 @@ export default function EditQuotationPage() {
         setVatRate(Number(q.vatRate));
         setPaymentTerms(q.paymentTerms || 'Net 30');
         setConditions(q.conditions || '');
+        const productList = pRes.data.data ?? [];
         setItems(
-          (q.items ?? []).map((it, idx) => ({
-            id: it.id ?? `temp-${idx}`,
-            productId: it.productId || undefined,
-            productSku: it.productSku || undefined,
-            productName: it.productName,
-            productDescription: it.productDescription ?? '',
-            quantity: Number(it.quantity),
-            unit: it.unit,
-            unitPrice: Number(it.unitPrice),
-            discount: Number(it.discount),
-            discountType: it.discountType,
-          })),
+          (q.items ?? []).map((it, idx) => {
+            const masterProduct = productList.find((p) => p.id === it.productId);
+            return {
+              id: it.id ?? `temp-${idx}`,
+              productId: it.productId || undefined,
+              productSku: it.productSku || undefined,
+              productName: it.productName,
+              productDescription: it.productDescription ?? '',
+              quantity: Number(it.quantity),
+              unit: it.unit,
+              unitPrice: Number(it.unitPrice),
+              minUnitPrice: masterProduct ? Number(masterProduct.unitPrice) : 0,
+              discount: Number(it.discount),
+              discountType: it.discountType,
+            };
+          }),
         );
       } catch (err) {
         toast.error(getApiErrorMessage(err));
@@ -127,7 +134,7 @@ export default function EditQuotationPage() {
 
   const onProductSelect = (itemId: string, productId: string) => {
     if (!productId) {
-      updateItem(itemId, { productId: undefined, productSku: undefined });
+      updateItem(itemId, { productId: undefined, productSku: undefined, minUnitPrice: 0 });
       return;
     }
     const p = products.find((x) => x.id === productId);
@@ -139,6 +146,7 @@ export default function EditQuotationPage() {
       productDescription: p.description || '',
       unitPrice: Number(p.unitPrice),
       unit: p.unit,
+      minUnitPrice: Number(p.unitPrice),
     });
   };
 
@@ -169,6 +177,10 @@ export default function EditQuotationPage() {
     }
     if (items.some((it) => !it.productName.trim() || it.quantity <= 0)) {
       toast.error('Please fill in all product names and quantities');
+      return;
+    }
+    if (items.some((it) => it.minUnitPrice > 0 && it.unitPrice < it.minUnitPrice)) {
+      toast.error('ราคาสินค้าบางรายการต่ำกว่าราคา Master Data — กรุณาตรวจสอบก่อนบันทึก');
       return;
     }
 
@@ -350,7 +362,7 @@ export default function EditQuotationPage() {
             <div>Product</div>
             <div>Description</div>
             <div className="text-center">Qty</div>
-            <div className="text-right">Unit Price</div>
+            <div className="text-right flex items-center justify-end gap-1"><Lock className="h-3 w-3" />Unit Price</div>
             <div className="text-right">Discount</div>
             <div className="text-center">Type</div>
             <div className="text-right">Line Total</div>
@@ -399,16 +411,41 @@ export default function EditQuotationPage() {
                   onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
                   className="h-9 text-center"
                 />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={item.unitPrice}
-                  onChange={(e) =>
-                    updateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })
-                  }
-                  className="h-9 text-right"
-                />
+                <div className="space-y-0.5">
+                  <Input
+                    type="number"
+                    min={item.minUnitPrice > 0 ? item.minUnitPrice : 0}
+                    step="0.01"
+                    value={item.unitPrice}
+                    onChange={(e) =>
+                      updateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })
+                    }
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      if (item.minUnitPrice > 0 && val < item.minUnitPrice) {
+                        updateItem(item.id, { unitPrice: item.minUnitPrice });
+                        toast.warning(`ราคาต้องไม่ต่ำกว่าราคา Master Data (${formatNumber(item.minUnitPrice)})`);
+                      }
+                    }}
+                    className={cn(
+                      'h-9 text-right',
+                      item.minUnitPrice > 0 && item.unitPrice < item.minUnitPrice
+                        ? 'border-destructive ring-1 ring-destructive/40'
+                        : '',
+                    )}
+                  />
+                  {item.minUnitPrice > 0 && (
+                    <div className={cn(
+                      'text-[10px] text-right flex items-center justify-end gap-1',
+                      item.minUnitPrice > 0 && item.unitPrice < item.minUnitPrice
+                        ? 'text-destructive font-medium'
+                        : 'text-muted-foreground',
+                    )}>
+                      <Lock className="h-2.5 w-2.5" />
+                      ≥ {formatNumber(item.minUnitPrice)}
+                    </div>
+                  )}
+                </div>
                 <Input
                   type="number"
                   min="0"

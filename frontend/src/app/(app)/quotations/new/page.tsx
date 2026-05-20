@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDateInput, formatMoney, formatNumber } from '@/lib/utils';
+import { cn, formatDateInput, formatMoney, formatNumber } from '@/lib/utils';
 import type { ApiResponse, Customer, Product } from '@/types/api';
 
 const NORMAL_DISCOUNT_MAX = 20;
@@ -30,7 +30,7 @@ interface LineItem {
   quantity: number;
   unit: string;
   unitPrice: number;
-  unitPriceLocked: boolean; // ✅ ใหม่ — true เมื่อเลือกจาก master data
+  minUnitPrice: number; // ราคาขั้นต่ำจาก master data (0 = ไม่มีข้อจำกัด)
   discount: number;
   discountType: 'PERCENTAGE' | 'FIXED';
 }
@@ -38,7 +38,7 @@ interface LineItem {
 const newItem = (): LineItem => ({
   id: Math.random().toString(36).slice(2),
   productName: '', description: '', quantity: 1, unit: 'pcs',
-  unitPrice: 0, unitPriceLocked: false,
+  unitPrice: 0, minUnitPrice: 0,
   discount: 0, discountType: 'PERCENTAGE',
 });
 
@@ -164,17 +164,15 @@ export default function NewQuotationPage() {
 
   const onProductSelect = (itemId: string, productId: string) => {
     if (!productId) {
-      // ✅ เมื่อล้างการเลือก → unlock ราคา
-      updateItem(itemId, { productId: undefined, productSku: undefined, unitPriceLocked: false });
+      updateItem(itemId, { productId: undefined, productSku: undefined, minUnitPrice: 0 });
       return;
     }
     const p = products.find((x) => x.id === productId);
     if (!p) return;
-    // ✅ เมื่อเลือก product → lock ราคาตาม master data
     updateItem(itemId, {
       productId: p.id, productSku: p.sku, productName: p.name,
       description: p.description || '', unitPrice: Number(p.unitPrice),
-      unit: p.unit, unitPriceLocked: true, // ← lock!
+      unit: p.unit, minUnitPrice: Number(p.unitPrice),
     });
   };
 
@@ -199,6 +197,10 @@ export default function NewQuotationPage() {
   const submitForm = async (mode: 'draft' | 'submit') => {
     if (!customerId) { toast.error('Please select a customer'); return; }
     if (items.some((it) => !it.productName.trim() || it.quantity <= 0)) { toast.error('Please fill in all product names and quantities'); return; }
+    if (items.some((it) => it.minUnitPrice > 0 && it.unitPrice < it.minUnitPrice)) {
+      toast.error('ราคาสินค้าบางรายการต่ำกว่าราคา Master Data — กรุณาตรวจสอบก่อนบันทึก');
+      return;
+    }
     if (hasSpecial && !specialDiscountReason.trim()) { toast.error('กรุณาระบุเหตุผลสำหรับ Special Discount ก่อนบันทึก'); return; }
     if (mode === 'submit') {
       const msg = hasSpecial
@@ -308,7 +310,7 @@ export default function NewQuotationPage() {
               <h2 className="text-base font-semibold">{t('quotation.lineItems')}</h2>
               <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                 <Lock className="h-3 w-3" />
-                ราคาสินค้าจาก Master Data จะถูก lock อัตโนมัติ — ส่วนลดปกติสูงสุด
+                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดปกติสูงสุด
                 <span className="font-semibold text-foreground">{NORMAL_DISCOUNT_MAX}%</span>
                 {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{SPECIAL_DISCOUNT_MAX}%</span>
               </p>
@@ -321,7 +323,7 @@ export default function NewQuotationPage() {
           <div className="hidden md:grid grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase border-b">
             <div>Product</div><div>Description</div>
             <div className="text-center">Qty</div>
-            <div className="text-right flex items-center justify-end gap-1"><Lock className="h-3 w-3" />Unit Price</div>
+            <div className="text-right">Unit Price</div>
             <div className="text-right">Discount</div>
             <div className="text-center">Type</div>
             <div className="text-right">Line Total</div>
@@ -331,7 +333,7 @@ export default function NewQuotationPage() {
           <div className="space-y-2 mt-2">
             {items.map((item, idx) => {
               const isSpecialItem = item.discountType === 'PERCENTAGE' && item.discount > NORMAL_DISCOUNT_MAX;
-              const priceIsLocked = item.unitPriceLocked && !!item.productId;
+              const isBelowMin = item.minUnitPrice > 0 && item.unitPrice < item.minUnitPrice;
               return (
                 <div key={item.id} className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}>
                   <div>
@@ -346,17 +348,27 @@ export default function NewQuotationPage() {
                   <Input type="number" min="0" step="0.01" disabled={isFullyDisabled} value={item.quantity}
                     onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })} className="h-9 text-center" />
 
-                  {/* ✅ Unit Price — locked เมื่อเลือกจาก master data */}
-                  <div className="relative">
+                  {/* Unit Price — แก้ไขได้ แต่ไม่ต่ำกว่า master data */}
+                  <div className="space-y-0.5">
                     <Input
-                      type="number" min="0" step="0.01"
-                      disabled={isFullyDisabled || priceIsLocked}
+                      type="number" min={item.minUnitPrice > 0 ? item.minUnitPrice : 0} step="0.01"
+                      disabled={isFullyDisabled}
                       value={item.unitPrice}
                       onChange={(e) => updateItem(item.id, { unitPrice: parseFloat(e.target.value) || 0 })}
-                      className={`h-9 text-right pr-7 ${priceIsLocked ? 'bg-muted cursor-not-allowed text-muted-foreground' : ''}`}
+                      onBlur={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        if (item.minUnitPrice > 0 && val < item.minUnitPrice) {
+                          updateItem(item.id, { unitPrice: item.minUnitPrice });
+                          toast.warning(`ราคาต้องไม่ต่ำกว่าราคา Master Data (${formatNumber(item.minUnitPrice)})`);
+                        }
+                      }}
+                      className={cn('h-9 text-right', isBelowMin && 'border-destructive ring-1 ring-destructive/40')}
                     />
-                    {priceIsLocked && (
-                      <Lock className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                    {item.minUnitPrice > 0 && (
+                      <div className={cn('text-[10px] text-right flex items-center justify-end gap-1', isBelowMin ? 'text-destructive font-medium' : 'text-muted-foreground')}>
+                        <Lock className="h-2.5 w-2.5" />
+                        ≥ {formatNumber(item.minUnitPrice)}
+                      </div>
                     )}
                   </div>
 

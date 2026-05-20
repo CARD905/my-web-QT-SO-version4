@@ -54,6 +54,7 @@ const quotationDetailInclude = {
       id: true, name: true, email: true,
       role: { select: { code: true, nameTh: true } },
       managerLevel: true,
+      approvalLimit: true,
     },
   },
   saleOrder: { select: { id: true, saleOrderNo: true, status: true } },
@@ -102,6 +103,27 @@ export const quotationsService = {
 
     if (query.highValue) where.grandTotal = { gte: HIGH_VALUE_THRESHOLD };
 
+    // Visibility gate: PENDING/PENDING_ESCALATED quotations are only visible
+    // to their creator or the designated currentApprover.
+    // CEO/ADMIN bypass this gate (they can see everything).
+    const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
+    if (!isCeoOrAdmin) {
+      const pendingGate: Prisma.QuotationWhereInput = {
+        OR: [
+          { status: { notIn: ['PENDING', 'PENDING_ESCALATED'] as QuotationStatus[] } },
+          { currentApproverId: currentUser.id },
+          { createdById: currentUser.id },
+        ],
+      };
+      if (!where.AND) {
+        where.AND = [pendingGate];
+      } else if (Array.isArray(where.AND)) {
+        (where.AND as Prisma.QuotationWhereInput[]).push(pendingGate);
+      } else {
+        where.AND = [where.AND as Prisma.QuotationWhereInput, pendingGate];
+      }
+    }
+
     if (query.search) {
       where.OR = [
         { quotationNo: { contains: query.search, mode: 'insensitive' } },
@@ -144,6 +166,17 @@ export const quotationsService = {
 
     const canView = await canActOnEntity(currentUser, 'quotation', 'view', quotation.createdById);
     if (!canView) throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
+
+    // Additional gate: PENDING/PENDING_ESCALATED are only visible to creator,
+    // the designated currentApprover, or CEO/ADMIN.
+    if (['PENDING', 'PENDING_ESCALATED'].includes(quotation.status)) {
+      const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
+      const isCurrentApprover = quotation.currentApproverId === currentUser.id;
+      const isCreator = quotation.createdById === currentUser.id;
+      if (!isCeoOrAdmin && !isCurrentApprover && !isCreator) {
+        throw new AppError(403, 'FORBIDDEN', 'คุณไม่มีสิทธิ์ดู Quotation นี้ในขณะนี้');
+      }
+    }
 
     if (
       (quotation.status === 'DRAFT' || quotation.status === 'PENDING') &&
@@ -503,24 +536,24 @@ export const quotationsService = {
       throw new AppError(409, 'INVALID_STATUS', `Only pending quotations can be approved (current: ${existing.status})`);
     }
 
-    // ตรวจว่าเป็น currentApprover หรือ CEO/ADMIN
+    // ตรวจว่าเป็น currentApprover หรือ CEO เท่านั้น (ADMIN ไม่มีสิทธิ์ approve)
     const approverUser = await prisma.user.findUnique({
       where: { id: approverId },
       include: { role: true },
     });
     if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
 
-    const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(approverUser.role.code);
+    const isCeo = approverUser.role.code === 'CEO';
     const isCurrentApprover = existing.currentApproverId === approverId;
 
-    if (!isCeoOrAdmin && !isCurrentApprover) {
+    if (!isCeo && !isCurrentApprover) {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 
-    // เช็ค limit รายคน
+    // เช็ค limit รายคน (CEO ไม่มีขีดจำกัด)
     const approverLimit = Number(approverUser.approvalLimit ?? 0);
     const grandTotal = Number(existing.grandTotal);
-    if (approverLimit > 0 && grandTotal > approverLimit) {
+    if (!isCeo && approverLimit > 0 && grandTotal > approverLimit) {
       throw new AppError(
         403, 'EXCEEDS_LIMIT',
         `มูลค่า ${grandTotal.toLocaleString()} เกินวงเงินอนุมัติของคุณ (${approverLimit.toLocaleString()}) — กรุณากด "ส่งต่อ" แทน`,
@@ -607,10 +640,11 @@ export const quotationsService = {
     });
     if (!approverUser) throw new AppError(404, 'USER_NOT_FOUND', 'Approver not found');
 
-    const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(approverUser.role.code);
+    // ADMIN ไม่มีสิทธิ์ reject — เฉพาะ currentApprover หรือ CEO
+    const isCeo = approverUser.role.code === 'CEO';
     const isCurrentApprover = existing.currentApproverId === approverId;
 
-    if (!isCeoOrAdmin && !isCurrentApprover) {
+    if (!isCeo && !isCurrentApprover) {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 

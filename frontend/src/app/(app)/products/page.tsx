@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Plus, Search, Package, X, Loader2, Edit2, Trash2,
   Sparkles, Calculator, TrendingUp, AlertTriangle, CheckCircle,
-  Info, ShoppingCart, Globe, Store, Target, ChevronRight,
+  Info, ShoppingCart, Globe, Target, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -179,7 +179,6 @@ interface PricingInputs {
   costPrice: number;
   lastPrice: number;
   marketPrice: number;
-  competitorPrice: number;
   targetMarginPct: number;
 }
 
@@ -189,7 +188,7 @@ interface PricingResult {
   suggestedPrice: number;
   actualMarginPct: number;
   barSugPct: number;
-  barCompPct: number | null;
+  marketBarPct: number | null;
   insights: { type: 'ok' | 'warn' | 'info'; text: string }[];
 }
 
@@ -200,57 +199,60 @@ type ModalView = 'form' | 'analyzer';
 // ═══════════════════════════════════════════════════════════════════════════
 
 function runPricingEngine(p: PricingInputs): PricingResult | null {
-  const { costPrice, lastPrice, marketPrice, competitorPrice, targetMarginPct } = p;
+  const { costPrice, lastPrice, marketPrice, targetMarginPct } = p;
   const base = Math.max(costPrice, lastPrice);
-  if (!base && !marketPrice && !competitorPrice) return null;
+  if (!base && !marketPrice) return null;
 
   const minP = base > 0 ? Math.round(base / (1 - targetMarginPct / 100)) : 0;
   let sug = 0;
   const insights: PricingResult['insights'] = [];
 
-  if (base && marketPrice && competitorPrice) {
-    sug = Math.round(
-      (base / (1 - targetMarginPct / 100)) * 0.5 +
-      marketPrice * 0.95 * 0.3 +
-      competitorPrice * 0.97 * 0.2,
-    );
-    insights.push({ type: 'ok', text: 'ข้อมูลครบทุกมิติ — ถ่วงน้ำหนัก ต้นทุน 50% + ตลาด 30% + คู่แข่ง 20%' });
-  } else if (base && marketPrice) {
-    sug = Math.round(Math.max(base / (1 - targetMarginPct / 100), marketPrice * 0.92));
-    insights.push({ type: 'info', text: 'ใช้ต้นทุน + ราคาตลาด — เพิ่ม competitor price เพื่อความแม่นยำ' });
-  } else if (base && competitorPrice) {
-    sug = Math.round(Math.max(base / (1 - targetMarginPct / 100), competitorPrice * 0.97));
-    insights.push({ type: 'info', text: 'ใช้ต้นทุน + คู่แข่ง — เพิ่ม market price เพื่อเปรียบเทียบ' });
+  if (base && marketPrice) {
+    // Blend: cost-based margin 60% + market anchor 40%
+    const costBased   = base / (1 - targetMarginPct / 100);
+    const marketBased = marketPrice * 0.95;
+    sug = Math.round(costBased * 0.6 + marketBased * 0.4);
+    sug = Math.max(sug, minP);
+    insights.push({ type: 'ok', text: 'ถ่วงน้ำหนัก: ต้นทุน+margin 60% + ราคาตลาด 40% — สมดุลกำไรและการแข่งขัน' });
   } else if (base) {
-    sug = Math.round(base / (1 - targetMarginPct / 100));
-    insights.push({ type: 'warn', text: 'มีเฉพาะต้นทุน — ควรเพิ่มราคาตลาดหรือคู่แข่งเพื่อตั้งราคาแข่งขันได้' });
-  } else {
-    sug = Math.round((marketPrice || competitorPrice) * 0.9);
-    insights.push({ type: 'warn', text: 'ไม่มีต้นทุน — ยืนยัน margin ไม่ได้ ควรใส่ cost price ก่อน' });
-  }
-
-  if (base && sug < minP) {
     sug = minP;
-    insights.push({ type: 'warn', text: 'ราคาปรับขึ้นมาที่ min price เพื่อให้ได้ target margin' });
+    insights.push({ type: 'info', text: 'คำนวณจากต้นทุน + margin เป้าหมาย — เพิ่มราคาตลาดเพื่อปรับแข่งขันได้ดีขึ้น' });
+  } else {
+    sug = Math.round(marketPrice * 0.9);
+    insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุน — ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
   }
-  if (marketPrice && sug > marketPrice * 1.1)
-    insights.push({ type: 'warn', text: 'สูงกว่าตลาด >10% — อาจแข่งขันยาก ลองลด target margin' });
-  if (competitorPrice && sug > competitorPrice)
-    insights.push({ type: 'warn', text: 'สูงกว่าคู่แข่ง — ควรพิจารณา value proposition' });
 
+  // Market position insights
+  if (marketPrice && sug) {
+    const ratio = sug / marketPrice;
+    if (ratio > 1.1)
+      insights.push({ type: 'warn', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — ควรลด target margin หรือเพิ่ม value proposition` });
+    else if (ratio > 1.02)
+      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — premium positioning ตรวจสอบว่าตลาดยอมรับได้` });
+    else if (ratio >= 0.9)
+      insights.push({ type: 'ok', text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(0)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
+    else
+      insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาตั้งสูงขึ้นเพื่อเพิ่ม margin` });
+  }
+
+  // Margin check
   const actualMarginPct = base && sug ? ((sug - base) / sug) * 100 : 0;
-  if (base && actualMarginPct >= targetMarginPct)
-    insights.push({ type: 'ok', text: `margin จริง ${actualMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+  if (base) {
+    if (actualMarginPct >= targetMarginPct)
+      insights.push({ type: 'ok', text: `margin จริง ${actualMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+    else
+      insights.push({ type: 'warn', text: `margin จริง ${actualMarginPct.toFixed(1)}% < target ${targetMarginPct}% — ราคาต่ำกว่าเป้าหมาย` });
+  }
 
-  const hi = Math.max(sug, marketPrice, competitorPrice, minP) * 1.08 || 1;
-  const lo = Math.max(minP * 0.9, 0);
+  const hi = Math.max(sug, marketPrice, minP) * 1.1 || 1;
+  const lo = Math.max(minP * 0.85, 0);
   const rng = hi - lo || 1;
-  const barSugPct  = Math.min(100, Math.max(0, ((sug - lo) / rng) * 100));
-  const barCompPct = competitorPrice
-    ? Math.min(100, Math.max(0, ((competitorPrice - lo) / rng) * 100))
+  const barSugPct   = Math.min(100, Math.max(0, ((sug - lo) / rng) * 100));
+  const marketBarPct = marketPrice
+    ? Math.min(100, Math.max(0, ((marketPrice - lo) / rng) * 100))
     : null;
 
-  return { baseCost: base, minPrice: minP, suggestedPrice: sug, actualMarginPct, barSugPct, barCompPct, insights };
+  return { baseCost: base, minPrice: minP, suggestedPrice: sug, actualMarginPct, barSugPct, marketBarPct, insights };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,7 +298,7 @@ function PricingAnalyzer({
   onUseSuggested: (price: number, cost: number) => void;
 }) {
   const [inputs, setInputs] = useState<PricingInputs>({
-    costPrice: 0, lastPrice: 0, marketPrice: 0, competitorPrice: 0, targetMarginPct: 30,
+    costPrice: 0, lastPrice: 0, marketPrice: 0, targetMarginPct: 30,
   });
   const [result,   setResult]   = useState<PricingResult | null>(null);
   const [hasInput, setHasInput] = useState(false);
@@ -305,7 +307,7 @@ function PricingAnalyzer({
   const update = (k: keyof PricingInputs, v: number) => {
     const next     = { ...inputs, [k]: v };
     const r        = runPricingEngine(next);
-    const anyInput = !!(next.costPrice || next.lastPrice || next.marketPrice || next.competitorPrice);
+    const anyInput = !!(next.costPrice || next.lastPrice || next.marketPrice);
     setInputs(next);
     setHasInput(anyInput);
     setResult(r);
@@ -347,25 +349,15 @@ function PricingAnalyzer({
           </div>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 col-span-2">
           <Label className="text-xs flex items-center gap-1.5 text-muted-foreground">
             <Globe className="h-3 w-3" /> Market price
+            <span className="text-[10px] text-muted-foreground/70">(ราคาตลาด / ราคาคู่แข่ง)</span>
           </Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">฿</span>
             <Input type="number" min="0" placeholder="0" className="pl-6 h-9 text-sm"
               onChange={(e) => update('marketPrice', parseFloat(e.target.value) || 0)} />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-xs flex items-center gap-1.5 text-muted-foreground">
-            <Store className="h-3 w-3" /> Competitor price
-          </Label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">฿</span>
-            <Input type="number" min="0" placeholder="0" className="pl-6 h-9 text-sm"
-              onChange={(e) => update('competitorPrice', parseFloat(e.target.value) || 0)} />
           </div>
         </div>
       </div>
@@ -409,10 +401,10 @@ function PricingAnalyzer({
           {/* Metric cards */}
           <div className="grid grid-cols-4 gap-2">
             {[
-              { label: 'ต้นทุน',      value: result.baseCost,      color: 'text-foreground' },
-              { label: 'min price',   value: result.minPrice,       color: 'text-red-500' },
-              { label: 'suggested',   value: result.suggestedPrice, color: 'text-primary', highlight: true },
-              { label: 'margin จริง', value: null, pct: result.actualMarginPct, color: marginColor },
+              { label: 'ต้นทุน',          value: result.baseCost,      color: 'text-foreground' },
+              { label: 'min price',        value: result.minPrice,       color: 'text-red-500' },
+              { label: 'standard price',   value: result.suggestedPrice, color: 'text-primary', highlight: true },
+              { label: 'margin จริง',      value: null, pct: result.actualMarginPct, color: marginColor },
             ].map((m, i) => (
               <div
                 key={i}
@@ -438,20 +430,20 @@ function PricingAnalyzer({
                 style={{ width: `${result.barSugPct}%` }} />
               <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-primary ring-2 ring-background transition-all duration-500 shadow-sm"
                 style={{ left: `${result.barSugPct}%` }} />
-              {result.barCompPct !== null && (
-                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-orange-400 ring-2 ring-background transition-all duration-500"
-                  style={{ left: `${result.barCompPct}%` }} />
+              {result.marketBarPct !== null && (
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-background transition-all duration-500"
+                  style={{ left: `${result.marketBarPct}%` }} />
               )}
             </div>
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>{result.minPrice ? formatMoney(result.minPrice) : ''}</span>
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-primary" /> suggested
+                  <span className="inline-block w-2 h-2 rounded-full bg-primary" /> standard
                 </span>
-                {result.barCompPct !== null && (
+                {result.marketBarPct !== null && (
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-2 h-2 rounded-full bg-orange-400" /> competitor
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400" /> ตลาด
                   </span>
                 )}
               </div>
@@ -474,7 +466,7 @@ function PricingAnalyzer({
             onClick={() => onUseSuggested(result.suggestedPrice, result.baseCost)}
           >
             <CheckCircle className="h-4 w-4" />
-            ใช้ suggested price — {formatMoney(result.suggestedPrice)}
+            ใช้ standard price — {formatMoney(result.suggestedPrice)}
             <ChevronRight className="h-4 w-4 ml-auto" />
           </Button>
         </div>

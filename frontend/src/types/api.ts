@@ -204,6 +204,15 @@ export interface Quotation {
   backupApprover?: User | null;
   currentStep: number;
   totalSteps: number;
+  currentApproverId?: string | null;
+  currentApprover?: {
+    id: string;
+    name: string;
+    email: string;
+    role: { code: string; nameTh: string };
+    managerLevel?: 'SECTION' | 'DEPARTMENT' | 'DIVISION' | null;
+    approvalLimit?: string | number | null;
+  } | null;
   approvedById?: string | null;
   approvedBy?: User | null;
   approvedAt?: string | Date | null;
