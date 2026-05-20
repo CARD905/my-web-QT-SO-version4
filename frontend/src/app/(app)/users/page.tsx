@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Users, Search, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { Users, Search, Plus, RefreshCw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -132,40 +132,38 @@ export default function UsersPage() {
       ) : (
         <div className="space-y-2">
           {users.map((user) => (
-            <Card key={user.id} className={!user.isActive ? 'opacity-60' : ''}>
-              <CardContent className="p-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                    {user.name.slice(0, 1).toUpperCase()}
-                  </div>
+            <Link key={user.id} href={`/users/${user.id}`} className="block">
+              <Card className={`transition-colors hover:bg-muted/30 ${!user.isActive ? 'opacity-60' : ''}`}>
+                <CardContent className="p-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${user.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                      {user.name.slice(0, 1).toUpperCase()}
+                    </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{user.name}</span>
-                      <Badge variant="outline" className={`text-[10px] ${ROLE_COLOR[user.role.code] ?? ''}`}>
-                        {user.role.nameTh}
-                      </Badge>
-                      {user.isTeamLead && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Lead</Badge>}
-                      {user.managerLevel && (
-                        <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">
-                          {MANAGER_LEVEL_LABEL[user.managerLevel] ?? user.managerLevel}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{user.name}</span>
+                        <Badge variant="outline" className={`text-[10px] ${ROLE_COLOR[user.role.code] ?? ''}`}>
+                          {user.role.nameTh}
                         </Badge>
-                      )}
-                      {!user.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
-                      {user.team && <span>{user.team.name}</span>}
-                      {user.lastLoginAt ? <span>เข้าสู่ระบบล่าสุด {formatDate(user.lastLoginAt)}</span> : <span>ยังไม่เคย login</span>}
+                        {user.isTeamLead && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">Lead</Badge>}
+                        {user.managerLevel && (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">
+                            {MANAGER_LEVEL_LABEL[user.managerLevel] ?? user.managerLevel}
+                          </Badge>
+                        )}
+                        {!user.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300">Inactive</Badge>}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{user.email}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
+                        {user.team && <span>{user.team.name}</span>}
+                        {user.lastLoginAt ? <span>เข้าสู่ระบบล่าสุด {formatDate(user.lastLoginAt)}</span> : <span>ยังไม่เคย login</span>}
+                      </div>
                     </div>
                   </div>
-
-                  <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
-                    <Link href={`/users/${user.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}

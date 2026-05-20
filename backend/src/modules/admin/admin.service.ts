@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { Request } from 'express';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/response';
-import { buildPaginationMeta, getPaginationParams } from '../../utils/pagination';
+import { buildPaginationMeta, getPaginationParams, paginationSchema } from '../../utils/pagination';
 import { logActivity } from '../../utils/activity-log';
 
 export interface AdminUser {
@@ -615,7 +615,12 @@ export const adminService = {
     });
 
     const userMap = new Map(users.map((user) => [user.id, user]));
-    const latestMap = new Map(latestLogs.filter((log) => log.userId).map((log) => [log.userId!, log]));
+    const latestMap = new Map<string, (typeof latestLogs)[number]>();
+    for (const log of latestLogs) {
+      if (log.userId && !latestMap.has(log.userId)) {
+        latestMap.set(log.userId, log);
+      }
+    }
 
     return counts
       .map((item) => {
@@ -634,14 +639,15 @@ export const adminService = {
   },
 
   async getActivityLogs(query: any) {
-    const { skip, take, page, limit } = getPaginationParams(query);
+    const parsedQuery = paginationSchema.parse(query);
+    const { skip, take, page, limit } = getPaginationParams(parsedQuery);
     const where: Prisma.ActivityLogWhereInput = {};
 
-    if (query.search) {
+    if (parsedQuery.search) {
       where.OR = [
-        { userName: { contains: query.search, mode: 'insensitive' } },
-        { userEmail: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
+        { userName: { contains: parsedQuery.search, mode: 'insensitive' } },
+        { userEmail: { contains: parsedQuery.search, mode: 'insensitive' } },
+        { description: { contains: parsedQuery.search, mode: 'insensitive' } },
       ];
     }
     if (query.userId) where.userId = query.userId;
@@ -676,13 +682,14 @@ export const adminService = {
   // LOGIN HISTORY
   // ============================================================
   async getLoginHistory(query: any) {
-    const { skip, take, page, limit } = getPaginationParams(query);
+    const parsedQuery = paginationSchema.parse(query);
+    const { skip, take, page, limit } = getPaginationParams(parsedQuery);
     const where: Prisma.LoginHistoryWhereInput = {};
 
-    if (query.search) {
+    if (parsedQuery.search) {
       where.OR = [
-        { email: { contains: query.search, mode: 'insensitive' } },
-        { user: { name: { contains: query.search, mode: 'insensitive' } } },
+        { email: { contains: parsedQuery.search, mode: 'insensitive' } },
+        { user: { is: { name: { contains: parsedQuery.search, mode: 'insensitive' } } } },
       ];
     }
     if (query.success !== undefined) where.success = query.success === true || query.success === 'true';

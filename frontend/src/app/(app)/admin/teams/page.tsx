@@ -482,6 +482,7 @@ export default function AdminTeamsPage() {
   const [managers, setManagers] = useState<UserItem[]>([]);
   const [officers, setOfficers] = useState<UserItem[]>([]);
   const [loading,  setLoading]  = useState(true);
+  const [teamSearch, setTeamSearch] = useState('');
 
   // Create Department
   const [showCreateDept, setShowCreateDept] = useState(false);
@@ -616,16 +617,47 @@ export default function AdminTeamsPage() {
   };
 
   const allTeams = depts.flatMap((d) => d.teams.map((t) => ({ id: t.id, name: t.name, deptName: d.name })));
+  const normalizedTeamSearch = teamSearch.trim().toLowerCase();
+  const matchesSearch = (value?: string | null) => value?.toLowerCase().includes(normalizedTeamSearch) ?? false;
+  const filterUsers = (list: UserItem[]) => normalizedTeamSearch
+    ? list.filter((user) =>
+        matchesSearch(user.name) ||
+        matchesSearch(user.email) ||
+        matchesSearch(user.role.nameTh) ||
+        matchesSearch(user.role.code) ||
+        matchesSearch(user.managerLevel) ||
+        matchesSearch(user.team?.name))
+    : list;
 
-  const unassignedManagers = managers.filter((m) => !m.team);
-  const assignedManagers = managers.filter((m) => m.team);
+  const filteredDepts = normalizedTeamSearch
+    ? depts
+        .map((dept) => ({
+          ...dept,
+          teams: dept.teams.filter((team) =>
+            matchesSearch(dept.name) ||
+            matchesSearch(dept.code) ||
+            matchesSearch(team.name) ||
+            matchesSearch(team.code) ||
+            matchesSearch(team.manager?.name) ||
+            (team.members ?? []).some((member) =>
+              matchesSearch(member.name) ||
+              matchesSearch(member.email) ||
+              matchesSearch(member.role.nameTh) ||
+              matchesSearch(member.role.code) ||
+              matchesSearch(member.managerLevel))),
+        }))
+        .filter((dept) => matchesSearch(dept.name) || matchesSearch(dept.code) || dept.teams.length > 0)
+    : depts;
 
-  const unassignedOfficers = officers.filter(
+  const unassignedManagers = filterUsers(managers.filter((m) => !m.team));
+  const assignedManagers = filterUsers(managers.filter((m) => m.team));
+
+  const unassignedOfficers = filterUsers(officers.filter(
     (o) => !o.team && (o.role.code === 'OFFICER' || o.role.code === 'SALES'),
-  );
-  const assignedOfficers = officers.filter(
+  ));
+  const assignedOfficers = filterUsers(officers.filter(
     (o) => o.team && (o.role.code === 'OFFICER' || o.role.code === 'SALES'),
-  );
+  ));
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -658,6 +690,16 @@ export default function AdminTeamsPage() {
         </span>
       </div>
 
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          value={teamSearch}
+          onChange={(e) => setTeamSearch(e.target.value)}
+          placeholder="ค้นหา department, team, manager, officer, email..."
+          className="pl-9"
+        />
+      </div>
+
       <div className="space-y-4">
         <AccountStatusList
           title="Manager Accounts"
@@ -676,14 +718,14 @@ export default function AdminTeamsPage() {
       {/* Org Chart */}
       {loading ? (
         <div className="space-y-3">{[0,1,2].map((i) => <Skeleton key={i} className="h-40" />)}</div>
-      ) : depts.length === 0 ? (
+      ) : filteredDepts.length === 0 ? (
         <Card><CardContent className="py-16 text-center">
           <Building2 className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">ยังไม่มี Department — กด "สร้าง Department" เพื่อเริ่มต้น</p>
+          <p className="text-sm text-muted-foreground">{teamSearch ? 'ไม่พบข้อมูลที่ค้นหา' : 'ยังไม่มี Department — กด "สร้าง Department" เพื่อเริ่มต้น'}</p>
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {depts.map((dept) => (
+          {filteredDepts.map((dept) => (
             <OrgNode
               key={dept.id} dept={dept}
               managers={managers} officers={officers} allTeams={allTeams}
