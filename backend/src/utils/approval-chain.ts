@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 export interface ApproverResult {
   approverId: string;
   approverName: string;
+  roleCode: string;
   exceedsLimit: boolean;
 }
 
@@ -19,7 +20,9 @@ export async function findNextApprover(
   const fromUser = await prisma.user.findUnique({
     where: { id: fromUserId },
     include: {
-      reportsTo: { include: { role: true } },
+      reportsTo: {
+        include: { role: { select: { code: true } } },
+      },
     },
   });
   if (!fromUser) return null;
@@ -32,6 +35,7 @@ export async function findNextApprover(
     return {
       approverId: manager.id,
       approverName: manager.name,
+      roleCode: manager.role.code,
       exceedsLimit,
     };
   }
@@ -45,7 +49,7 @@ export async function findNextApprover(
     },
   });
   if (!ceo) return null;
-  return { approverId: ceo.id, approverName: ceo.name, exceedsLimit: false };
+  return { approverId: ceo.id, approverName: ceo.name, roleCode: 'CEO', exceedsLimit: false };
 }
 
 /**

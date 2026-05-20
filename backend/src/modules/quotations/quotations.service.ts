@@ -379,12 +379,13 @@ export const quotationsService = {
     if (isResubmit && existing.rejectedById) {
       const rejector = await prisma.user.findUnique({
         where: { id: existing.rejectedById },
-        select: { id: true, name: true, managerLevel: true, role: { select: { code: true } } },
+        select: { id: true, name: true, role: { select: { code: true } } },
       });
       if (rejector && !isOfficer(rejector.role.code)) {
         targetApproverId = rejector.id;
         targetApproverName = rejector.name;
-        targetStatus = rejector.managerLevel === 'SECTION' ? 'PENDING' : 'PENDING_ESCALATED';
+        // PENDING_ESCALATED เฉพาะเมื่อส่งให้ CEO
+        targetStatus = rejector.role.code === 'CEO' ? 'PENDING_ESCALATED' : 'PENDING';
       }
     }
 
@@ -471,11 +472,14 @@ export const quotationsService = {
     });
     if (!managerUser) throw new AppError(404, 'USER_NOT_FOUND', 'Manager not found');
 
+    // PENDING_ESCALATED = รอ CEO เท่านั้น; ถ้าส่งต่อไป manager ระดับอื่น ยังคง PENDING
+    const escalateStatus = next.roleCode === 'CEO' ? 'PENDING_ESCALATED' : 'PENDING';
+
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
         data: {
-          status: 'PENDING_ESCALATED',
+          status: escalateStatus,
           currentApproverId: next.approverId,
           currentStep: { increment: 1 },
         },

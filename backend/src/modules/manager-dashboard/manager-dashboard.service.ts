@@ -124,6 +124,10 @@ export const managerDashboardService = {
       approvedTrendRaw, rejectedTrendRaw,
       approvedTimings,
       rejectedWithReasons,
+      expiringQuotationsRaw,
+      revenueTrendRaw,
+      soConfirmedCount,
+      soPendingCount,
     ] = await Promise.all([
       prisma.quotation.count({ where: baseWhere }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
@@ -179,6 +183,38 @@ export const managerDashboardService = {
         where: { ...baseWhere, status: 'REJECTED', rejectionReason: { not: null } },
         select: { rejectionReason: true },
       }),
+
+      // Expiring quotations — next 7 days (active statuses only)
+      prisma.quotation.findMany({
+        where: {
+          ...baseWhere,
+          status: { notIn: ['APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'PO_APPROVED', 'PO_REJECTED'] },
+          expiryDate: { gte: new Date(), lte: new Date(Date.now() + 7 * 86400000) },
+        },
+        select: { id: true, quotationNo: true, customerCompany: true, grandTotal: true, expiryDate: true, status: true },
+        orderBy: { expiryDate: 'asc' },
+        take: 10,
+      }),
+
+      // Revenue trend raw — approved value per month (6 months)
+      prisma.quotation.findMany({
+        where: {
+          ...baseWhere,
+          status: { in: ['APPROVED', 'PO_APPROVED'] },
+          approvedAt: { gte: sixMonthsAgo },
+        },
+        select: { approvedAt: true, grandTotal: true },
+      }),
+
+      // SO confirmed count
+      prisma.saleOrder.count({
+        where: { deletedAt: null, status: 'CONFIRMED', quotation: { deletedAt: null, ...filterWhere } },
+      }),
+
+      // SO pending review count
+      prisma.saleOrder.count({
+        where: { deletedAt: null, status: 'PENDING_REVIEW', quotation: { deletedAt: null, ...filterWhere } },
+      }),
     ]);
 
     // ─── Build trendData ──────────────────────────────────────────────────────
@@ -208,6 +244,18 @@ export const managerDashboardService = {
       approved: approvedByMonth.get(label) ?? 0,
       rejected: rejectedByMonth.get(label) ?? 0,
     }));
+
+    // ─── Revenue trend: sum of grandTotal per month ───────────────────────────
+    const revenueTrendMap = new Map<string, number>();
+    for (const { label } of months) revenueTrendMap.set(label, 0);
+    for (const q of revenueTrendRaw) {
+      for (const { start, end, label } of months) {
+        if (q.approvedAt && q.approvedAt >= start && q.approvedAt < end) {
+          revenueTrendMap.set(label, (revenueTrendMap.get(label) ?? 0) + Number(q.grandTotal));
+        }
+      }
+    }
+    const revenueTrend = months.map(({ label }) => ({ month: label, value: revenueTrendMap.get(label) ?? 0 }));
 
     // ─── Avg approval hours ───────────────────────────────────────────────────
     const validTimings = approvedTimings.filter(
@@ -276,14 +324,25 @@ export const managerDashboardService = {
         rejected: finalRejected,
         totalValue: finalTotalValue,
         pendingValue: isApproverView ? 0 : Number(pendingValueAgg._sum.grandTotal ?? 0),
-        poVerificationPending: poVerificationPendingCount,   // ✅ ใหม่
+        poVerificationPending: poVerificationPendingCount,
+        soConfirmed: soConfirmedCount,
+        soPending: soPendingCount,
       },
       todayActivity: { approved: todayApprovedCount, rejected: todayRejectedCount },
       monthActivity: { approved: monthApprovedCount, rejected: monthRejectedCount },
       allTimeActivity: { approved: allTimeApprovedCount, rejected: allTimeRejectedCount },
-      avgApprovalHours: avgApprovalHours !== null ? Math.round(avgApprovalHours * 10) / 10 : null, // ✅ ใหม่
-      trendData,             // ✅ ใหม่
-      rejectionReasons,      // ✅ ใหม่
+      avgApprovalHours: avgApprovalHours !== null ? Math.round(avgApprovalHours * 10) / 10 : null,
+      trendData,
+      revenueTrend,
+      rejectionReasons,
+      expiringQuotations: expiringQuotationsRaw.map((q) => ({
+        id: q.id,
+        quotationNo: q.quotationNo,
+        customerCompany: q.customerCompany,
+        grandTotal: Number(q.grandTotal),
+        expiryDate: q.expiryDate!.toISOString(),
+        status: q.status,
+      })),
       topOfficers,
       topApprovers: [],
       recentEscalated: recentEscalatedData.map((q) => ({
@@ -413,13 +472,15 @@ function startOfMonth(): Date { const d = new Date(); d.setDate(1); d.setHours(0
 function emptyDashboard() {
   return {
     filter: 'self' as DashboardFilter, filterUserId: undefined, isApproverView: false,
-    totals: { quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0, totalValue: 0, pendingValue: 0, poVerificationPending: 0 },
+    totals: { quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0, totalValue: 0, pendingValue: 0, poVerificationPending: 0, soConfirmed: 0, soPending: 0 },
     todayActivity: { approved: 0, rejected: 0 },
     monthActivity: { approved: 0, rejected: 0 },
     allTimeActivity: { approved: 0, rejected: 0 },
     avgApprovalHours: null,
     trendData: [],
+    revenueTrend: [],
     rejectionReasons: [],
+    expiringQuotations: [],
     topOfficers: [], topApprovers: [], recentEscalated: [], statusBreakdown: [],
   };
 }

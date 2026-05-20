@@ -7,9 +7,10 @@ import {
   TrendingUp, Clock, CheckCircle2, XCircle, DollarSign,
   Users as UsersIcon, Inbox, Crown, Filter, Calendar,
   BarChart2, Flame, ArrowRight, Info, AlertTriangle,
-  FileCheck, Timer, ChevronRight, Zap, PackageCheck,
+  Timer, ChevronRight, Zap,
+  RefreshCw, Activity,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,26 +26,47 @@ type DashboardFilter = 'self' | 'team' | 'all' | 'user';
 interface DashboardData {
   filter: DashboardFilter;
   filterUserId?: string;
+  isApproverView?: boolean;
   totals: {
-    quotations: number; pending: number; escalated: number;
-    approved: number; rejected: number; totalValue: number; pendingValue: number;
+    quotations: number;
+    pending: number;
+    escalated: number;
+    approved: number;
+    rejected: number;
+    totalValue: number;
+    pendingValue: number;
     poVerificationPending?: number;
     soConfirmed?: number;
+    soPending?: number;
     conversionRate?: number;
     waitingPo?: number;
   };
   todayActivity: { approved: number; rejected: number };
   monthActivity?: { approved: number; rejected: number };
   allTimeActivity?: { approved: number; rejected: number };
-  avgApprovalHours?: number;
-  topOfficers: Array<{ userId: string; userName: string; userEmail: string; count: number; value: number; soValue?: number; conversionRate?: number; pendingCount?: number }>;
-  recentEscalated: Array<{ id: string; quotationNo: string; grandTotal: number; customerCompany: string; createdByName: string; submittedAt: string }>;
+  avgApprovalHours?: number | null;
+  topOfficers: Array<{
+    userId: string; userName: string; userEmail: string;
+    count: number; value: number; soValue?: number;
+    conversionRate?: number; pendingCount?: number;
+  }>;
+  recentEscalated: Array<{
+    id: string; quotationNo: string; grandTotal: number;
+    customerCompany: string; createdByName: string; submittedAt: string;
+  }>;
   statusBreakdown: Array<{ status: string; count: number }>;
   trendData?: Array<{ month: string; approved: number; rejected: number }>;
+  revenueTrend?: Array<{ month: string; value: number }>;
+  expiringQuotations?: Array<{
+    id: string; quotationNo: string; customerCompany: string;
+    grandTotal: number; expiryDate: string; status: string;
+  }>;
   alerts?: Array<{ type: 'danger' | 'warning' | 'info'; title: string; desc: string }>;
   rejectionReasons?: Array<{ reason: string; count: number }>;
-  bottlenecks?: Array<{ type: string; count: number; value: number; reason: string; priority: 'high' | 'medium' | 'low' }>;
-  actionRequired?: Array<{ id: string; quotationNo: string; customerCompany: string; grandTotal: number; dueDate?: string; priority: 'high' | 'medium' | 'low'; actionType: string }>;
+  bottlenecks?: Array<{
+    type: string; count: number; value: number;
+    reason: string; priority: 'high' | 'medium' | 'low';
+  }>;
 }
 
 interface FilterableUser {
@@ -53,39 +75,22 @@ interface FilterableUser {
   reportsTo?: { id: string; name: string } | null;
 }
 
-const STATUS_CFG: Record<string, { color: string; label: string }> = {
-  DRAFT: { color: 'bg-slate-400', label: 'Draft' },
-  PENDING: { color: 'bg-amber-400', label: 'Pending' },
-  PENDING_BACKUP: { color: 'bg-amber-500', label: 'Pending Backup' },
-  PENDING_ESCALATED: { color: 'bg-rose-500', label: 'Escalated' },
-  APPROVED: { color: 'bg-emerald-500', label: 'Approved' },
-  REJECTED: { color: 'bg-red-500', label: 'Rejected' },
-  CANCELLED: { color: 'bg-gray-400', label: 'Cancelled' },
-  EXPIRED: { color: 'bg-gray-500', label: 'Expired' },
-  PO_PENDING: { color: 'bg-amber-300', label: 'PO Pending' },
-  PO_APPROVED: { color: 'bg-teal-500', label: 'PO Approved' },
-  PO_REJECTED: { color: 'bg-red-400', label: 'PO Rejected' },
+const STATUS_CFG: Record<string, { color: string; hex: string; label: string }> = {
+  DRAFT:             { color: 'bg-slate-400',   hex: '#94a3b8', label: 'Draft' },
+  PENDING:           { color: 'bg-amber-400',   hex: '#fbbf24', label: 'Pending' },
+  PENDING_BACKUP:    { color: 'bg-amber-500',   hex: '#f59e0b', label: 'Pending Backup' },
+  PENDING_ESCALATED: { color: 'bg-rose-500',    hex: '#f43f5e', label: 'Escalated' },
+  APPROVED:          { color: 'bg-emerald-500', hex: '#10b981', label: 'Approved' },
+  REJECTED:          { color: 'bg-red-500',     hex: '#ef4444', label: 'Rejected' },
+  CANCELLED:         { color: 'bg-gray-400',    hex: '#9ca3af', label: 'Cancelled' },
+  EXPIRED:           { color: 'bg-gray-500',    hex: '#6b7280', label: 'Expired' },
+  PO_PENDING:        { color: 'bg-amber-300',   hex: '#fcd34d', label: 'PO Pending' },
+  PO_APPROVED:       { color: 'bg-teal-500',    hex: '#14b8a6', label: 'PO Approved' },
+  PO_REJECTED:       { color: 'bg-red-400',     hex: '#f87171', label: 'PO Rejected' },
 };
 
-const MOCK_TREND = [
-  { month: 'Dec', approved: 0, rejected: 0 },
-  { month: 'Jan', approved: 0, rejected: 0 },
-  { month: 'Feb', approved: 0, rejected: 0 },
-  { month: 'Mar', approved: 0, rejected: 0 },
-  { month: 'Apr', approved: 1, rejected: 1 },
-  { month: 'May', approved: 14, rejected: 5 },
-];
-
-const MOCK_REASONS = [
-  { reason: 'PO mismatch', count: 72 },
-  { reason: 'Incomplete details', count: 55 },
-  { reason: 'Wrong pricing', count: 40 },
-  { reason: 'Missing attachment', count: 28 },
-  { reason: 'Invalid information', count: 18 },
-];
-
 // ════════════════════════════════════════════════════════════════════════════
-// MAIN PAGE — dropdown เหมือนเดิมทุกอย่าง
+// OUTER PAGE — filter state + data fetching (unchanged logic)
 // ════════════════════════════════════════════════════════════════════════════
 export default function ManagerDashboardPage() {
   const { role, loading: permLoading } = usePermissions();
@@ -93,6 +98,7 @@ export default function ManagerDashboardPage() {
   const [users, setUsers] = useState<FilterableUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterValue, setFilterValue] = useState<string>('self');
+  const [spinning, setSpinning] = useState(false);
 
   const isExecutive = role?.code === 'CEO' || role?.code === 'ADMIN';
   const isManagerLike = role?.code === 'MANAGER' || isExecutive;
@@ -125,15 +131,21 @@ export default function ManagerDashboardPage() {
 
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
+  const handleRefresh = async () => {
+    setSpinning(true);
+    await fetchDashboard();
+    setTimeout(() => setSpinning(false), 600);
+  };
+
   if (permLoading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-16 w-full rounded-2xl" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[0,1,2,3].map((i) => <Skeleton key={i} className="h-28" />)}
+          {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
         </div>
-        <Skeleton className="h-40" />
-        <Skeleton className="h-64" />
+        <Skeleton className="h-56 rounded-2xl" />
+        <Skeleton className="h-64 rounded-2xl" />
       </div>
     );
   }
@@ -151,86 +163,101 @@ export default function ManagerDashboardPage() {
   const isSelfView = filterValue === 'self';
 
   return (
-    <div className="space-y-5 max-w-7xl">
-      {/* ── Header + Dropdown (เหมือนเดิม) ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Crown className="h-6 w-6 text-amber-500" />
-            Dashboard
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            กำลังดู: <span className="font-semibold text-foreground">{filterLabel}</span>
-            {role?.nameTh && <span> · บทบาท: {role.nameTh}</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
-          <select
-            value={filterValue}
-            onChange={(e) => setFilterValue(e.target.value)}
-            className="h-10 min-w-[220px] rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="self">— Me (Default)</option>
-            {role?.code === 'MANAGER' && <option value="team">— My Team</option>}
-            {isExecutive && (
-              <>
-                <option value="team">— My Team</option>
-                <option value="all">— All Team (ทั้งระบบ)</option>
-              </>
-            )}
-            {managers.length > 0 && (
-              <optgroup label="Managers">
-                {managers.map((u) => <option key={u.id} value={`user:${u.id}`}>{u.name}</option>)}
-              </optgroup>
-            )}
-            {subordinates.length > 0 && (
-              <optgroup label="Officers / Sales">
-                {subordinates.map((u) => (
-                  <option key={u.id} value={`user:${u.id}`}>
-                    {u.reportsTo ? `↳ ${u.name}` : u.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          {isExecutive && (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/manager/users"><UsersIcon className="h-4 w-4" />จัดการผู้ใช้</Link>
-            </Button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-0 max-w-7xl">
 
-      {/* User context banner */}
-      {isUserView && selectedUser && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 text-sm">
-          <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+      {/* ── SECTION 1: Dark gradient header banner ── */}
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 rounded-2xl px-6 py-5 mb-5 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <span className="font-semibold text-blue-700 dark:text-blue-300">กำลังดูข้อมูลของ {selectedUser.name}</span>
-            <span className="text-muted-foreground ml-1">({selectedUser.role.nameTh})</span>
+            <h1 className="text-2xl font-bold flex items-center gap-2.5 text-white">
+              <Crown className="h-6 w-6 text-amber-400" />
+              Sales Dashboard
+            </h1>
+            <p className="text-sm text-blue-200/80 mt-1">
+              กำลังดู: <span className="font-semibold text-white">{filterLabel}</span>
+              {role?.nameTh && <span className="text-blue-200/60"> · {role.nameTh}</span>}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-blue-300 shrink-0" />
+              <select
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
+              >
+                <option value="self" className="text-black bg-white">— Me (Default)</option>
+                {role?.code === 'MANAGER' && <option value="team" className="text-black bg-white">— My Team</option>}
+                {isExecutive && (
+                  <>
+                    <option value="team" className="text-black bg-white">— My Team</option>
+                    <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
+                  </>
+                )}
+                {managers.length > 0 && (
+                  <optgroup label="Managers">
+                    {managers.map((u) => <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>)}
+                  </optgroup>
+                )}
+                {subordinates.length > 0 && (
+                  <optgroup label="Officers / Sales">
+                    {subordinates.map((u) => (
+                      <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
+                        {u.reportsTo ? `↳ ${u.name}` : u.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+            <button
+              onClick={handleRefresh}
+              className="h-9 w-9 flex items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white hover:bg-white/20 transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${spinning ? 'animate-spin' : ''}`} />
+            </button>
+            {isExecutive && (
+              <Button asChild variant="outline" size="sm" className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                <Link href="/manager/users"><UsersIcon className="h-4 w-4" />จัดการผู้ใช้</Link>
+              </Button>
+            )}
           </div>
         </div>
-      )}
 
+        {/* User context banner inside header */}
+        {isUserView && selectedUser && (
+          <div className="mt-3 flex items-center gap-2 bg-blue-500/20 border border-blue-400/30 rounded-lg px-3 py-2 text-sm text-blue-100">
+            <Info className="h-4 w-4 text-blue-300 shrink-0" />
+            <span>กำลังดูข้อมูลของ <span className="font-semibold text-white">{selectedUser.name}</span>
+              <span className="text-blue-200/70 ml-1">({selectedUser.role.nameTh})</span>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Loading skeletons */}
       {loading && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-28" />)}
+            {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
           </div>
-          <Skeleton className="h-40" />
-          <Skeleton className="h-56" />
-          <Skeleton className="h-72" />
-          <div className="grid grid-cols-2 gap-4">
-            <Skeleton className="h-64" /><Skeleton className="h-64" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-64 rounded-2xl" />
+            <Skeleton className="h-64 rounded-2xl" />
+          </div>
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-72 rounded-2xl" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-64 rounded-2xl" /><Skeleton className="h-64 rounded-2xl" />
           </div>
         </div>
       )}
 
       {!loading && !data && (
-        <Card>
+        <Card className="rounded-2xl">
           <CardContent className="py-20 text-center text-muted-foreground">
-            ไม่สามารถโหลดข้อมูลได้
+            ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง
           </CardContent>
         </Card>
       )}
@@ -249,7 +276,7 @@ export default function ManagerDashboardPage() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// DASHBOARD CONTENT
+// DASHBOARD CONTENT — redesigned
 // ════════════════════════════════════════════════════════════════════════════
 function DashboardContent({
   data, isTeamView, isUserView, isSelfView, selectedUserName,
@@ -260,30 +287,31 @@ function DashboardContent({
   isSelfView: boolean;
   selectedUserName?: string;
 }) {
-  const kpiDecided = data.totals.approved + data.totals.rejected;
-  const kpiRate = kpiDecided > 0 ? Math.round((data.totals.approved / kpiDecided) * 100) : 0;
+  // ── Derived values ────────────────────────────────────────────────────────
+  const conversionRate = data.totals.conversionRate ??
+    (data.totals.quotations > 0 && data.totals.approved > 0
+      ? Math.round((data.totals.approved / data.totals.quotations) * 100) : 0);
+
   const monthApproved = data.monthActivity?.approved ?? 0;
   const monthRejected = data.monthActivity?.rejected ?? 0;
   const monthTotal = monthApproved + monthRejected;
   const monthRate = monthTotal > 0 ? Math.round((monthApproved / monthTotal) * 100) : null;
+
   const allApproved = data.allTimeActivity?.approved ?? data.totals.approved;
   const allRejected = data.allTimeActivity?.rejected ?? data.totals.rejected;
   const allTotal = allApproved + allRejected;
   const allRate = allTotal > 0 ? Math.round((allApproved / allTotal) * 100) : null;
+
   const todayTotal = data.todayActivity.approved + data.todayActivity.rejected;
   const todayRate = todayTotal > 0 ? Math.round((data.todayActivity.approved / todayTotal) * 100) : null;
 
   const noKpiData = data.totals.quotations === 0 && data.totals.pending === 0 &&
     data.totals.approved === 0 && data.totals.rejected === 0;
 
-  const trendData = data.trendData ?? MOCK_TREND;
-  const reasons = data.rejectionReasons ?? MOCK_REASONS;
+  const trendData = data.trendData ?? [];
+  const revenueTrendData = data.revenueTrend ?? [];
+  const reasons = data.rejectionReasons ?? [];
   const maxReason = Math.max(...reasons.map((r) => r.count), 1);
-
-  // Conversion rate จาก backend หรือคำนวณเอง
-  const conversionRate = data.totals.conversionRate ??
-    (data.totals.quotations > 0 && data.totals.approved > 0
-      ? Math.round((data.totals.approved / data.totals.quotations) * 100) : 0);
 
   const alerts: Array<{ type: 'danger' | 'warning' | 'info'; title: string; desc: string }> =
     data.alerts ?? [
@@ -298,48 +326,100 @@ function DashboardContent({
         : []),
     ];
 
-  // Mock bottlenecks ถ้า backend ยังไม่มี
   const bottlenecks = data.bottlenecks ?? [
-    ...(data.totals.pending > 0 ? [{ type: 'SO Pending Approval', count: data.totals.pending, value: data.totals.pendingValue, reason: 'รอ Manager อนุมัติ', priority: 'high' as const }] : []),
-    ...((data.totals.poVerificationPending ?? 0) > 0 ? [{ type: 'PO Validation Pending', count: data.totals.poVerificationPending!, value: 0, reason: 'PO รอตรวจสอบความถูกต้อง', priority: 'medium' as const }] : []),
-    ...(data.totals.escalated > 0 ? [{ type: 'Escalated Cases', count: data.totals.escalated, value: 0, reason: 'มูลค่าเกินอำนาจอนุมัติ — รอ CEO', priority: 'high' as const }] : []),
+    ...(data.totals.pending > 0
+      ? [{ type: 'QT Pending Approval', count: data.totals.pending, value: data.totals.pendingValue, reason: 'รอ Manager อนุมัติ', priority: 'high' as const }]
+      : []),
+    ...((data.totals.poVerificationPending ?? 0) > 0
+      ? [{ type: 'PO Validation Pending', count: data.totals.poVerificationPending!, value: 0, reason: 'PO รอตรวจสอบความถูกต้อง', priority: 'medium' as const }]
+      : []),
+    ...(data.totals.escalated > 0
+      ? [{ type: 'Escalated Cases', count: data.totals.escalated, value: 0, reason: 'มูลค่าเกินอำนาจอนุมัติ — รอ CEO', priority: 'high' as const }]
+      : []),
   ];
+
+  // Approved value (approved + po_approved sum)
+  const approvedValue = data.totals.totalValue; // backend already filters APPROVED+PO_APPROVED
 
   return (
     <div className="space-y-5">
 
-      {/* ══ SECTION 1: Executive KPI Summary ══ */}
+      {/* ══ SECTION 2: KPI Cards — Row 1 (Financial) ══ */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={<DollarSign className="h-5 w-5" />} label="Total QT Value"
-          value={formatMoney(data.totals.totalValue)} accent="from-blue-600 to-indigo-600"
-          subtitle={`${data.totals.quotations} ใบเสนอราคา`} isText />
-        <KpiCard icon={<Clock className="h-5 w-5" />} label="Waiting PO"
-          value={data.totals.waitingPo ?? data.totals.approved} accent="from-amber-500 to-orange-500"
-          subtitle="QT อนุมัติแล้ว รอ PO จากลูกค้า" />
-        <KpiCard icon={<FileCheck className="h-5 w-5" />} label="PO Received"
-          value={data.totals.poVerificationPending ?? 0} accent="from-cyan-500 to-blue-500"
-          subtitle="PO ที่ได้รับและรอตรวจสอบ" />
-        <KpiCard icon={<PackageCheck className="h-5 w-5" />} label="SO Confirmed"
-          value={data.totals.soConfirmed ?? 0} accent="from-emerald-500 to-teal-500"
-          subtitle="Sale Order ที่ confirmed แล้ว" />
-        <KpiCard icon={<Inbox className="h-5 w-5" />} label="รออนุมัติ"
-          value={data.totals.pending} accent="from-amber-500 to-orange-500"
+        <KpiCard
+          icon={<DollarSign className="h-5 w-5" />}
+          label="Total QT Value"
+          value={formatMoney(data.totals.totalValue)}
+          gradient="from-blue-600 to-indigo-700"
+          subtitle={`${data.totals.quotations} ใบเสนอราคา`}
+          isText
+        />
+        <KpiCard
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          label="Approved Value"
+          value={formatMoney(approvedValue)}
+          gradient="from-emerald-500 to-teal-700"
+          subtitle={`${data.totals.approved} รายการอนุมัติแล้ว`}
+          isText
+        />
+        <KpiCard
+          icon={<Clock className="h-5 w-5" />}
+          label="Pending Value"
+          value={formatMoney(data.totals.pendingValue)}
+          gradient="from-amber-500 to-orange-600"
+          subtitle={`${data.totals.pending} รายการรออนุมัติ`}
+          isText
+        />
+        <KpiCard
+          icon={<Activity className="h-5 w-5" />}
+          label="Avg Approval Time"
+          value={data.totals !== undefined && (data as any).avgApprovalHours != null
+            ? `${(data as any).avgApprovalHours} ชม.`
+            : '— ชม.'}
+          gradient="from-purple-600 to-violet-700"
+          subtitle="เฉลี่ย submittedAt → approvedAt"
+          isText
+        />
+      </div>
+
+      {/* ══ KPI Cards — Row 2 (Pipeline) ══ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard
+          icon={<BarChart2 className="h-5 w-5" />}
+          label="Total Quotations"
+          value={data.totals.quotations}
+          gradient="from-slate-600 to-slate-800"
+          subtitle="ทั้งหมดในระบบ"
+        />
+        <KpiCard
+          icon={<Inbox className="h-5 w-5" />}
+          label="Pending Review"
+          value={data.totals.pending}
+          gradient="from-amber-500 to-yellow-600"
           subtitle={data.totals.escalated > 0 ? `${data.totals.escalated} Escalated` : 'ไม่มีรายการด่วน'}
-          alert={data.totals.escalated > 0} />
-        <KpiCard icon={<Flame className="h-5 w-5" />} label="Escalated"
-          value={data.totals.escalated} accent="from-rose-500 to-pink-500"
-          subtitle="ต้องรอ CEO อนุมัติ" alert={data.totals.escalated > 0} />
-        <KpiCard icon={<XCircle className="h-5 w-5" />} label="Rejected / Lost"
-          value={data.totals.rejected} accent="from-red-500 to-rose-600"
-          subtitle="โอกาสที่สูญเสียไป" alert={data.totals.rejected > 3} />
-        <KpiCard icon={<Zap className="h-5 w-5" />} label="Conversion Rate"
-          value={`${conversionRate}%`} accent="from-violet-500 to-purple-600"
-          subtitle="SO Confirmed / Total QT" isText />
+          alertRing={data.totals.pending > 5}
+        />
+        <KpiCard
+          icon={<Flame className="h-5 w-5" />}
+          label="CEO Escalated"
+          value={data.totals.escalated}
+          gradient="from-rose-500 to-red-700"
+          subtitle="ต้องรอ CEO อนุมัติ"
+          alertRing={data.totals.escalated > 0}
+        />
+        <KpiCard
+          icon={<Zap className="h-5 w-5" />}
+          label="Conversion Rate"
+          value={`${conversionRate}%`}
+          gradient="from-cyan-500 to-blue-600"
+          subtitle="QT Issued → SO Confirmed"
+          isText
+        />
       </div>
 
       {/* hint เมื่อ KPI ว่าง */}
       {noKpiData && (isUserView || isSelfView) && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm">
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm">
           <Info className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
           <span className="text-muted-foreground">
             {isUserView
@@ -349,107 +429,221 @@ function DashboardContent({
         </div>
       )}
 
-      {/* ══ SECTION 2: Sales Funnel / Pipeline ══ */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            Sales Pipeline — QT → PO → SO
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <SalesFunnel data={data} conversionRate={conversionRate} />
-        </CardContent>
-      </Card>
+      {/* ══ SECTION 3: Sales Funnel + Revenue Area Chart (2 columns) ══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-      {/* ══ SECTION 3: Approval Activity ══ */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <BarChart2 className="h-4 w-4 text-primary" />
-            Approval Activity
-            <span className="text-[10px] text-muted-foreground font-normal ml-1">
-              (งานที่คุณอนุมัติ/ปฏิเสธเอง)
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4 divide-x divide-border">
-            <ActivityCol icon={<Clock className="h-3 w-3" />} label="วันนี้"
-              approved={data.todayActivity.approved} rejected={data.todayActivity.rejected} rate={todayRate} />
-            <ActivityCol icon={<Calendar className="h-3 w-3" />} label="เดือนนี้"
-              approved={monthApproved} rejected={monthRejected} rate={monthRate} />
-            <ActivityCol icon={<TrendingUp className="h-3 w-3" />} label="ทั้งหมด"
-              approved={allApproved} rejected={allRejected} rate={allRate} />
+        {/* LEFT: Sales Pipeline Funnel */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <TrendingUp className="h-4 w-4 text-blue-500" />
+            Sales Pipeline
           </div>
-        </CardContent>
-      </Card>
+          <SalesFunnel data={data} conversionRate={conversionRate} />
+        </div>
 
-      {/* ══ SECTION 4: Exception / Bottleneck ══ */}
-      {bottlenecks.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              Bottleneck — จุดติดขัดที่ต้องจัดการ
-              <Badge variant="outline" className="ml-auto text-[10px] bg-amber-50 text-amber-700 border-amber-300">
-                {bottlenecks.length} รายการ
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {bottlenecks.map((b, i) => (
-                <div key={i} className={`flex items-center gap-4 p-3 rounded-lg border ${
-                  b.priority === 'high' ? 'bg-red-500/5 border-red-500/30'
-                  : b.priority === 'medium' ? 'bg-amber-500/5 border-amber-500/30'
-                  : 'bg-blue-500/5 border-blue-500/30'
-                }`}>
-                  <div className={`w-2 h-8 rounded-full shrink-0 ${
-                    b.priority === 'high' ? 'bg-red-500'
-                    : b.priority === 'medium' ? 'bg-amber-500'
-                    : 'bg-blue-500'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm">{b.type}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{b.reason}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-bold text-lg">{b.count}</div>
-                    {b.value > 0 && <div className="text-xs text-muted-foreground">{formatMoney(b.value)}</div>}
-                  </div>
-                  <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                    b.priority === 'high' ? 'bg-red-50 text-red-700 border-red-300'
-                    : b.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-300'
-                    : 'bg-blue-50 text-blue-700 border-blue-300'
-                  }`}>
-                    {b.priority.toUpperCase()}
-                  </Badge>
-                  <Button asChild size="sm" variant="outline" className="h-7 text-xs shrink-0">
-                    <Link href="/quotations">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
-                  </Button>
-                </div>
-              ))}
+        {/* RIGHT: Revenue Area Chart */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-1">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            Revenue Trend (6 เดือน)
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">มูลค่าที่อนุมัติแล้วรายเดือน</p>
+          {revenueTrendData.length > 0
+            ? <RevenueAreaChart data={revenueTrendData} />
+            : (
+              <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">
+                ยังไม่มีข้อมูล revenue
+              </div>
+            )
+          }
+        </div>
+      </div>
+
+      {/* ══ SECTION 4: Status Breakdown + Expiring Quotations ══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* LEFT: Status Breakdown */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <BarChart2 className="h-4 w-4 text-purple-500" />
+            Status Breakdown
+          </div>
+          {data.statusBreakdown.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <BarChart2 className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">ไม่มีข้อมูลใน filter นี้</p>
+              {isSelfView && <p className="text-xs mt-1 opacity-70">ลองเปลี่ยน filter เป็น "My Team" หรือ "All Team"</p>}
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="space-y-3">
+              {data.statusBreakdown.map((s) => {
+                const pct = data.totals.quotations > 0 ? Math.round((s.count / data.totals.quotations) * 100) : 0;
+                const cfg = STATUS_CFG[s.status];
+                return (
+                  <div key={s.status}>
+                    <div className="flex items-center justify-between text-xs mb-1.5">
+                      <span className="font-medium flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full" style={{ background: cfg?.hex ?? '#9ca3af' }} />
+                        {cfg?.label ?? s.status}
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {s.count} <span className="text-[10px]">({pct}%)</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(pct, 2)}%`, background: cfg?.hex ?? '#9ca3af' }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="pt-2 border-t flex justify-between text-xs mt-1">
+                <span className="text-muted-foreground">รวมทั้งหมด</span>
+                <span className="font-semibold">{data.totals.quotations} ใบ</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Expiring Quotations */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <Timer className="h-4 w-4 text-rose-500" />
+            Expiring Soon (7 วัน)
+            {(data.expiringQuotations?.length ?? 0) > 0 && (
+              <Badge variant="outline" className="ml-auto text-[10px] bg-rose-50 text-rose-700 border-rose-300">
+                {data.expiringQuotations!.length} รายการ
+              </Badge>
+            )}
+          </div>
+          {!data.expiringQuotations || data.expiringQuotations.length === 0 ? (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ไม่มีใบเสนอราคาที่ใกล้หมดอายุ
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {data.expiringQuotations.map((q) => {
+                const daysLeft = Math.ceil((new Date(q.expiryDate).getTime() - Date.now()) / 86400000);
+                const urgency = daysLeft < 1 ? 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+                  : daysLeft <= 3 ? 'text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'
+                  : 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800';
+                const dayLabel = daysLeft < 1 ? 'วันนี้!' : `${daysLeft} วัน`;
+                return (
+                  <Link key={q.id} href={`/quotations/${q.id}`}
+                    className={`flex items-center justify-between p-2.5 rounded-lg border transition-opacity hover:opacity-80 gap-3 ${urgency}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm">{q.quotationNo}</div>
+                      <div className="text-xs opacity-75 truncate">{q.customerCompany}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-bold">{dayLabel}</div>
+                      <div className="text-[10px] opacity-75">{formatMoney(q.grandTotal)}</div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ SECTION 5: Approval Activity (3-column card) ══ */}
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+          <BarChart2 className="h-4 w-4 text-primary" />
+          Approval Activity
+          <span className="text-[10px] text-muted-foreground font-normal ml-1">(งานที่คุณอนุมัติ/ปฏิเสธเอง)</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4 divide-x divide-border">
+          <ActivityCol
+            icon={<Clock className="h-3.5 w-3.5" />}
+            label="วันนี้"
+            iconBg="bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400"
+            approved={data.todayActivity.approved}
+            rejected={data.todayActivity.rejected}
+            rate={todayRate}
+          />
+          <ActivityCol
+            icon={<Calendar className="h-3.5 w-3.5" />}
+            label="เดือนนี้"
+            iconBg="bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400"
+            approved={monthApproved}
+            rejected={monthRejected}
+            rate={monthRate}
+          />
+          <ActivityCol
+            icon={<TrendingUp className="h-3.5 w-3.5" />}
+            label="ทั้งหมด"
+            iconBg="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
+            approved={allApproved}
+            rejected={allRejected}
+            rate={allRate}
+          />
+        </div>
+      </div>
+
+      {/* ══ SECTION 6: Bottlenecks + Alerts ══ */}
+      {bottlenecks.length > 0 && (
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            Bottleneck — จุดติดขัดที่ต้องจัดการ
+            <Badge variant="outline" className="ml-auto text-[10px] bg-amber-50 text-amber-700 border-amber-300">
+              {bottlenecks.length} รายการ
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {bottlenecks.map((b, i) => (
+              <div key={i} className={`flex items-center gap-4 p-3 rounded-xl border ${
+                b.priority === 'high' ? 'bg-red-500/5 border-red-500/30'
+                : b.priority === 'medium' ? 'bg-amber-500/5 border-amber-500/30'
+                : 'bg-blue-500/5 border-blue-500/30'
+              }`}>
+                <div className={`w-1 h-10 rounded-full shrink-0 ${
+                  b.priority === 'high' ? 'bg-red-500'
+                  : b.priority === 'medium' ? 'bg-amber-500'
+                  : 'bg-blue-500'
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{b.type}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{b.reason}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-bold text-xl">{b.count}</div>
+                  {b.value > 0 && <div className="text-xs text-muted-foreground">{formatMoney(b.value)}</div>}
+                </div>
+                <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                  b.priority === 'high' ? 'bg-red-50 text-red-700 border-red-300'
+                  : b.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : 'bg-blue-50 text-blue-700 border-blue-300'
+                }`}>
+                  {b.priority.toUpperCase()}
+                </Badge>
+                <Button asChild size="sm" variant="outline" className="h-7 text-xs shrink-0">
+                  <Link href="/quotations">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* ══ SECTION 5: Alerts ══ */}
       {alerts.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              Action Required — ต้องดูแลเป็นพิเศษ
-              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 ml-auto">
-                {alerts.length}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            Action Required — ต้องดูแลเป็นพิเศษ
+            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 ml-auto">
+              {alerts.length}
+            </Badge>
+          </div>
+          <div className="space-y-2">
             {alerts.map((a, i) => (
-              <div key={i} className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${
+              <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl border text-sm ${
                 a.type === 'danger' ? 'bg-red-500/5 border-red-500/30'
                 : a.type === 'warning' ? 'bg-amber-500/5 border-amber-500/30'
                 : 'bg-blue-500/5 border-blue-500/30'
@@ -465,286 +659,287 @@ function DashboardContent({
                 </div>
               </div>
             ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ══ Escalated list ══ */}
-      {data.recentEscalated.length > 0 && (
-        <Card className="border-rose-500/40 bg-rose-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Flame className="h-4 w-4 text-rose-500" />
-              <span className="text-rose-700 dark:text-rose-400">Escalated — รอ CEO อนุมัติ</span>
-              <Badge variant="outline" className="text-xs bg-rose-100 text-rose-800 border-rose-300 ml-auto">
-                {data.recentEscalated.length} รายการ
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {data.recentEscalated.map((q) => (
-                <Link key={q.id} href={`/quotations/${q.id}`}
-                  className="flex items-center justify-between p-3 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 hover:border-rose-400 transition-colors gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{q.quotationNo}</span>
-                      <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-300">ESCALATED</Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                      {q.customerCompany} · โดย {q.createdByName}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">ส่งเมื่อ {formatDate(q.submittedAt)}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-bold text-rose-700 dark:text-rose-400">{formatMoney(q.grandTotal)}</div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground ml-auto mt-1" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ══ SECTION 6: Trend Chart ══ */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            Approval Trend — 6 เดือนล่าสุด
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4 mb-3 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block w-6 h-0.5 bg-emerald-500 rounded" />Approved
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block w-6 h-0.5 bg-red-500 rounded" />Rejected
-            </span>
           </div>
-          <TrendChart data={trendData} />
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
-      {/* ══ SECTION 7: Sales Team Performance + Rejection Reasons ══ */}
+      {/* ══ SECTION 7: Escalated Cases ══ */}
+      {data.recentEscalated.length > 0 && (
+        <div className="bg-gradient-to-br from-rose-500/10 to-red-600/5 border border-rose-500/40 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <Flame className="h-4 w-4 text-rose-500" />
+            <span className="text-rose-700 dark:text-rose-400">Escalated — รอ CEO อนุมัติ</span>
+            <Badge variant="outline" className="text-xs bg-rose-100 text-rose-800 border-rose-300 ml-auto">
+              {data.recentEscalated.length} รายการ
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {data.recentEscalated.map((q) => (
+              <Link key={q.id} href={`/quotations/${q.id}`}
+                className="flex items-center justify-between p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 hover:border-rose-400 transition-colors gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{q.quotationNo}</span>
+                    <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-300">ESCALATED</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {q.customerCompany} · โดย {q.createdByName}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">ส่งเมื่อ {formatDate(q.submittedAt)}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-bold text-rose-700 dark:text-rose-400">{formatMoney(q.grandTotal)}</div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground ml-auto mt-1" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══ SECTION 8: Sales Team Performance + Rejection Reasons ══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* Sales Team Performance */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <UsersIcon className="h-4 w-4 text-blue-500" />Sales Team Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data.topOfficers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <UsersIcon className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">
-                  {isTeamView ? 'ยังไม่มีข้อมูลในช่วงนี้'
-                    : isSelfView ? 'เลือก "My Team" เพื่อดูข้อมูลทีม'
-                    : 'ไม่มีข้อมูลสำหรับบุคคลนี้'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <div className="grid grid-cols-[auto_1fr_auto_auto] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-3">
-                  <span>#</span><span>ชื่อ</span><span className="text-center">QT</span><span className="text-right">มูลค่า</span>
-                </div>
-                {data.topOfficers.map((o, idx) => {
-                  const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
-                  const barPct = Math.round((o.value / maxVal) * 100);
-                  return (
-                    <Link key={o.userId} href={`/manager/users/${o.userId}`}
-                      className="block p-2 rounded-md hover:bg-accent transition-colors"
-                    >
-                      <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 mb-1.5">
-                        <span className={`text-xs font-bold w-5 text-center ${
-                          idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-500' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground'
-                        }`}>{idx + 1}</span>
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm truncate">{o.userName}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{o.userEmail}</div>
-                        </div>
-                        <Badge variant="outline" className="text-xs">{o.count}</Badge>
-                        <div className="text-sm font-semibold text-right">{formatMoney(o.value)}</div>
-                      </div>
-                      {/* Progress bar */}
-                      <div className="ml-8 h-1 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                          style={{ width: `${barPct}%` }} />
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Top Rejection Reasons */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-red-500" />Top Rejection Reasons
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {reasons.map((r) => {
-              const pct = Math.round((r.count / maxReason) * 100);
-              return (
-                <div key={r.reason}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="font-medium text-foreground truncate">{r.reason}</span>
-                    <span className="text-muted-foreground ml-2 shrink-0">{r.count}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-red-500 rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ══ Status Breakdown ══ */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <BarChart2 className="h-4 w-4 text-purple-500" />Status Breakdown
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.statusBreakdown.length === 0 ? (
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <UsersIcon className="h-4 w-4 text-blue-500" />
+            Sales Team Performance
+          </div>
+          {data.topOfficers.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <BarChart2 className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">ไม่มีข้อมูลใน filter นี้</p>
-              {isSelfView && (
-                <p className="text-xs mt-1 opacity-70">ลองเปลี่ยน filter เป็น "My Team" หรือ "All Team"</p>
-              )}
+              <UsersIcon className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">
+                {isTeamView ? 'ยังไม่มีข้อมูลในช่วงนี้'
+                  : isSelfView ? 'เลือก "My Team" เพื่อดูข้อมูลทีม'
+                  : 'ไม่มีข้อมูลสำหรับบุคคลนี้'}
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-              {data.statusBreakdown.map((s) => {
-                const pct = data.totals.quotations > 0
-                  ? Math.round((s.count / data.totals.quotations) * 100) : 0;
-                const cfg = STATUS_CFG[s.status];
+            <div className="space-y-1">
+              <div className="grid grid-cols-[24px_1fr_auto_auto_auto] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-3 items-center">
+                <span>#</span><span>ชื่อ</span><span className="text-center">QT</span>
+                <span className="text-right">มูลค่า</span><span className="text-right">Conv%</span>
+              </div>
+              {data.topOfficers.map((o, idx) => {
+                const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
+                const barPct = Math.round((o.value / maxVal) * 100);
+                const oConv = o.conversionRate ?? (o.count > 0 ? Math.round((o.value / maxVal) * 100) : 0);
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                const rankColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground';
                 return (
-                  <div key={s.status}>
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="font-medium flex items-center gap-1.5">
-                        <span className={`inline-block w-2 h-2 rounded-full ${cfg?.color ?? 'bg-gray-400'}`} />
-                        {cfg?.label ?? s.status}
+                  <Link key={o.userId} href={`/manager/users/${o.userId}`}
+                    className="block p-2 rounded-xl hover:bg-accent transition-colors"
+                  >
+                    <div className="grid grid-cols-[24px_1fr_auto_auto_auto] items-center gap-3 mb-1.5">
+                      <span className={`text-xs font-bold text-center ${rankColor}`}>
+                        {medal ?? (idx + 1)}
                       </span>
-                      <span className="text-muted-foreground tabular-nums">
-                        {s.count} <span className="text-[10px]">({pct}%)</span>
-                      </span>
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm truncate">{o.userName}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{o.userEmail}</div>
+                      </div>
+                      <Badge variant="outline" className="text-xs">{o.count}</Badge>
+                      <div className="text-sm font-semibold text-right">{formatMoney(o.value)}</div>
+                      <div className="text-xs text-right text-cyan-600 font-semibold">{oConv}%</div>
                     </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${cfg?.color ?? 'bg-gray-400'}`}
-                        style={{ width: `${Math.max(pct, 2)}%` }} />
+                    <div className="ml-7 h-1 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${barPct}%` }} />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Top Rejection Reasons */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <XCircle className="h-4 w-4 text-red-500" />
+            Top Rejection Reasons
+          </div>
+          {reasons.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <XCircle className="h-10 w-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">ยังไม่มีข้อมูล rejection</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reasons.map((r, i) => {
+                const pct = Math.round((r.count / maxReason) * 100);
+                const redShades = ['#ef4444', '#f87171', '#fca5a5', '#fecaca', '#fee2e2'];
+                const shade = redShades[Math.min(i, redShades.length - 1)];
+                return (
+                  <div key={r.reason}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="font-medium text-foreground truncate max-w-[70%]">{r.reason}</span>
+                      <span className="text-muted-foreground ml-2 shrink-0 tabular-nums">{r.count} ครั้ง</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: shade }} />
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
-          {data.statusBreakdown.length > 0 && (
-            <div className="pt-3 mt-2 border-t flex justify-between text-xs">
-              <span className="text-muted-foreground">รวมทั้งหมด</span>
-              <span className="font-semibold">{data.totals.quotations} ใบ</span>
+        </div>
+      </div>
+
+      {/* ══ SECTION 9: Approval Trend Chart ══ */}
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-3">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          Approval Trend — 6 เดือนล่าสุด
+        </div>
+        <div className="flex gap-5 mb-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-6 h-0.5 bg-emerald-500 rounded" />Approved
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-6 border-t-2 border-dashed border-red-500" />Rejected
+          </span>
+        </div>
+        {trendData.length > 0
+          ? <TrendChart data={trendData} />
+          : (
+            <div className="flex items-center justify-center h-44 text-muted-foreground text-xs">
+              ยังไม่มีข้อมูล trend
             </div>
-          )}
-        </CardContent>
-      </Card>
+          )
+        }
+      </div>
+
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// SALES FUNNEL COMPONENT
+// SALES FUNNEL
 // ════════════════════════════════════════════════════════════════════════════
 function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversionRate: number }) {
+  const base = Math.max(data.totals.quotations, 1);
   const stages = [
     {
       label: 'Quotation Issued',
       count: data.totals.quotations,
-      value: data.totals.totalValue,
-      color: 'bg-blue-500',
-      textColor: 'text-blue-600 dark:text-blue-400',
+      color: '#3b82f6',
       pct: 100,
     },
     {
-      label: 'Approved / PO Stage',
+      label: 'Approved',
       count: data.totals.approved,
-      value: 0,
-      color: 'bg-cyan-500',
-      textColor: 'text-cyan-600 dark:text-cyan-400',
-      pct: data.totals.quotations > 0 ? Math.round((data.totals.approved / data.totals.quotations) * 100) : 0,
+      color: '#06b6d4',
+      pct: Math.round((data.totals.approved / base) * 100),
     },
     {
       label: 'PO Received',
       count: data.totals.poVerificationPending ?? 0,
-      value: 0,
-      color: 'bg-teal-500',
-      textColor: 'text-teal-600 dark:text-teal-400',
-      pct: data.totals.approved > 0
-        ? Math.round(((data.totals.poVerificationPending ?? 0) / Math.max(data.totals.approved, 1)) * 100) : 0,
+      color: '#14b8a6',
+      pct: Math.round(((data.totals.poVerificationPending ?? 0) / base) * 100),
     },
     {
       label: 'SO Confirmed',
       count: data.totals.soConfirmed ?? 0,
-      value: 0,
-      color: 'bg-emerald-500',
-      textColor: 'text-emerald-600 dark:text-emerald-400',
+      color: '#10b981',
       pct: conversionRate,
     },
   ];
 
   return (
-    <div className="space-y-2">
-      {stages.map((s, i) => (
-        <div key={s.label} className="flex items-center gap-3">
-          <div className="w-36 text-xs text-right text-muted-foreground shrink-0 hidden sm:block">
-            {s.label}
-          </div>
-          <div className="flex-1 relative">
-            <div className="h-8 rounded-md bg-muted overflow-hidden">
+    <div className="space-y-1.5">
+      {stages.map((s) => {
+        const w = `${Math.max(s.pct, s.count > 0 ? 15 : 5)}%`;
+        return (
+          <div key={s.label} className="flex items-center gap-3">
+            <span className="w-32 text-xs text-right text-muted-foreground hidden sm:block truncate">{s.label}</span>
+            <div className="flex-1 h-9 bg-muted rounded-lg overflow-hidden relative">
               <div
-                className={`h-full ${s.color} rounded-md transition-all duration-700 flex items-center px-3`}
-                style={{ width: `${Math.max(s.pct, s.count > 0 ? 8 : 0)}%` }}
+                className="h-full rounded-lg flex items-center px-3 gap-2 transition-all duration-700"
+                style={{ width: w, background: `linear-gradient(to right, ${s.color}, ${s.color}cc)` }}
               >
-                <span className="text-white text-xs font-semibold truncate">
+                <span className="text-white text-xs font-semibold whitespace-nowrap">
                   {s.count > 0 ? `${s.count} รายการ` : ''}
                 </span>
               </div>
             </div>
+            <span className="w-12 text-right text-sm font-bold" style={{ color: s.color }}>{s.pct}%</span>
           </div>
-          <div className="w-16 text-right shrink-0">
-            <div className={`text-sm font-bold ${s.textColor}`}>{s.pct}%</div>
-          </div>
-          {i < stages.length - 1 && (
-            <div className="absolute left-36 mt-8 ml-3 hidden sm:block">
-              <ArrowRight className="h-3 w-3 text-muted-foreground rotate-90" />
-            </div>
-          )}
-        </div>
-      ))}
-      <div className="pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
-        <span>QT → SO Conversion Rate</span>
-        <span className="font-bold text-emerald-600 text-sm">{conversionRate}%</span>
+        );
+      })}
+      <div className="pt-2 border-t flex items-center justify-between text-xs text-muted-foreground mt-2">
+        <span>QT → SO Conversion</span>
+        <span className="font-bold text-emerald-600 text-base">{conversionRate}%</span>
       </div>
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// TREND CHART — SVG-based
+// REVENUE AREA CHART (SVG)
+// ════════════════════════════════════════════════════════════════════════════
+function RevenueAreaChart({ data }: { data: Array<{ month: string; value: number }> }) {
+  const W = 500; const H = 160; const PL = 55; const PR = 16; const PT = 10; const PB = 28;
+  const cW = W - PL - PR; const cH = H - PT - PB;
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
+  const xi = (i: number) => PL + (i / Math.max(data.length - 1, 1)) * cW;
+  const yv = (v: number) => PT + cH - (v / maxVal) * cH;
+
+  const points = data.map((d, i) => ({ x: xi(i), y: yv(d.value) }));
+
+  let pathD = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const cp1x = (points[i - 1].x + points[i].x) / 2;
+    pathD += ` C ${cp1x} ${points[i - 1].y} ${cp1x} ${points[i].y} ${points[i].x} ${points[i].y}`;
+  }
+  const areaD = `${pathD} L ${points[points.length - 1].x} ${PT + cH} L ${points[0].x} ${PT + cH} Z`;
+
+  const yGrids = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }}>
+      <defs>
+        <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {yGrids.map((t) => {
+        const gy = PT + cH * (1 - t);
+        const val = maxVal * t;
+        return (
+          <g key={t}>
+            <line x1={PL} y1={gy} x2={W - PR} y2={gy} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
+            <text x={PL - 6} y={gy + 4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.45}>
+              {val >= 1000000 ? `${(val / 1000000).toFixed(1)}M`
+                : val >= 1000 ? `${(val / 1000).toFixed(0)}K`
+                : val.toFixed(0)}
+            </text>
+          </g>
+        );
+      })}
+      <path d={areaD} fill="url(#revenueGrad)" />
+      <path d={pathD} fill="none" stroke="#10b981" strokeWidth={2.5} strokeLinejoin="round" />
+      {points.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#10b981" stroke="white" strokeWidth={1.5}>
+          <title>{data[i].month}: {formatMoney(data[i].value)}</title>
+        </circle>
+      ))}
+      {data.map((d, i) => (
+        <text key={i} x={xi(i)} y={H - 6} textAnchor="middle" fontSize={10} fill="currentColor" fillOpacity={0.5}>
+          {d.month}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TREND CHART — SVG with area fill for approved
 // ════════════════════════════════════════════════════════════════════════════
 function TrendChart({ data }: { data: Array<{ month: string; approved: number; rejected: number }> }) {
   const W = 600; const H = 180; const PL = 36; const PR = 16; const PT = 12; const PB = 28;
@@ -753,59 +948,92 @@ function TrendChart({ data }: { data: Array<{ month: string; approved: number; r
   const xStep = cW / Math.max(data.length - 1, 1);
   const y = (v: number) => PT + cH - (v / maxVal) * cH;
   const x = (i: number) => PL + i * xStep;
-  const polyApproved = data.map((d, i) => `${x(i)},${y(d.approved)}`).join(' ');
+
+  // Build smooth path for approved
+  const approvedPts = data.map((d, i) => ({ x: x(i), y: y(d.approved) }));
+  let approvedPath = `M ${approvedPts[0].x} ${approvedPts[0].y}`;
+  for (let i = 1; i < approvedPts.length; i++) {
+    const cp1x = (approvedPts[i - 1].x + approvedPts[i].x) / 2;
+    approvedPath += ` C ${cp1x} ${approvedPts[i - 1].y} ${cp1x} ${approvedPts[i].y} ${approvedPts[i].x} ${approvedPts[i].y}`;
+  }
+  const approvedArea = `${approvedPath} L ${approvedPts[approvedPts.length - 1].x} ${PT + cH} L ${approvedPts[0].x} ${PT + cH} Z`;
+
   const polyRejected = data.map((d, i) => `${x(i)},${y(d.rejected)}`).join(' ');
   const yTicks = [0, Math.round(maxVal * 0.5), maxVal];
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 180 }}>
+      <defs>
+        <linearGradient id="approvedAreaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10b981" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#10b981" stopOpacity="0.01" />
+        </linearGradient>
+      </defs>
       {yTicks.map((v) => (
         <g key={v}>
-          <line x1={PL} y1={y(v)} x2={W - PR} y2={y(v)}
-            stroke="currentColor" strokeOpacity={0.08} strokeWidth={1} />
-          <text x={PL - 6} y={y(v) + 4} textAnchor="end" fontSize={10}
-            fill="currentColor" fillOpacity={0.45}>{v}</text>
+          <line x1={PL} y1={y(v)} x2={W - PR} y2={y(v)} stroke="currentColor" strokeOpacity={0.08} strokeWidth={1} />
+          <text x={PL - 6} y={y(v) + 4} textAnchor="end" fontSize={10} fill="currentColor" fillOpacity={0.45}>{v}</text>
         </g>
       ))}
-      <polyline points={polyApproved} fill="none" stroke="#10b981" strokeWidth={2} strokeLinejoin="round" />
-      {data.map((d, i) => (
-        <circle key={`a${i}`} cx={x(i)} cy={y(d.approved)} r={3.5} fill="#10b981" />
+      {/* Approved area */}
+      <path d={approvedArea} fill="url(#approvedAreaGrad)" />
+      {/* Approved line */}
+      <path d={approvedPath} fill="none" stroke="#10b981" strokeWidth={2.5} strokeLinejoin="round" />
+      {/* Approved dots */}
+      {approvedPts.map((p, i) => (
+        <circle key={`a${i}`} cx={p.x} cy={p.y} r={3.5} fill="#10b981" stroke="white" strokeWidth={1.5}>
+          <title>{data[i].month}: Approved {data[i].approved}</title>
+        </circle>
       ))}
-      <polyline points={polyRejected} fill="none" stroke="#ef4444" strokeWidth={2}
-        strokeLinejoin="round" strokeDasharray="5 4" />
+      {/* Rejected line (dashed) */}
+      <polyline points={polyRejected} fill="none" stroke="#ef4444" strokeWidth={2} strokeLinejoin="round" strokeDasharray="5 4" />
       {data.map((d, i) => (
-        <circle key={`r${i}`} cx={x(i)} cy={y(d.rejected)} r={3.5} fill="#ef4444" />
+        <circle key={`r${i}`} cx={x(i)} cy={y(d.rejected)} r={3.5} fill="#ef4444" stroke="white" strokeWidth={1.5}>
+          <title>{data[i].month}: Rejected {data[i].rejected}</title>
+        </circle>
       ))}
+      {/* X labels */}
       {data.map((d, i) => (
-        <text key={`l${i}`} x={x(i)} y={H - 6} textAnchor="middle" fontSize={11}
-          fill="currentColor" fillOpacity={0.5}>{d.month}</text>
+        <text key={`l${i}`} x={x(i)} y={H - 6} textAnchor="middle" fontSize={11} fill="currentColor" fillOpacity={0.5}>
+          {d.month}
+        </text>
       ))}
     </svg>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// KPI CARD
+// KPI CARD — premium gradient design
 // ════════════════════════════════════════════════════════════════════════════
 function KpiCard({
-  icon, label, value, accent, subtitle, alert = false, isText = false,
+  icon, label, value, gradient, subtitle, alertRing = false, isText = false,
 }: {
-  icon: React.ReactNode; label: string; value: number | string;
-  accent: string; subtitle?: string; alert?: boolean; isText?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  gradient: string;
+  subtitle?: string;
+  alertRing?: boolean;
+  isText?: boolean;
 }) {
   return (
-    <Card className={alert && Number(value) > 0 ? 'border-rose-500/40 bg-rose-500/5' : ''}>
-      <CardContent className="p-4">
-        <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${accent} text-white flex items-center justify-center mb-3 shadow-md`}>
-          {icon}
-        </div>
-        <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium">{label}</div>
-        <div className={`font-bold mt-1 ${isText ? 'text-xl' : 'text-3xl'} ${alert && Number(value) > 0 ? 'text-rose-600 dark:text-rose-400' : ''}`}>
-          {value}
-        </div>
-        {subtitle && <div className="text-[10px] text-muted-foreground mt-1">{subtitle}</div>}
-      </CardContent>
-    </Card>
+    <div className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg bg-gradient-to-br ${gradient} ${
+      alertRing && Number(value) > 0 ? 'ring-2 ring-white/50 ring-offset-2 ring-offset-background' : ''
+    }`}>
+      {/* Decorative circle */}
+      <div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/10" />
+      {/* Icon + label */}
+      <div className="relative flex items-center gap-2 mb-3">
+        <span className="opacity-90">{icon}</span>
+        <span className="text-xs font-medium uppercase tracking-wider text-white/70">{label}</span>
+      </div>
+      {/* Value */}
+      <div className={`relative font-bold leading-none ${isText ? 'text-xl' : 'text-3xl'}`}>
+        {value}
+      </div>
+      {/* Subtitle */}
+      {subtitle && <div className="relative mt-1.5 text-xs text-white/60">{subtitle}</div>}
+    </div>
   );
 }
 
@@ -813,15 +1041,22 @@ function KpiCard({
 // ACTIVITY COLUMN
 // ════════════════════════════════════════════════════════════════════════════
 function ActivityCol({
-  icon, label, approved, rejected, rate,
+  icon, label, iconBg, approved, rejected, rate,
 }: {
-  icon: React.ReactNode; label: string;
-  approved: number; rejected: number; rate: number | null;
+  icon: React.ReactNode;
+  label: string;
+  iconBg: string;
+  approved: number;
+  rejected: number;
+  rate: number | null;
 }) {
   const total = approved + rejected;
   return (
     <div className="px-4 first:pl-0 last:pr-0">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">{icon}{label}</div>
+      <div className={`inline-flex items-center gap-1.5 text-xs mb-3 px-2 py-1 rounded-lg ${iconBg}`}>
+        {icon}
+        <span className="font-medium">{label}</span>
+      </div>
       <div className="flex gap-5">
         <div>
           <div className="flex items-center gap-1">
@@ -839,8 +1074,8 @@ function ActivityCol({
         </div>
       </div>
       {total > 0 && (
-        <div className="mt-2 h-1 rounded-full bg-muted overflow-hidden">
-          <div className="h-full bg-emerald-500 rounded-full"
+        <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500"
             style={{ width: `${Math.round((approved / total) * 100)}%` }} />
         </div>
       )}
