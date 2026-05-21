@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Building2, Save, Loader2, Lock } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Building2, Save, Loader2, Lock, Upload, ImageIcon, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +24,8 @@ export default function CompanyPage() {
   const [data, setData] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -43,6 +45,30 @@ export default function CompanyPage() {
     setData({ ...data, [k]: v });
   };
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const allowed = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowed.includes(file.type)) { toast.error('รองรับเฉพาะ PNG, JPG, WebP'); e.target.value = ''; return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 5 MB'); e.target.value = ''; return; }
+
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await api.post<ApiResponse<CompanySettings>>('/company/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data.data) setData(res.data.data);
+      toast.success('อัปโหลดโลโก้สำเร็จ');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
   const submit = async () => {
     if (!data) return;
     setSaving(true);
@@ -57,6 +83,7 @@ export default function CompanyPage() {
         fax: data.fax,
         email: data.email,
         website: data.website,
+        logoUrl: data.logoUrl ?? null,
         defaultVatRate: Number(data.defaultVatRate),
         defaultPaymentTerms: data.defaultPaymentTerms,
         defaultCurrency: data.defaultCurrency,
@@ -112,6 +139,49 @@ export default function CompanyPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Logo */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ImageIcon className="h-4 w-4" />โลโก้บริษัท
+          </CardTitle>
+          <CardDescription>แสดงในเอกสาร Sale Order</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-6">
+            <div className="h-24 w-24 rounded-xl border-2 border-dashed border-border flex items-center justify-center shrink-0 overflow-hidden bg-muted/20">
+              {data.logoUrl ? (
+                <img src={data.logoUrl} alt="Company logo" className="h-full w-full object-contain p-1" />
+              ) : (
+                <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+              )}
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">PNG, JPG, WebP · สูงสุด 5 MB</p>
+              {isAdmin && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}>
+                    {uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {data.logoUrl ? 'เปลี่ยนโลโก้' : 'อัปโหลดโลโก้'}
+                  </Button>
+                  {data.logoUrl && (
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                      onClick={() => setData({ ...data, logoUrl: null })}
+                      title="ลบโลโก้ (บันทึกเพื่อยืนยัน)">
+                      <X className="h-4 w-4" />ลบ
+                    </Button>
+                  )}
+                </div>
+              )}
+              {data.logoUrl && (
+                <p className="text-xs text-muted-foreground">มีโลโก้แล้ว — จะแสดงในใบ Sale Order</p>
+              )}
+            </div>
+          </div>
+          <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoUpload} className="hidden" />
+        </CardContent>
+      </Card>
 
       {/* Basic Info */}
       <Card>

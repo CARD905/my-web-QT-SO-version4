@@ -95,6 +95,34 @@ function OfficerNavBadge({ type, collapsed }: { type: 'qt' | 'checklist' | 'so';
   );
 }
 
+function OfficerGroupBadge({ types, collapsed }: { types: ReadonlyArray<'qt' | 'checklist' | 'so'>; collapsed: boolean }) {
+  const [total, setTotal] = useState<number | null>(null);
+  const key = types.join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    getOfficerCounts().then((c) => {
+      if (!cancelled) setTotal(types.reduce((s, t) => s + (c[t] ?? 0), 0));
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (!total || total <= 0) return null;
+  if (collapsed) {
+    return (
+      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-blue-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
+        {total > 9 ? '9+' : total}
+      </span>
+    );
+  }
+  return (
+    <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
+      {total > 99 ? '99+' : total}
+    </span>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // NAV ITEMS — แบ่งตาม role ชัดเจน
 // ════════════════════════════════════════════════════════════════════════════
@@ -327,6 +355,10 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
   const [open, setOpen] = useState(anyChildActive);
   useEffect(() => { if (anyChildActive) setOpen(true); }, [anyChildActive]);
 
+  const groupBadgeTypes = roleCode === 'OFFICER'
+    ? (children.map((c) => c.officerBadge).filter(Boolean) as Array<'qt' | 'checklist' | 'so'>)
+    : [];
+
   if (collapsed) {
     const firstChild = children[0];
     if (!firstChild?.href) return null;
@@ -335,7 +367,10 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
         className={cn('group relative flex items-center justify-center p-2.5 rounded-lg transition-all duration-200',
           anyChildActive ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-accent/30')}
         title={t(item.labelKey)}>
-        <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
+        <div className="relative flex items-center justify-center">
+          <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
+          {groupBadgeTypes.length > 0 && <OfficerGroupBadge types={groupBadgeTypes} collapsed={true} />}
+        </div>
       </Link>
     );
   }
@@ -349,6 +384,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
           <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         </div>
         <span className="truncate flex-1 text-left">{t(item.labelKey)}</span>
+        {groupBadgeTypes.length > 0 && <OfficerGroupBadge types={groupBadgeTypes} collapsed={false} />}
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200 shrink-0', open && 'rotate-180')} style={{ color: theme.accentColor, opacity: 0.7 }} />
       </button>
       <div className={cn('overflow-hidden transition-all duration-300 ease-out', open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0')}>

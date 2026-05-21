@@ -501,15 +501,21 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
             <div className="grid grid-cols-[1fr_280px]">
               <div className="px-4 py-3 border-r-2 border-black">
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0">
-                    {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
-                  </div>
+                  {company?.logoUrl ? (
+                    <img src={company.logoUrl} alt="logo" className="w-16 h-16 object-contain shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0">
+                      {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <div className="font-bold text-base">{company?.companyNameTh || company?.companyName}</div>
                     {company?.companyNameTh && company?.companyName && <div className="text-xs text-gray-700">{company.companyName}</div>}
-                    <div className="text-[11px] text-gray-800 mt-1">
-                      {company?.addressTh || company?.address}
+                    <div className="text-[11px] text-gray-800 mt-1 space-y-0.5">
+                      {(company?.addressTh || company?.address) && <div>{company?.addressTh || company?.address}</div>}
                       {company?.phone && <div>โทร. {company.phone}{company?.fax && `  แฟกซ์ ${company.fax}`}</div>}
+                      {company?.email && <div>Email: {company.email}</div>}
+                      {company?.website && <div>Web: {company.website}</div>}
                       {company?.taxId && <div>เลขประจำตัวผู้เสียภาษี: {company.taxId}</div>}
                     </div>
                   </div>
