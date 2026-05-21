@@ -82,15 +82,15 @@ export default function SpecialDiscountApprovePage() {
   if (!q) return <div className="text-center py-20">ไม่พบข้อมูล</div>;
 
   const sd = q as any;
-  const isPending = sd.specialDiscountStatus === 'PENDING_CEO';
+  const isPending = sd.specialDiscountStatus === 'PENDING';
 
   const statusConfig: Record<string, { color: string; label: string; icon: React.ElementType }> = {
-    PENDING_CEO: { color: 'border-amber-400 bg-amber-50 dark:bg-amber-900/20', label: 'รอ CEO อนุมัติ', icon: Star },
+    PENDING: { color: 'border-amber-400 bg-amber-50 dark:bg-amber-900/20', label: 'รออนุมัติผ่านสายงาน', icon: Star },
     APPROVED:    { color: 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20', label: 'อนุมัติแล้ว', icon: CheckCircle2 },
     REJECTED:    { color: 'border-red-400 bg-red-50 dark:bg-red-900/20', label: 'ปฏิเสธ', icon: XCircle },
     MODIFIED:    { color: 'border-blue-400 bg-blue-50 dark:bg-blue-900/20', label: `อนุมัติ ${sd.specialDiscountFinalPct}%`, icon: CheckCircle2 },
   };
-  const sc = statusConfig[sd.specialDiscountStatus] ?? statusConfig['PENDING_CEO'];
+  const sc = statusConfig[sd.specialDiscountStatus] ?? statusConfig['PENDING'];
   const StatusIcon = sc.icon;
 
   return (

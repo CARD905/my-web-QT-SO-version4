@@ -119,6 +119,17 @@ router.patch('/approval-authority/manager-levels/:managerLevel',
   }),
 );
 
+router.patch('/approval-authority/manager-levels/:managerLevel/discount-limit',
+  requireAnyPermission(['user', 'update', 'ALL']),
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    const { limit } = req.body as { limit: number | null };
+    const managerLevel = req.params.managerLevel as 'DIVISION' | 'DEPARTMENT' | 'SECTION' | 'CEO';
+    const data = await adminService.updateManagerLevelDiscountLimit(managerLevel, limit, user, req);
+    return success(res, data, 'Manager level discount limit updated');
+  }),
+);
+
 router.patch('/approval-authority/users/:userId',
   requireAnyPermission(['user', 'update', 'ALL']),
   asyncHandler(async (req, res) => {

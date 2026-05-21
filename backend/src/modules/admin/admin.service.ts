@@ -470,7 +470,7 @@ export const adminService = {
       orderBy: [{ role: { level: 'asc' } }, { name: 'asc' }],
       select: {
         id: true, name: true, email: true,
-        approvalLimit: true, managerLevel: true,
+        approvalLimit: true, discountLimit: true, managerLevel: true,
         role: { select: { code: true, nameTh: true } },
         team: { select: { id: true, name: true } },
       },
@@ -479,17 +479,23 @@ export const adminService = {
     const managerLevels = MANAGER_LEVELS.map((level) => {
       const levelUsers = users.filter((user) => user.role.code === 'MANAGER' && user.managerLevel === level);
       const limitValues = Array.from(new Set(levelUsers.map((user) => user.approvalLimit?.toString() ?? null)));
+      const discountValues = Array.from(new Set(levelUsers.map((user) => (user as any).discountLimit?.toString() ?? null)));
 
       return {
         level,
         label: MANAGER_LEVEL_LABEL[level],
         approvalLimit: limitValues.length === 1 ? limitValues[0] : null,
         isMixed: limitValues.length > 1,
+        discountLimit: discountValues.length === 1 ? discountValues[0] : null,
+        isDiscountMixed: discountValues.length > 1,
         userCount: levelUsers.length,
       };
     });
 
-    return { managerLevels, users };
+    // CEO discount limit (from CEO user)
+    const ceoUser = users.find((u) => u.role.code === 'CEO');
+
+    return { managerLevels, users, ceoDiscountLimit: (ceoUser as any)?.discountLimit ?? null };
   },
 
   async updateManagerLevelApprovalLimit(managerLevel: ManagerLevel, limit: number | null, currentUser: AdminUser, req?: Request) {
@@ -520,6 +526,35 @@ export const adminService = {
       approvalLimit: limit,
       updatedUsers: result.count,
     };
+  },
+
+  async updateManagerLevelDiscountLimit(managerLevel: ManagerLevel | 'CEO', limit: number | null, currentUser: AdminUser, req?: Request) {
+    let result: { count: number };
+    if (managerLevel === 'CEO') {
+      result = await prisma.user.updateMany({
+        where: { deletedAt: null, role: { code: 'CEO' } },
+        data: { discountLimit: limit } as any,
+      });
+    } else {
+      if (!MANAGER_LEVELS.includes(managerLevel as ManagerLevel)) {
+        throw new AppError(400, 'INVALID_MANAGER_LEVEL', 'Invalid manager level');
+      }
+      result = await prisma.user.updateMany({
+        where: { deletedAt: null, role: { code: 'MANAGER' }, managerLevel: managerLevel as ManagerLevel },
+        data: { discountLimit: limit } as any,
+      });
+    }
+
+    await logActivity(prisma, {
+      userId: currentUser.id,
+      action: 'managerLevel.updateDiscountLimit',
+      entityType: 'ManagerLevel',
+      entityId: managerLevel,
+      description: `Updated discount limit of ${managerLevel}: ${limit ?? 'unlimited'}% (${result.count} user(s))`,
+      req,
+    });
+
+    return { managerLevel, discountLimit: limit, updatedUsers: result.count };
   },
 
   // ✅ ตรงกับ routes: updateRoleApprovalLimit(roleId, limit, user, req)

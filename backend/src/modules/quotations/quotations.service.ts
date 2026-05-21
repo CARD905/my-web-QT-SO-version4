@@ -4,7 +4,7 @@ import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/response';
 import { buildPaginationMeta, getPaginationParams } from '../../utils/pagination';
 import { logActivity } from '../../utils/activity-log';
-import { createNotification, notifyByRole } from '../../utils/notification';
+import { createNotification } from '../../utils/notification';
 import { generateDocumentNumber } from '../../utils/number-generator';
 import { calcQuotation } from '../../utils/calc';
 import { buildScopeFilter, canActOnEntity } from '../../utils/scope-filter';
@@ -66,6 +66,7 @@ const quotationDetailInclude = {
       role: { select: { code: true, nameTh: true } },
       managerLevel: true,
       approvalLimit: true,
+      discountLimit: true,
     },
   },
   saleOrder: { select: { id: true, saleOrderNo: true, status: true } },
@@ -270,22 +271,32 @@ export const quotationsService = {
       .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
 
     if (maxPctDiscount > limits.normalMax && (input as any).specialDiscountReason) {
+      const firstApprover = await findNextApprover(prisma as any, userId, Number(quotation.grandTotal));
       await prisma.quotation.update({
         where: { id: quotation.id },
         data: {
           specialDiscountRequested: true,
           specialDiscountPercent: maxPctDiscount,
           specialDiscountReason: (input as any).specialDiscountReason,
-          specialDiscountStatus: 'PENDING_CEO',
+          specialDiscountStatus: 'PENDING',
+          // Auto-submit into the normal approval chain
+          ...(firstApprover ? {
+            status: 'PENDING' as any,
+            submittedAt: new Date(),
+            currentApproverId: firstApprover.approverId,
+          } : {}),
         },
       });
-      await notifyByRole(prisma, 'CEO', {
-        type: 'QUOTATION_SUBMITTED',
-        title: `⭐ ขออนุมัติ Special Discount ${maxPctDiscount}%`,
-        message: `${quotation.quotationNo} จาก ${quotation.customerCompany} — ${(input as any).specialDiscountReason}`,
-        link: `/special-discount/${quotation.id}`,
-        metadata: { quotationId: quotation.id, requestedPct: maxPctDiscount },
-      });
+      if (firstApprover) {
+        await createNotification(prisma as any, {
+          userId: firstApprover.approverId,
+          type: 'QUOTATION_SUBMITTED',
+          title: `⭐ ขออนุมัติ Special Discount ${maxPctDiscount}%`,
+          message: `${quotation.quotationNo} จาก ${quotation.customerCompany} — ${(input as any).specialDiscountReason}`,
+          link: `/quotations/${quotation.id}`,
+          metadata: { quotationId: quotation.id, requestedPct: maxPctDiscount },
+        });
+      }
     }
 
     return quotation;
@@ -303,8 +314,8 @@ export const quotationsService = {
     if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot edit quotation with status ${existing.status}`);
     }
-    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING_CEO') {
-      throw new AppError(409, 'SPECIAL_DISCOUNT_PENDING', 'ไม่สามารถแก้ไขได้ — รอ CEO ตอบกลับคำขอ Special Discount ก่อน');
+    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING') {
+      throw new AppError(409, 'SPECIAL_DISCOUNT_PENDING', 'ไม่สามารถแก้ไขได้ — รอการอนุมัติ Special Discount ก่อน');
     }
 
     const customer = await prisma.customer.findFirst({ where: { id: input.customerId, deletedAt: null } });
@@ -569,7 +580,10 @@ export const quotationsService = {
   async approve(id: string, input: ApproveQuotationInput | string, approverId: string, req?: Request) {
     const approveInput: ApproveQuotationInput = typeof input === 'string' ? { comment: input } : input;
 
-    const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
+    const existing = await prisma.quotation.findFirst({
+      where: { id, deletedAt: null },
+      include: { items: { select: { discount: true, discountType: true } } },
+    });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
     if (!['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(existing.status)) {
@@ -590,7 +604,7 @@ export const quotationsService = {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 
-    // เช็ค limit รายคน (CEO ไม่มีขีดจำกัด)
+    // เช็ค money limit (CEO ไม่มีขีดจำกัด)
     const approverLimit = Number(approverUser.approvalLimit ?? 0);
     const grandTotal = Number(existing.grandTotal);
     if (!isCeo && approverLimit > 0 && grandTotal > approverLimit) {
@@ -600,10 +614,24 @@ export const quotationsService = {
       );
     }
 
+    // เช็ค discount limit ตามตำแหน่ง (CEO ไม่มีขีดจำกัด)
+    const maxPctDiscount = existing.items
+      .filter((it) => it.discountType === 'PERCENTAGE')
+      .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
+    const discountLimit = Number((approverUser as any).discountLimit ?? 0);
+    if (!isCeo && discountLimit > 0 && maxPctDiscount > discountLimit) {
+      throw new AppError(
+        403, 'EXCEEDS_DISCOUNT_LIMIT',
+        `ส่วนลด ${maxPctDiscount}% เกินสิทธิ์การอนุมัติส่วนลดของคุณ (${discountLimit}%) — กรุณากด "ส่งต่อ" แทน`,
+      );
+    }
+
     if (new Date(existing.expiryDate) < new Date()) {
       await prisma.quotation.update({ where: { id }, data: { status: 'EXPIRED' } });
       throw new AppError(409, 'EXPIRED', 'Cannot approve expired quotation');
     }
+
+    const isSpecialDiscount = !!(existing as any).specialDiscountRequested;
 
     const quotation = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
@@ -613,6 +641,13 @@ export const quotationsService = {
           approvedAt: new Date(),
           approvedById: approverId,
           currentApproverId: null,
+          // CEO approves special discount along with the quotation
+          ...(isSpecialDiscount ? {
+            specialDiscountStatus: 'APPROVED',
+            specialDiscountFinalPct: (existing as any).specialDiscountPercent,
+            specialDiscountById: approverId,
+            specialDiscountAt: new Date(),
+          } : {}),
         },
         include: quotationDetailInclude,
       });
@@ -866,7 +901,7 @@ export const quotationsService = {
   // ============================================================
   async listSpecialDiscountRequests(currentUser: CurrentUser) {
     return prisma.quotation.findMany({
-      where: { deletedAt: null, specialDiscountRequested: true, specialDiscountStatus: 'PENDING_CEO' },
+      where: { deletedAt: null, specialDiscountRequested: true, specialDiscountStatus: 'PENDING' },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, quotationNo: true, customerCompany: true, grandTotal: true, currency: true,
@@ -883,7 +918,7 @@ export const quotationsService = {
     }
     const q = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING_CEO') {
+    if ((q as any).specialDiscountStatus !== 'PENDING') {
       throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
     }
 
@@ -924,7 +959,7 @@ export const quotationsService = {
       include: { items: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING_CEO') {
+    if ((q as any).specialDiscountStatus !== 'PENDING') {
       throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
     }
 
@@ -989,7 +1024,7 @@ export const quotationsService = {
       include: { items: { orderBy: { sortOrder: 'asc' } } },
     });
     if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING_CEO') {
+    if ((q as any).specialDiscountStatus !== 'PENDING') {
       throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
     }
 

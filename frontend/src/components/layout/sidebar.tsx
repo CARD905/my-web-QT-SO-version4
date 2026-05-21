@@ -233,15 +233,9 @@ const NAV_ITEMS: NavItem[] = [
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
-        href: '/admin/settings',
-        labelKey: 'nav.adminSettings',
-        icon: Settings,
-        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
-      },
-      {
-        href: '/admin/approval',
-        labelKey: 'nav.adminApproval',
-        icon: Shield,
+        href: '/admin/invitations',
+        labelKey: 'nav.invitations',
+        icon: Mail,
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
@@ -251,9 +245,9 @@ const NAV_ITEMS: NavItem[] = [
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
-        href: '/admin/invitations',
-        labelKey: 'nav.invitations',
-        icon: Mail,
+        href: '/admin/approval',
+        labelKey: 'nav.adminApproval',
+        icon: Shield,
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
@@ -263,15 +257,21 @@ const NAV_ITEMS: NavItem[] = [
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
+        href: '/admin/login-history',
+        labelKey: 'nav.loginHistory',
+        icon: LogIn,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
         href: '/admin/activity-logs',
         labelKey: 'nav.activityLogs',
         icon: Activity,
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
       {
-        href: '/admin/login-history',
-        labelKey: 'nav.loginHistory',
-        icon: LogIn,
+        href: '/admin/settings',
+        labelKey: 'nav.adminSettings',
+        icon: Settings,
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
       },
     ],

@@ -335,7 +335,7 @@ export default function QuotationDetailPage() {
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const isCeo = role?.code === 'CEO';
-  const isSpecialDiscountPendingCEO = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO';
+  const isSpecialDiscountPendingCEO = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING';
 
   const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
   const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
@@ -353,7 +353,18 @@ export default function QuotationDetailPage() {
   // Does the current approver's limit get exceeded by this quotation?
   const approverLimit = Number(q.currentApprover?.approvalLimit ?? 0);
   const grandTotalNum = Number(q.grandTotal);
-  const exceedsApproverLimit = isCurrentApprover && !isCeo && approverLimit > 0 && grandTotalNum > approverLimit;
+  const exceedsMoneyLimit = isCurrentApprover && !isCeo && approverLimit > 0 && grandTotalNum > approverLimit;
+
+  // Discount limit check per position
+  const discountLimitPct = Number(q.currentApprover?.discountLimit ?? 0);
+  const maxItemDiscountPct = Math.max(
+    0,
+    ...(q.items ?? [])
+      .filter((it) => it.discountType === 'PERCENTAGE')
+      .map((it) => Number(it.discount)),
+  );
+  const exceedsDiscountLimit = isCurrentApprover && !isCeo && discountLimitPct > 0 && maxItemDiscountPct > discountLimitPct;
+  const exceedsApproverLimit = exceedsMoneyLimit || exceedsDiscountLimit;
 
   // Label for next level manager (used in escalate button + popover)
   const nextLevelTitle = (() => {
@@ -494,9 +505,11 @@ export default function QuotationDetailPage() {
               </p>
               {isCurrentApprover && (
                 <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
-                  {exceedsApproverLimit
+                  {exceedsMoneyLimit
                     ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : `✓ มูลค่า ${formatMoney(grandTotalNum, q.currency)} อยู่ในวงเงินของคุณ${approverLimit > 0 ? ` (${formatMoney(approverLimit)})` : ''} — สามารถอนุมัติได้เลย`}
+                    : exceedsDiscountLimit
+                    ? `⚠ ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — กรุณาส่งต่อ ${nextLevelTitle}`
+                    : `✓ อยู่ในสิทธิ์ของคุณ${approverLimit > 0 ? ` (วงเงิน ${formatMoney(approverLimit)})` : ''}${discountLimitPct > 0 ? ` (ส่วนลด ≤${discountLimitPct}%)` : ''} — สามารถอนุมัติได้เลย`}
                 </div>
               )}
               {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}
@@ -516,9 +529,11 @@ export default function QuotationDetailPage() {
               </p>
               {isCurrentApprover && (
                 <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
-                  {exceedsApproverLimit
+                  {exceedsMoneyLimit
                     ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : `✓ มูลค่า ${formatMoney(grandTotalNum, q.currency)} อยู่ในวงเงินของคุณ${approverLimit > 0 ? ` (${formatMoney(approverLimit)})` : ''} — สามารถอนุมัติได้เลย`}
+                    : exceedsDiscountLimit
+                    ? `⚠ ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — กรุณาส่งต่อ ${nextLevelTitle}`
+                    : `✓ อยู่ในสิทธิ์ของคุณ${approverLimit > 0 ? ` (วงเงิน ${formatMoney(approverLimit)})` : ''}${discountLimitPct > 0 ? ` (ส่วนลด ≤${discountLimitPct}%)` : ''} — สามารถอนุมัติได้เลย`}
                 </div>
               )}
               {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">Quotation นี้กำลังรอการพิจารณาจาก Manager ระดับสูงขึ้น</p>}
@@ -582,7 +597,7 @@ export default function QuotationDetailPage() {
       )}
 
       {/* Special Discount Banners */}
-      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING_CEO' && (
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING' && (
         <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-start">
             <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0 mt-0.5">
@@ -590,23 +605,23 @@ export default function QuotationDetailPage() {
             </div>
             <div className="flex-1">
               <div className="font-semibold text-amber-800 dark:text-amber-200">
-                รอ CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}%
+                รอ CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% (ผ่านสายงานอนุมัติ)
               </div>
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                ไม่สามารถแก้ไข ยกเลิก หรือส่งขออนุมัติ Quotation นี้ได้ จนกว่า CEO จะตอบกลับ
+                คำขอกำลังส่งต่อตามสายงานอนุมัติ — Manager แต่ละระดับสามารถส่งต่อหรือปฏิเสธได้ เฉพาะ CEO สามารถอนุมัติได้
               </p>
               <p className="text-xs text-muted-foreground mt-1">เหตุผล: {(q as any).specialDiscountReason}</p>
             </div>
           </CardContent>
         </Card>
       )}
-      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'APPROVED' && (
+      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'APPROVED' && q.status !== 'APPROVED' && (
         <Card className="border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20">
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>
               <div className="font-semibold text-emerald-800 dark:text-emerald-200">CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% แล้ว</div>
-              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Quotation ได้รับการอนุมัติพร้อมกัน</p>
             </div>
           </CardContent>
         </Card>
@@ -742,7 +757,11 @@ export default function QuotationDetailPage() {
       {showEscalatePopover && (
         <ConfirmPopover
           title={`ส่งต่อ ${q.quotationNo} ให้ ${nextLevelTitle}?`}
-          description={`มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — ส่งต่อให้ ${nextLevelTitle} พิจารณาต่อ`}
+          description={
+            exceedsDiscountLimit
+              ? `ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — ส่งต่อให้ ${nextLevelTitle} พิจารณาต่อ`
+              : `มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — ส่งต่อให้ ${nextLevelTitle} พิจารณาต่อ`
+          }
           confirmLabel={`ส่งต่อ ${nextLevelTitle}`}
           onClose={() => setShowEscalatePopover(false)}
           onConfirm={handleEscalate}

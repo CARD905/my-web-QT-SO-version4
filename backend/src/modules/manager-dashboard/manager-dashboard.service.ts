@@ -592,9 +592,12 @@ export const managerDashboardService = {
 
   async navCounts(currentUser: CurrentUser): Promise<{ qt: number; checklist: number; so: number }> {
     const [qt, checklist, so] = await Promise.all([
-      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { notIn: ['APPROVED', 'CANCELLED'] as any } } }),
-      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['APPROVED', 'PO_REJECTED'] } } }),
-      prisma.saleOrder.count({ where: { deletedAt: null, status: { notIn: ['CONFIRMED', 'COMPLETED'] as any }, quotation: { createdById: currentUser.id } } }),
+      // Quotation List: only items the officer must act on (submit or fix)
+      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['DRAFT', 'REJECTED'] as any } } }),
+      // Checklist (Awaiting PO): approved quotations waiting for PO, or PO was rejected
+      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['APPROVED', 'PO_REJECTED'] as any } } }),
+      // Sale Orders: only items the officer must act on (confirm or fix)
+      prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['DRAFT', 'REJECTED'] as any }, quotation: { createdById: currentUser.id } } }),
     ]);
     return { qt, checklist, so };
   },

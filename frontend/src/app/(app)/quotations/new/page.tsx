@@ -221,10 +221,10 @@ export default function NewQuotationPage() {
     }
     if (hasSpecial && !specialDiscountReason.trim()) { toast.error('กรุณาระบุเหตุผลสำหรับ Special Discount ก่อนบันทึก'); return; }
     if (mode === 'submit') {
-      const msg = hasSpecial
-        ? `⚠️ ยืนยันส่งใบเสนอราคาพร้อม Special Discount ${maxPct}%?`
-        : `⚠️ ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`;
-      if (!confirm(msg)) return;
+      if (!confirm(`ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`)) return;
+    }
+    if (mode === 'draft' && hasSpecial) {
+      if (!confirm(`ยืนยันส่งขอ Special Discount ${maxPct}%?\n\nระบบจะส่งคำขอผ่านสายงานอนุมัติ (Manager → CEO)\nเฉพาะ CEO เท่านั้นที่สามารถอนุมัติได้\nหลังจากส่งแล้ว จะไม่สามารถกลับมาแก้ไขส่วนลดได้`)) return;
     }
     setSubmitting(mode);
     try {
@@ -244,7 +244,7 @@ export default function NewQuotationPage() {
         setLocked(true);
         toast.success(`${quotation.quotationNo} ส่งขออนุมัติเรียบร้อย`);
       } else if (hasSpecial) {
-        toast.success(`${quotation.quotationNo} บันทึกแล้ว — ส่งคำขอ Special Discount ให้ CEO พิจารณา`);
+        toast.success(`${quotation.quotationNo} ส่งขอ Special Discount เรียบร้อย — รออนุมัติผ่านสายงาน`);
       } else {
         toast.success(`${quotation.quotationNo} บันทึก draft แล้ว`);
       }
@@ -513,7 +513,7 @@ export default function NewQuotationPage() {
               </div>
               {hasSpecial && (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 text-xs text-amber-700 dark:text-amber-300">
-                  <Star className="h-3 w-3" />Special Discount {maxPct}% — รอ CEO อนุมัติ
+                  <Star className="h-3 w-3" />Special Discount {maxPct}% — รออนุมัติผ่านสายงาน
                 </div>
               )}
             </div>

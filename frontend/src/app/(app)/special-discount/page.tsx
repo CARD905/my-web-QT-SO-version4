@@ -25,16 +25,16 @@ interface SpecialDiscountItem {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  PENDING_CEO: { label: 'รอ CEO อนุมัติ', color: 'bg-amber-100 text-amber-700 border-amber-300', icon: Clock },
-  APPROVED:    { label: 'อนุมัติแล้ว',    color: 'bg-emerald-100 text-emerald-700 border-emerald-300', icon: CheckCircle2 },
-  REJECTED:    { label: 'ปฏิเสธ',         color: 'bg-red-100 text-red-700 border-red-300', icon: XCircle },
-  MODIFIED:    { label: 'ปรับแล้ว',        color: 'bg-blue-100 text-blue-700 border-blue-300', icon: CheckCircle2 },
+  PENDING:  { label: 'รออนุมัติ (สายงาน)', color: 'bg-amber-100 text-amber-700 border-amber-300', icon: Clock },
+  APPROVED: { label: 'อนุมัติแล้ว',        color: 'bg-emerald-100 text-emerald-700 border-emerald-300', icon: CheckCircle2 },
+  REJECTED: { label: 'ปฏิเสธ',             color: 'bg-red-100 text-red-700 border-red-300', icon: XCircle },
+  MODIFIED: { label: 'ปรับแล้ว',            color: 'bg-blue-100 text-blue-700 border-blue-300', icon: CheckCircle2 },
 };
 
 export default function SpecialDiscountListPage() {
   const [list, setList] = useState<SpecialDiscountItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('PENDING_CEO');
+  const [filter, setFilter] = useState<string>('PENDING');
 
   useEffect(() => {
     (async () => {
@@ -53,7 +53,7 @@ export default function SpecialDiscountListPage() {
   }, []);
 
   const filtered = filter === 'ALL' ? list : list.filter((i) => i.specialDiscountStatus === filter);
-  const pendingCount = list.filter((i) => i.specialDiscountStatus === 'PENDING_CEO').length;
+  const pendingCount = list.filter((i) => i.specialDiscountStatus === 'PENDING').length;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -66,7 +66,7 @@ export default function SpecialDiscountListPage() {
           <div>
             <h1 className="text-2xl font-bold">Special Discount</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              คำขอส่วนลดพิเศษที่ต้องการการอนุมัติจาก CEO
+              คำขอส่วนลดพิเศษ — อนุมัติผ่านสายงาน (เฉพาะ CEO อนุมัติได้)
             </p>
           </div>
           {pendingCount > 0 && (
@@ -78,7 +78,7 @@ export default function SpecialDiscountListPage() {
       {/* Filter tabs */}
       <div className="flex gap-1 flex-wrap">
         {[
-          { value: 'PENDING_CEO', label: 'รอ CEO อนุมัติ' },
+          { value: 'PENDING', label: 'รออนุมัติ' },
           { value: 'ALL', label: 'ทั้งหมด' },
         ].map((f) => (
           <button key={f.value} onClick={() => setFilter(f.value)}
@@ -86,7 +86,7 @@ export default function SpecialDiscountListPage() {
               filter === f.value ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'
             }`}>
             {f.label}
-            {f.value === 'PENDING_CEO' && pendingCount > 0 && (
+            {f.value === 'PENDING' && pendingCount > 0 && (
               <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px]">
                 {pendingCount}
               </span>
@@ -107,22 +107,22 @@ export default function SpecialDiscountListPage() {
               <Inbox className="h-7 w-7 text-muted-foreground/50" />
             </div>
             <p className="text-muted-foreground font-medium">
-              {filter === 'PENDING_CEO' ? 'ไม่มีคำขอที่รออนุมัติ' : 'ไม่มีคำขอ Special Discount'}
+              {filter === 'PENDING' ? 'ไม่มีคำขอที่รออนุมัติ' : 'ไม่มีคำขอ Special Discount'}
             </p>
             <p className="text-xs text-muted-foreground/70">
-              {filter === 'PENDING_CEO' ? 'คำขอทั้งหมดได้รับการพิจารณาแล้ว 🎉' : 'ยังไม่มีคำขอ Special Discount'}
+              {filter === 'PENDING' ? 'คำขอทั้งหมดได้รับการพิจารณาผ่านสายงานแล้ว 🎉' : 'ยังไม่มีคำขอ Special Discount'}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((item) => {
-            const sc = STATUS_CONFIG[item.specialDiscountStatus] ?? STATUS_CONFIG['PENDING_CEO'];
+            const sc = STATUS_CONFIG[item.specialDiscountStatus] ?? STATUS_CONFIG['PENDING'];
             const StatusIcon = sc.icon;
-            const isPending = item.specialDiscountStatus === 'PENDING_CEO';
+            const isPending = item.specialDiscountStatus === 'PENDING';
 
             return (
-              <Link key={item.id} href={`/special-discount/${item.id}`}>
+              <Link key={item.id} href={`/quotations/${item.id}`}>
                 <Card className={`cursor-pointer transition-all hover:border-primary/50 ${isPending ? 'border-amber-300 dark:border-amber-700' : ''}`}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4">

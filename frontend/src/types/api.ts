@@ -222,6 +222,7 @@ export interface Quotation {
     role: { code: string; nameTh: string };
     managerLevel?: 'SECTION' | 'DEPARTMENT' | 'DIVISION' | null;
     approvalLimit?: string | number | null;
+    discountLimit?: string | number | null;
   } | null;
   approvedById?: string | null;
   approvedBy?: User | null;

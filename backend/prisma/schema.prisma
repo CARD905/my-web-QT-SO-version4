@@ -117,6 +117,7 @@ model User {
   reportsToId        String?               @map("reports_to_id")
   teamId             String?               @map("team_id")
   approvalLimit      Decimal?              @map("approval_limit") @db.Decimal(15, 2)
+  discountLimit      Decimal?              @map("discount_limit") @db.Decimal(5, 2)
   delegateToId       String?               @map("delegate_to_id")
   preferredLang      Lang                  @default(th) @map("preferred_lang")
   preferredTheme     Theme                 @default(light) @map("preferred_theme")
