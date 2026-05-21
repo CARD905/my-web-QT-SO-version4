@@ -7,6 +7,7 @@ export const createProductSchema = z.object({
   description: z.string().max(2000).optional().nullable(),
   unitPrice: z.coerce.number().nonnegative('Unit price must be >= 0'),
   unit: z.string().max(50).default('pcs'),
+  categoryId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().default(true),
 });
 
@@ -14,6 +15,7 @@ export const updateProductSchema = createProductSchema.partial();
 
 export const listProductsSchema = paginationSchema.extend({
   isActive: z.coerce.boolean().optional(),
+  categoryId: z.string().optional(),
 });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;

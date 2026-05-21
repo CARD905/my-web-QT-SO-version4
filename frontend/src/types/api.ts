@@ -146,6 +146,14 @@ export interface Customer {
   _count?: { quotations: number; saleOrders: number };
 }
 
+export interface ProductCategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  isActive: boolean;
+  _count?: { products: number };
+}
+
 export interface Product {
   id: string;
   sku: string;
@@ -153,6 +161,8 @@ export interface Product {
   description?: string | null;
   unitPrice: string | number;
   unit: string;
+  categoryId?: string | null;
+  category?: { id: string; name: string } | null;
   isActive: boolean;
 }
 

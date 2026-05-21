@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Plus, Search, Package, X, Loader2, Edit2, Trash2,
   Sparkles, Calculator, TrendingUp, AlertTriangle, CheckCircle,
-  Info, ShoppingCart, Globe, Target, ChevronRight,
+  Info, ShoppingCart, Globe, Target, ChevronRight, Tag, FolderOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { formatMoney } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
-import type { ApiResponse, Product } from '@/types/api';
+import type { ApiResponse, Product, ProductCategory } from '@/types/api';
 import { cn } from '@/lib/utils';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -30,17 +31,28 @@ export default function ProductsPage() {
   const roleCode = role?.code ?? '';
   const canManage = roleCode === 'ADMIN' || roleCode === 'CEO';
 
-  const [list, setList]           = useState<Product[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState('');
-  const [showCreate, setShowCreate] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [list, setList]               = useState<Product[]>([]);
+  const [categories, setCategories]   = useState<ProductCategory[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
+  const [filterCat, setFilterCat]     = useState('');
+  const [showCreate, setShowCreate]   = useState(false);
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [showCatMgr, setShowCatMgr]   = useState(false);
 
-  const load = useCallback(async (q: string) => {
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await api.get<ApiResponse<ProductCategory[]>>('/product-categories?includeInactive=true');
+      setCategories(res.data.data ?? []);
+    } catch { /* silent */ }
+  }, []);
+
+  const load = useCallback(async (q: string, catId: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (q) params.set('search', q);
+      if (catId) params.set('categoryId', catId);
       params.set('limit', '100');
       const res = await api.get<ApiResponse<Product[]>>(`/products?${params}`);
       setList(res.data.data ?? []);
@@ -51,22 +63,24 @@ export default function ProductsPage() {
     }
   }, []);
 
+  useEffect(() => { loadCategories(); }, [loadCategories]);
+
   useEffect(() => {
-    const handler = setTimeout(() => load(search), 300);
+    const handler = setTimeout(() => load(search, filterCat), 300);
     return () => clearTimeout(handler);
-  }, [search, load]);
+  }, [search, filterCat, load]);
 
   const handleCloseCreate = useCallback(() => setShowCreate(false), []);
-  const handleSavedCreate = useCallback(() => { setShowCreate(false); load(search); }, [load, search]);
+  const handleSavedCreate = useCallback(() => { setShowCreate(false); load(search, filterCat); }, [load, search, filterCat]);
   const handleCloseEdit   = useCallback(() => setEditingId(null), []);
-  const handleSavedEdit   = useCallback(() => { setEditingId(null); load(search); }, [load, search]);
+  const handleSavedEdit   = useCallback(() => { setEditingId(null); load(search, filterCat); }, [load, search, filterCat]);
 
   const remove = async (id: string, name: string) => {
     if (!confirm(`ลบสินค้า "${name}" ใช่หรือไม่?`)) return;
     try {
       await api.delete(`/products/${id}`);
       toast.success('ลบสินค้าแล้ว');
-      load(search);
+      load(search, filterCat);
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     }
@@ -80,16 +94,23 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-bold">{t('product.title')}</h1>
           <p className="text-sm text-muted-foreground mt-1">{list.length} products</p>
         </div>
-        {canManage && (
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4" />{t('product.newProduct')}
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {canManage && (
+            <Button variant="outline" onClick={() => setShowCatMgr(true)}>
+              <Tag className="h-4 w-4" />จัดการประเภท
+            </Button>
+          )}
+          {canManage && (
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4" />{t('product.newProduct')}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Search */}
+      {/* Search + Category Filter */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -99,6 +120,36 @@ export default function ProductsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          {/* Category filter chips */}
+          {categories.filter(c => c.isActive).length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setFilterCat('')}
+                className={cn(
+                  'text-xs px-3 py-1 rounded-full border transition-colors',
+                  filterCat === ''
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:bg-muted',
+                )}
+              >
+                ทั้งหมด
+              </button>
+              {categories.filter(c => c.isActive).map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setFilterCat(filterCat === cat.id ? '' : cat.id)}
+                  className={cn(
+                    'text-xs px-3 py-1 rounded-full border transition-colors',
+                    filterCat === cat.id
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border hover:bg-muted',
+                  )}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -126,6 +177,11 @@ export default function ProductsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="text-xs text-muted-foreground font-mono">{p.sku}</div>
                     <div className="font-semibold truncate">{p.name}</div>
+                    {p.category && (
+                      <Badge variant="secondary" className="text-[10px] mt-0.5 h-4">
+                        <Tag className="h-2.5 w-2.5 mr-1" />{p.category.name}
+                      </Badge>
+                    )}
                     {p.description && (
                       <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{p.description}</div>
                     )}
@@ -162,11 +218,154 @@ export default function ProductsPage() {
 
       {/* Modals */}
       {showCreate && (
-        <ProductModal mode="create" onClose={handleCloseCreate} onSaved={handleSavedCreate} />
+        <ProductModal
+          mode="create" categories={categories}
+          onClose={handleCloseCreate} onSaved={handleSavedCreate}
+        />
       )}
       {editingId && (
-        <ProductModal mode="edit" id={editingId} onClose={handleCloseEdit} onSaved={handleSavedEdit} />
+        <ProductModal
+          mode="edit" id={editingId} categories={categories}
+          onClose={handleCloseEdit} onSaved={handleSavedEdit}
+        />
       )}
+      {showCatMgr && (
+        <CategoryManagerModal
+          categories={categories}
+          onClose={() => setShowCatMgr(false)}
+          onChanged={loadCategories}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CATEGORY MANAGER MODAL
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CategoryManagerModal({
+  categories, onClose, onChanged,
+}: {
+  categories: ProductCategory[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [newName, setNewName]   = useState('');
+  const [newDesc, setNewDesc]   = useState('');
+  const [saving, setSaving]     = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  const handleBackdrop = (e: React.MouseEvent) => {
+    if (e.target === backdropRef.current) onClose();
+  };
+
+  const create = async () => {
+    if (!newName.trim()) { toast.error('กรุณาระบุชื่อประเภท'); return; }
+    setSaving(true);
+    try {
+      await api.post('/product-categories', { name: newName.trim(), description: newDesc.trim() || null });
+      toast.success(`เพิ่มประเภท "${newName}" แล้ว`);
+      setNewName('');
+      setNewDesc('');
+      onChanged();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (cat: ProductCategory) => {
+    if (!confirm(`ลบประเภท "${cat.name}" ใช่หรือไม่?`)) return;
+    try {
+      await api.delete(`/product-categories/${cat.id}`);
+      toast.success('ลบประเภทแล้ว');
+      onChanged();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    }
+  };
+
+  return (
+    <div
+      ref={backdropRef}
+      onClick={handleBackdrop}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+    >
+      <div className="relative w-full max-w-md bg-background rounded-2xl shadow-2xl border border-border/60">
+        <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl bg-gradient-to-r from-violet-500 via-purple-400 to-violet-600" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-sm">
+              <FolderOpen className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold">จัดการประเภทสินค้า</h2>
+              <p className="text-xs text-muted-foreground">{categories.length} ประเภท</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Add new */}
+          <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+            <Label className="text-xs font-semibold">เพิ่มประเภทใหม่</Label>
+            <Input
+              placeholder="ชื่อประเภท เช่น Electronics, Furniture"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') create(); }}
+              className="h-9 text-sm"
+            />
+            <Input
+              placeholder="คำอธิบาย (ถ้ามี)"
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              className="h-9 text-sm"
+            />
+            <Button onClick={create} disabled={saving} size="sm" className="w-full">
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              เพิ่มประเภท
+            </Button>
+          </div>
+
+          {/* Existing list */}
+          {categories.length === 0 ? (
+            <div className="text-center text-sm text-muted-foreground py-4">ยังไม่มีประเภทสินค้า</div>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat) => (
+                <div
+                  key={cat.id}
+                  className="flex items-center justify-between p-3 rounded-lg border border-border/60 bg-background"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">{cat.name}</div>
+                    {cat.description && <div className="text-xs text-muted-foreground">{cat.description}</div>}
+                    {cat._count !== undefined && (
+                      <div className="text-xs text-muted-foreground">{cat._count.products} สินค้า</div>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost" size="icon"
+                    className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => remove(cat)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -208,12 +407,10 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
   let minP = 0;
 
   if (costPrice > 0) {
-    // Standard price = purely cost-based + target margin
     minP = Math.round(costPrice / (1 - targetMarginPct / 100));
     sug  = minP;
     insights.push({ type: 'ok', text: 'คำนวณจากต้นทุน + target margin — ราคาขั้นต่ำที่ยังได้กำไรตามเป้าหมาย' });
 
-    // Last price: comparison insight only — does not affect the calculated price
     if (lastPrice > 0) {
       const ratio = lastPrice / sug;
       if (ratio > 1.1)
@@ -226,17 +423,14 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
         insights.push({ type: 'warn', text: `Last price ต่ำกว่า standard ${((1 - ratio) * 100).toFixed(0)}% — เคยขายต่ำกว่าเป้า ตรวจสอบเหตุผล (ส่วนลดพิเศษ / ต้นทุนสูงขึ้น?)` });
     }
   } else if (lastPrice > 0) {
-    // No cost price — last price as fallback reference only
     minP = lastPrice;
     sug  = lastPrice;
     insights.push({ type: 'warn', text: 'ไม่มีต้นทุน — ใช้ Last price เป็นฐานอ้างอิง ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
   } else {
-    // Only market price
     sug = Math.round(marketPrice * 0.9);
     insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุน — ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
   }
 
-  // Market position: informational only — does not change the calculated price
   if (marketPrice > 0 && sug > 0) {
     const ratio = sug / marketPrice;
     if (ratio > 1.15)
@@ -249,7 +443,6 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาเพิ่ม target margin` });
   }
 
-  // Margin check
   const actualMarginPct = costPrice > 0 && sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
   if (costPrice > 0) {
     if (actualMarginPct >= targetMarginPct)
@@ -258,7 +451,6 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       insights.push({ type: 'warn', text: `margin จริง ${actualMarginPct.toFixed(1)}% < target ${targetMarginPct}% — ราคาต่ำกว่าเป้าหมาย` });
   }
 
-  // Bar visualization — include last price as a third marker
   const hi = Math.max(sug, marketPrice || 0, lastPrice || 0, minP) * 1.1 || 1;
   const lo = Math.max(minP * 0.85, 0);
   const rng = hi - lo || 1;
@@ -339,7 +531,6 @@ function PricingAnalyzer({
 
   return (
     <div className="space-y-4">
-      {/* Inputs */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs flex items-center gap-1.5 text-muted-foreground">
@@ -377,7 +568,6 @@ function PricingAnalyzer({
         </div>
       </div>
 
-      {/* Target Margin slider */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label className="text-xs flex items-center gap-1.5 text-muted-foreground">
@@ -402,7 +592,6 @@ function PricingAnalyzer({
         </div>
       </div>
 
-      {/* Empty state */}
       {!hasInput && (
         <div className="py-6 text-center text-sm text-muted-foreground">
           <div className="text-2xl mb-2 opacity-30">↑</div>
@@ -410,10 +599,8 @@ function PricingAnalyzer({
         </div>
       )}
 
-      {/* Result */}
       {result && (
         <div ref={resultRef} className="space-y-3">
-          {/* Metric cards */}
           <div className="grid grid-cols-4 gap-2">
             {[
               { label: 'ต้นทุน',          value: result.baseCost,      color: 'text-foreground' },
@@ -438,20 +625,16 @@ function PricingAnalyzer({
             ))}
           </div>
 
-          {/* Position bar */}
           <div className="space-y-1.5">
             <div className="relative h-2 bg-muted rounded-full overflow-visible">
               <div className="absolute left-0 top-0 h-full rounded-full bg-primary transition-all duration-500"
                 style={{ width: `${result.barSugPct}%` }} />
-              {/* Standard price marker */}
               <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-primary ring-2 ring-background transition-all duration-500 shadow-sm"
                 style={{ left: `${result.barSugPct}%` }} />
-              {/* Last price marker */}
               {result.lastBarPct !== null && (
                 <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-violet-500 ring-2 ring-background transition-all duration-500"
                   style={{ left: `${result.lastBarPct}%` }} />
               )}
-              {/* Market price marker */}
               {result.marketBarPct !== null && (
                 <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-background transition-all duration-500"
                   style={{ left: `${result.marketBarPct}%` }} />
@@ -477,7 +660,6 @@ function PricingAnalyzer({
             </div>
           </div>
 
-          {/* Insights */}
           <div className="rounded-xl border bg-muted/30 dark:bg-muted/20 divide-y divide-border/50">
             {result.insights.map((ins, i) => (
               <div key={i} className="flex items-start gap-2.5 px-3 py-2 text-xs text-muted-foreground">
@@ -487,7 +669,6 @@ function PricingAnalyzer({
             ))}
           </div>
 
-          {/* CTA */}
           <Button
             className="w-full h-10 gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0 shadow-sm transition-all duration-200 hover:shadow-emerald-500/25 hover:shadow-lg"
             onClick={() => onUseSuggested(result.suggestedPrice, result.baseCost)}
@@ -507,16 +688,17 @@ function PricingAnalyzer({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ProductModal({
-  mode, id, onClose, onSaved,
+  mode, id, categories, onClose, onSaved,
 }: {
   mode: 'create' | 'edit';
   id?: string;
+  categories: ProductCategory[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const t = useT();
   const [form, setForm] = useState({
-    sku: '', name: '', description: '', unitPrice: 0, unit: 'pcs',
+    sku: '', name: '', description: '', unitPrice: 0, unit: 'pcs', categoryId: '',
   });
   const [loading,       setLoading]       = useState(mode === 'edit');
   const [submitting,    setSubmitting]    = useState(false);
@@ -525,7 +707,6 @@ function ProductModal({
   const [costForMargin, setCostForMargin] = useState(0);
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  // fetch edit data
   useEffect(() => {
     if (mode !== 'edit' || !id) return;
     let cancelled = false;
@@ -538,6 +719,7 @@ function ProductModal({
           sku: p.sku, name: p.name,
           description: p.description || '',
           unitPrice: Number(p.unitPrice), unit: p.unit,
+          categoryId: p.categoryId || '',
         });
       })
       .catch((err) => { if (!cancelled) { toast.error(getApiErrorMessage(err)); onClose(); } })
@@ -561,7 +743,6 @@ function ProductModal({
       return next;
     });
 
-  // รับ price + cost จาก analyzer — set ทั้งคู่พร้อมกัน
   const handleUseSuggested = (price: number, cost: number) => {
     setCostForMargin(cost);
     setForm((prev) => ({ ...prev, unitPrice: price }));
@@ -577,11 +758,15 @@ function ProductModal({
     if (!form.sku || !form.name) { toast.error('SKU and Name are required'); return; }
     setSubmitting(true);
     try {
+      const payload = {
+        ...form,
+        categoryId: form.categoryId || null,
+      };
       if (mode === 'create') {
-        await api.post('/products', form);
+        await api.post('/products', payload);
         toast.success('สร้างสินค้าสำเร็จ');
       } else if (id) {
-        await api.patch(`/products/${id}`, form);
+        await api.patch(`/products/${id}`, payload);
         toast.success('แก้ไขสินค้าสำเร็จ');
       }
       onSaved();
@@ -595,6 +780,8 @@ function ProductModal({
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === backdropRef.current) onClose();
   };
+
+  const activeCategories = categories.filter(c => c.isActive);
 
   return (
     <div
@@ -610,7 +797,6 @@ function ProductModal({
           view === 'form' ? 'max-w-md' : 'max-w-lg',
         )}
       >
-        {/* Top stripe */}
         <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
 
         {/* Header */}
@@ -695,6 +881,25 @@ function ProductModal({
                         className="h-9 text-sm"
                       />
                     </div>
+                  </div>
+
+                  {/* Category selector */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Tag className="h-3 w-3" /> ประเภทสินค้า
+                    </Label>
+                    <select
+                      value={form.categoryId}
+                      onChange={(e) => update('categoryId', e.target.value)}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1
+                                 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1
+                                 focus-visible:ring-ring"
+                    >
+                      <option value="">— ไม่ระบุประเภท —</option>
+                      {activeCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="space-y-1.5">

@@ -5,15 +5,6 @@ import { logger } from './utils/logger';
 import { closeBrowser } from './modules/sale-orders/pdf-generator';
 
 async function bootstrap() {
-  // Verify DB connection before starting server
-  try {
-    await prisma.$connect();
-    logger.success('Database connected');
-  } catch (err) {
-    logger.error('Database connection failed', err);
-    process.exit(1);
-  }
-
   const app = createApp();
 
   const server = app.listen(env.PORT, '0.0.0.0', () => {

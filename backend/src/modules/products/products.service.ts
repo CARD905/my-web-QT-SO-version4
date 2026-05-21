@@ -19,6 +19,7 @@ export const productsService = {
     };
 
     if (query.isActive !== undefined) where.isActive = query.isActive;
+    if (query.categoryId) where.categoryId = query.categoryId;
 
     if (query.search) {
       where.OR = [
@@ -38,6 +39,7 @@ export const productsService = {
         orderBy,
         skip,
         take,
+        include: { category: { select: { id: true, name: true } } },
       }),
       prisma.product.count({ where }),
     ]);
@@ -48,6 +50,7 @@ export const productsService = {
   async getById(id: string) {
     const product = await prisma.product.findFirst({
       where: { id, deletedAt: null },
+      include: { category: { select: { id: true, name: true } } },
     });
     if (!product) throw new AppError(404, 'NOT_FOUND', 'Product not found');
     return product;
@@ -61,14 +64,16 @@ export const productsService = {
 
     const product = await prisma.product.create({
       data: {
+        id: crypto.randomUUID(),
         sku: input.sku,
         name: input.name,
         description: input.description || null,
         unitPrice: input.unitPrice,
         unit: input.unit,
+        categoryId: input.categoryId ?? null,
         isActive: input.isActive,
-        // Note: createdById removed — Product is shared master data in v2
       },
+      include: { category: { select: { id: true, name: true } } },
     });
 
     await logActivity(prisma, {
@@ -103,8 +108,10 @@ export const productsService = {
         ...(input.description !== undefined && { description: input.description || null }),
         ...(input.unitPrice !== undefined && { unitPrice: input.unitPrice }),
         ...(input.unit !== undefined && { unit: input.unit }),
+        ...(input.categoryId !== undefined && { categoryId: input.categoryId }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },
+      include: { category: { select: { id: true, name: true } } },
     });
 
     await logActivity(prisma, {

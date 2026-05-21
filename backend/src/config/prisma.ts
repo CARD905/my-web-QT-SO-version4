@@ -10,10 +10,16 @@ declare global {
 // Cap Prisma's own pool to avoid "max clients reached" on startup.
 function buildDbUrl(raw: string | undefined): string {
   if (!raw) return '';
-  if (raw.includes('connection_limit')) return raw;
-  const sep = raw.includes('?') ? '&' : '?';
-  // 5 = safe default (leaves headroom for migrations / admin tools)
-  return `${raw}${sep}connection_limit=5&pool_timeout=20`;
+  let url = raw;
+  // Supabase session-mode pooler (port 5432) has a hard pool_size cap shared across
+  // all clients. Switch to transaction-mode pooler (port 6543) automatically when
+  // pgbouncer=true is present — transaction mode has no per-session connection limit.
+  if (url.includes('pgbouncer=true') && url.includes(':5432/')) {
+    url = url.replace(':5432/', ':6543/');
+  }
+  if (url.includes('connection_limit')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}connection_limit=3&pool_timeout=10`;
 }
 
 export const prisma =

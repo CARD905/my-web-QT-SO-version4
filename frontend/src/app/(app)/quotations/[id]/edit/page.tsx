@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { cn, formatDateInput, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
-import type { ApiResponse, Customer, DiscountType, Product, Quotation } from '@/types/api';
+import type { ApiResponse, Customer, DiscountType, Product, ProductCategory, Quotation } from '@/types/api';
 
 interface LineItem {
   id: string;
@@ -51,6 +51,8 @@ export default function EditQuotationPage() {
   const [quotation, setQuotation] = useState<Quotation | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [filterCategory, setFilterCategory] = useState('');
   const [loading, setLoading] = useState(true);
 
   const [customerId, setCustomerId] = useState('');
@@ -70,11 +72,12 @@ export default function EditQuotationPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [qRes, cRes, pRes, sRes] = await Promise.all([
+        const [qRes, cRes, pRes, sRes, catRes] = await Promise.all([
           api.get<ApiResponse<Quotation>>(`/quotations/${id}`),
           api.get<ApiResponse<Customer[]>>('/customers?limit=100'),
           api.get<ApiResponse<Product[]>>('/products?limit=100&isActive=true'),
           api.get<ApiResponse<{ normalDiscountMax: number; specialDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
+          api.get<ApiResponse<ProductCategory[]>>('/product-categories'),
         ]);
         const q = qRes.data.data;
         if (!q) {
@@ -91,6 +94,7 @@ export default function EditQuotationPage() {
         setQuotation(q);
         setCustomers(cRes.data.data ?? []);
         setProducts(pRes.data.data ?? []);
+        setCategories(catRes.data.data ?? []);
         if (sRes.data.data) {
           setNormalDiscountMax(sRes.data.data.normalDiscountMax);
           setSpecialDiscountMax(sRes.data.data.specialDiscountMax);
@@ -255,6 +259,8 @@ export default function EditQuotationPage() {
 
   if (!quotation) return null;
 
+  const filteredProducts = filterCategory ? products.filter((p) => p.categoryId === filterCategory) : products;
+
   return (
     <div className="space-y-5 max-w-6xl pb-12">
       {/* Header */}
@@ -385,6 +391,33 @@ export default function EditQuotationPage() {
             </Button>
           </div>
 
+          {/* Category filter */}
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button
+                onClick={() => setFilterCategory('')}
+                className={cn(
+                  'text-xs px-3 py-1 rounded-full border transition-colors',
+                  filterCategory === '' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted',
+                )}
+              >
+                สินค้าทั้งหมด
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setFilterCategory(filterCategory === cat.id ? '' : cat.id)}
+                  className={cn(
+                    'text-xs px-3 py-1 rounded-full border transition-colors',
+                    filterCategory === cat.id ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted',
+                  )}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="hidden md:grid grid-cols-[1.5fr_1.5fr_70px_100px_80px_80px_100px_40px] gap-2 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase border-b">
             <div>Product</div>
             <div>Description</div>
@@ -415,7 +448,7 @@ export default function EditQuotationPage() {
                     className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm"
                   >
                     <option value="">{t('quotation.selectProduct')}</option>
-                    {products.map((p) => (
+                    {filteredProducts.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.sku} — {p.name}
                       </option>

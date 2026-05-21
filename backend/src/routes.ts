@@ -13,6 +13,7 @@ import managerDashboardRoutes from './modules/manager-dashboard/manager-dashboar
 import invitationsRoutes from './modules/invitations/invitations.routes';
 import managerTeamRoutes from './modules/manager/manager-team.routes';
 import adminRoutes from './modules/admin/admin.routes'; // ✅ ใหม่ — รวม users-admin + roles-admin
+import categoriesRoutes from './modules/products/categories.routes';
 
 const router = Router();
 
@@ -39,5 +40,6 @@ router.use('/company', companyRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/invitations', invitationsRoutes);
 router.use('/admin', adminRoutes); // ✅ แทน /admin/users และ /admin/roles
+router.use('/product-categories', categoriesRoutes);
 
 export default router;

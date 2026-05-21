@@ -265,21 +265,37 @@ model Customer {
   @@map("customers")
 }
 
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  products    Product[]
+
+  @@index([isActive])
+  @@map("product_categories")
+}
+
 model Product {
-  id             String          @id @default(uuid())
-  sku            String          @unique
+  id             String           @id @default(uuid())
+  sku            String           @unique
   name           String
   description    String?
-  unitPrice      Decimal         @map("unit_price") @db.Decimal(15, 2)
-  unit           String          @default("pcs")
-  isActive       Boolean         @default(true) @map("is_active")
-  deletedAt      DateTime?       @map("deleted_at")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
+  unitPrice      Decimal          @map("unit_price") @db.Decimal(15, 2)
+  unit           String           @default("pcs")
+  categoryId     String?          @map("category_id")
+  isActive       Boolean          @default(true) @map("is_active")
+  deletedAt      DateTime?        @map("deleted_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  category       ProductCategory? @relation(fields: [categoryId], references: [id])
   quotationItems QuotationItem[]
   saleOrderItems SaleOrderItem[]
 
   @@index([sku])
+  @@index([categoryId])
   @@index([deletedAt])
   @@map("products")
 }

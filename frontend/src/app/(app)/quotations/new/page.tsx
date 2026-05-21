@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { cn, formatDateInput, formatMoney, formatNumber } from '@/lib/utils';
-import type { ApiResponse, Customer, Product } from '@/types/api';
+import type { ApiResponse, Customer, Product, ProductCategory } from '@/types/api';
 
 interface LineItem {
   id: string;
@@ -108,6 +108,8 @@ export default function NewQuotationPage() {
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [filterCategory, setFilterCategory] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [customerInfo, setCustomerInfo] = useState({ contactName: '', company: '', taxId: '', phone: '', email: '', billingAddress: '', shippingAddress: '' });
   const today = useMemo(() => formatDateInput(new Date()), []);
@@ -129,13 +131,15 @@ export default function NewQuotationPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [cRes, pRes, sRes] = await Promise.all([
+        const [cRes, pRes, sRes, catRes] = await Promise.all([
           api.get<ApiResponse<Customer[]>>('/customers?limit=100'),
           api.get<ApiResponse<Product[]>>('/products?limit=100&isActive=true'),
           api.get<ApiResponse<{ normalDiscountMax: number; specialDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
+          api.get<ApiResponse<ProductCategory[]>>('/product-categories'),
         ]);
         setCustomers(cRes.data.data ?? []);
         setProducts(pRes.data.data ?? []);
+        setCategories(catRes.data.data ?? []);
         if (sRes.data.data) {
           setNormalDiscountMax(sRes.data.data.normalDiscountMax);
           setSpecialDiscountMax(sRes.data.data.specialDiscountMax);
@@ -259,6 +263,11 @@ export default function NewQuotationPage() {
   const isProcessing = submitting !== null;
   const isFullyDisabled = locked || isProcessing;
 
+  const filteredProducts = useMemo(
+    () => filterCategory ? products.filter((p) => p.categoryId === filterCategory) : products,
+    [products, filterCategory],
+  );
+
   return (
     <div className="space-y-5 max-w-6xl pb-32">
       <div className="flex flex-wrap gap-4 items-start">
@@ -334,6 +343,33 @@ export default function NewQuotationPage() {
             </Button>
           </div>
 
+          {/* Category filter */}
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button
+                onClick={() => setFilterCategory('')}
+                className={cn(
+                  'text-xs px-3 py-1 rounded-full border transition-colors',
+                  filterCategory === '' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted',
+                )}
+              >
+                สินค้าทั้งหมด
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setFilterCategory(filterCategory === cat.id ? '' : cat.id)}
+                  className={cn(
+                    'text-xs px-3 py-1 rounded-full border transition-colors',
+                    filterCategory === cat.id ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted',
+                  )}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="hidden md:grid grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase border-b">
             <div>Product</div><div>Description</div>
             <div className="text-center">Qty</div>
@@ -358,7 +394,7 @@ export default function NewQuotationPage() {
                     <select value={item.productId || ''} disabled={isFullyDisabled} onChange={(e) => onProductSelect(item.id, e.target.value)}
                       className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
                       <option value="">{t('quotation.selectProduct')}</option>
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
+                      {filteredProducts.map((p) => <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>)}
                     </select>
                     {!item.productId && <Input value={item.productName} disabled={isFullyDisabled} onChange={(e) => updateItem(item.id, { productName: e.target.value })} placeholder="Or type product name" className="h-9 mt-1.5" />}
                   </div>
