@@ -9,6 +9,7 @@ import {
   BarChart2, Flame, ArrowRight, Info, AlertTriangle,
   Timer, ChevronRight, Zap,
   RefreshCw, Activity,
+  ShoppingCart, Target, TrendingDown, Award, PieChart, Percent,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,6 +50,7 @@ interface DashboardData {
     userId: string; userName: string; userEmail: string;
     count: number; value: number; soValue?: number;
     conversionRate?: number; pendingCount?: number;
+    winRate?: number; avgDealSize?: number; approvedCount?: number; approvedValue?: number;
   }>;
   recentEscalated: Array<{
     id: string; quotationNo: string; grandTotal: number;
@@ -67,6 +69,37 @@ interface DashboardData {
     type: string; count: number; value: number;
     reason: string; priority: 'high' | 'medium' | 'low';
   }>;
+  marginAnalysis?: {
+    totalDiscountGiven: number;
+    totalApprovedSubtotal: number;
+    avgDiscountRate: number;
+    specialDiscountCount: number;
+    approvedCount: number;
+  };
+  customerInsights?: Array<{
+    customerId: string;
+    customerCompany: string;
+    qtCount: number;
+    totalValue: number;
+  }>;
+  agingBuckets?: {
+    lt1d:  { count: number; value: number };
+    d1to3: { count: number; value: number };
+    d3to7: { count: number; value: number };
+    gt7d:  { count: number; value: number };
+  };
+  soExecution?: {
+    statusBreakdown: Array<{ status: string; count: number; value: number }>;
+    overdueCount: number;
+    totalSos: number;
+    completedValue: number;
+    completedCount: number;
+  };
+  forecast?: {
+    nextMonthForecast: number;
+    pipelineCoverage: number;
+    avgMonthlyRevenue: number;
+  };
 }
 
 interface FilterableUser {
@@ -718,34 +751,34 @@ function DashboardContent({
             </div>
           ) : (
             <div className="space-y-1">
-              <div className="grid grid-cols-[24px_1fr_auto_auto_auto] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-3 items-center">
+              <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-2 items-center">
                 <span>#</span><span>ชื่อ</span><span className="text-center">QT</span>
-                <span className="text-right">มูลค่า</span><span className="text-right">Conv%</span>
+                <span className="text-right">Win%</span><span className="text-right">Avg Deal</span><span className="text-right">Value</span>
               </div>
               {data.topOfficers.map((o, idx) => {
                 const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
                 const barPct = Math.round((o.value / maxVal) * 100);
-                const oConv = o.conversionRate ?? (o.count > 0 ? Math.round((o.value / maxVal) * 100) : 0);
+                const winRate = o.winRate ?? (o.conversionRate ?? 0);
+                const avgDeal = o.avgDealSize ?? (o.count > 0 ? Math.round(o.value / o.count) : 0);
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                 const rankColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground';
                 return (
                   <Link key={o.userId} href={`/manager/users/${o.userId}`}
                     className="block p-2 rounded-xl hover:bg-accent transition-colors"
                   >
-                    <div className="grid grid-cols-[24px_1fr_auto_auto_auto] items-center gap-3 mb-1.5">
-                      <span className={`text-xs font-bold text-center ${rankColor}`}>
-                        {medal ?? (idx + 1)}
-                      </span>
+                    <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] items-center gap-2 mb-1.5">
+                      <span className={`text-xs font-bold text-center ${rankColor}`}>{medal ?? (idx + 1)}</span>
                       <div className="min-w-0">
                         <div className="font-medium text-sm truncate">{o.userName}</div>
                         <div className="text-[10px] text-muted-foreground truncate">{o.userEmail}</div>
                       </div>
                       <Badge variant="outline" className="text-xs">{o.count}</Badge>
+                      <div className="text-xs text-right font-semibold text-emerald-600">{winRate}%</div>
+                      <div className="text-xs text-right text-muted-foreground">{formatMoney(avgDeal)}</div>
                       <div className="text-sm font-semibold text-right">{formatMoney(o.value)}</div>
-                      <div className="text-xs text-right text-cyan-600 font-semibold">{oConv}%</div>
                     </div>
                     <div className="ml-7 h-1 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500"
                         style={{ width: `${barPct}%` }} />
                     </div>
                   </Link>
@@ -812,6 +845,247 @@ function DashboardContent({
             </div>
           )
         }
+      </div>
+
+      {/* ══ SECTION 10: Customer Insight + Margin Analysis ══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Customer Insight */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <Target className="h-4 w-4 text-violet-500" />
+            Customer Insight — Top ลูกค้า
+            <Badge variant="outline" className="ml-auto text-[10px]">{data.customerInsights?.length ?? 0} ราย</Badge>
+          </div>
+          {!data.customerInsights || data.customerInsights.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Target className="h-8 w-8 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">ยังไม่มีข้อมูลลูกค้า</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(() => {
+                const maxVal = Math.max(...data.customerInsights!.map((c) => c.totalValue), 1);
+                return data.customerInsights!.map((c, i) => {
+                  const pct = Math.round((c.totalValue / maxVal) * 100);
+                  const gradients = ['from-violet-500 to-purple-600','from-blue-500 to-indigo-600','from-cyan-500 to-blue-600','from-teal-500 to-emerald-600','from-amber-500 to-orange-600'];
+                  const grad = gradients[i % gradients.length];
+                  return (
+                    <div key={c.customerId}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="font-medium truncate max-w-[60%]">{c.customerCompany}</span>
+                        <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${grad} transition-all duration-700`} style={{ width: `${Math.max(pct, 5)}%` }} />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+        </div>
+
+        {/* Margin / Discount Analysis */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <Percent className="h-4 w-4 text-amber-500" />
+            Margin &amp; Discount Analysis
+          </div>
+          {!data.marginAnalysis ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">ยังไม่มีข้อมูล</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'ส่วนลดรวม (Approved)', value: formatMoney(data.marginAnalysis.totalDiscountGiven), color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-900/20' },
+                  { label: 'Avg Discount Rate', value: `${data.marginAnalysis.avgDiscountRate.toFixed(1)}%`, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+                  { label: 'Special Discount Req.', value: data.marginAnalysis.specialDiscountCount, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20' },
+                  { label: 'QT Approved ทั้งหมด', value: data.marginAnalysis.approvedCount, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+                ].map((item) => (
+                  <div key={item.label} className={`rounded-xl p-3 ${item.bg}`}>
+                    <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+              {data.marginAnalysis.totalApprovedSubtotal > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>Net Revenue vs ส่วนลดที่ให้</span>
+                    <span>{data.marginAnalysis.avgDiscountRate.toFixed(1)}% discount rate</span>
+                  </div>
+                  <div className="h-3 rounded-full bg-muted overflow-hidden flex">
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                      style={{ width: `${Math.max(100 - data.marginAnalysis.avgDiscountRate, 0)}%` }} />
+                    <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-700"
+                      style={{ width: `${Math.min(data.marginAnalysis.avgDiscountRate, 100)}%` }} />
+                  </div>
+                  <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Net Revenue</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />Discount Given</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ SECTION 11: Quotation Aging + SO Execution ══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Quotation Aging */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <Clock className="h-4 w-4 text-orange-500" />
+            Quotation Aging — Pending ค้างนานแค่ไหน
+            {data.agingBuckets && (data.agingBuckets.gt7d.count > 0) && (
+              <Badge variant="outline" className="ml-auto text-[10px] bg-red-50 text-red-700 border-red-300">
+                {data.agingBuckets.gt7d.count} เกิน 7 วัน
+              </Badge>
+            )}
+          </div>
+          {!data.agingBuckets ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">ไม่มีข้อมูล</div>
+          ) : (() => {
+            const total = data.agingBuckets.lt1d.count + data.agingBuckets.d1to3.count + data.agingBuckets.d3to7.count + data.agingBuckets.gt7d.count;
+            if (total === 0) return (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="h-4 w-4 shrink-0" /> ไม่มี QT ค้างอยู่ในระบบ
+              </div>
+            );
+            const buckets = [
+              { label: '< 1 วัน', sublabel: 'Fresh', ...data.agingBuckets.lt1d, color: '#10b981', bg: 'bg-emerald-500/10' },
+              { label: '1–3 วัน', sublabel: 'Normal', ...data.agingBuckets.d1to3, color: '#f59e0b', bg: 'bg-amber-500/10' },
+              { label: '3–7 วัน', sublabel: 'Attention', ...data.agingBuckets.d3to7, color: '#f97316', bg: 'bg-orange-500/10' },
+              { label: '> 7 วัน', sublabel: 'Critical', ...data.agingBuckets.gt7d, color: '#ef4444', bg: 'bg-red-500/10' },
+            ];
+            const maxCount = Math.max(...buckets.map((b) => b.count), 1);
+            return (
+              <div className="space-y-3">
+                {buckets.map((b) => (
+                  <div key={b.label} className={`p-3 rounded-xl ${b.bg} flex items-center gap-3`}>
+                    <div className="w-1.5 h-10 rounded-full shrink-0" style={{ background: b.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold">{b.label}</span>
+                        <span className="text-muted-foreground">{b.count} QT · {formatMoney(b.value)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-white/50 dark:bg-black/20 overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(Math.round((b.count / maxCount) * 100), b.count > 0 ? 10 : 0)}%`, background: b.color }} />
+                      </div>
+                    </div>
+                    <div className="text-xl font-bold shrink-0" style={{ color: b.color }}>{b.count}</div>
+                  </div>
+                ))}
+                <div className="pt-2 border-t flex justify-between text-xs text-muted-foreground">
+                  <span>QT Pending รวม</span><span className="font-semibold">{total} ใบ</span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* SO Execution */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+            <ShoppingCart className="h-4 w-4 text-teal-500" />
+            SO Execution — การส่งมอบ Sales Order
+            {(data.soExecution?.overdueCount ?? 0) > 0 && (
+              <Badge variant="outline" className="ml-auto text-[10px] bg-rose-50 text-rose-700 border-rose-300">
+                {data.soExecution!.overdueCount} เกินกำหนด
+              </Badge>
+            )}
+          </div>
+          {!data.soExecution || data.soExecution.totalSos === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <ShoppingCart className="h-8 w-8 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">ยังไม่มี Sales Order</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'SO ทั้งหมด', value: data.soExecution.totalSos, color: 'text-slate-600', bg: 'bg-slate-500/10' },
+                  { label: 'Completed', value: data.soExecution.completedCount, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+                  { label: 'เกินกำหนด', value: data.soExecution.overdueCount, color: data.soExecution.overdueCount > 0 ? 'text-red-600' : 'text-slate-400', bg: data.soExecution.overdueCount > 0 ? 'bg-red-500/10' : 'bg-muted' },
+                ].map((s) => (
+                  <div key={s.label} className={`rounded-xl p-3 text-center ${s.bg}`}>
+                    <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {data.soExecution.completedValue > 0 && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">มูลค่า SO ที่ Completed แล้ว</span>
+                  <span className="text-sm font-bold text-emerald-600">{formatMoney(data.soExecution.completedValue)}</span>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                {data.soExecution.statusBreakdown.map((s) => {
+                  const pct = data.soExecution!.totalSos > 0 ? Math.round((s.count / data.soExecution!.totalSos) * 100) : 0;
+                  const soColors: Record<string, string> = { DRAFT: '#94a3b8', PENDING_REVIEW: '#fbbf24', CONFIRMED: '#3b82f6', COMPLETED: '#10b981', CANCELLED: '#9ca3af', REJECTED: '#ef4444' };
+                  const soLabels: Record<string, string> = { DRAFT: 'Draft', PENDING_REVIEW: 'Pending Review', CONFIRMED: 'Confirmed', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Rejected' };
+                  return (
+                    <div key={s.status} className="flex items-center gap-2">
+                      <span className="w-20 text-xs text-muted-foreground truncate">{soLabels[s.status] ?? s.status}</span>
+                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, 5)}%`, background: soColors[s.status] ?? '#9ca3af' }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground w-6 text-right">{s.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ SECTION 12: Revenue Forecast ══ */}
+      <div className="bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-cyan-500/10 border border-indigo-500/30 rounded-2xl shadow-sm p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+          <TrendingUp className="h-4 w-4 text-indigo-500" />
+          <span className="text-indigo-700 dark:text-indigo-400">Revenue Forecast — การคาดการณ์รายได้</span>
+        </div>
+        {!data.forecast ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">ยังไม่มีข้อมูล</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              {
+                icon: <BarChart2 className="h-5 w-5" />,
+                label: 'Avg Revenue / เดือน',
+                value: formatMoney(data.forecast.avgMonthlyRevenue),
+                sub: 'เฉลี่ย 6 เดือนที่ผ่านมา',
+                gradient: 'from-blue-500 to-indigo-600',
+              },
+              {
+                icon: <TrendingUp className="h-5 w-5" />,
+                label: 'Forecast เดือนหน้า',
+                value: formatMoney(data.forecast.nextMonthForecast),
+                sub: 'ประมาณการ +5% growth',
+                gradient: 'from-violet-500 to-purple-600',
+              },
+              {
+                icon: <Zap className="h-5 w-5" />,
+                label: 'Pipeline Coverage',
+                value: formatMoney(data.forecast.pipelineCoverage),
+                sub: 'มูลค่า pending × conv. rate',
+                gradient: 'from-cyan-500 to-teal-600',
+              },
+            ].map((f) => (
+              <div key={f.label} className={`rounded-2xl p-4 text-white bg-gradient-to-br ${f.gradient} shadow`}>
+                <div className="flex items-center gap-2 mb-2 opacity-80">{f.icon}<span className="text-xs font-medium uppercase tracking-wide">{f.label}</span></div>
+                <div className="text-2xl font-bold">{f.value}</div>
+                <div className="text-xs text-white/60 mt-1">{f.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>

@@ -128,6 +128,7 @@ export const managerDashboardService = {
       revenueTrendRaw,
       soConfirmedCount,
       soPendingCount,
+      customerTopRaw, agingRaw, soStatusBreakdownRaw, soOverdueCount, marginAgg, specialDiscountCount, salesApprovedRaw,
     ] = await Promise.all([
       prisma.quotation.count({ where: baseWhere }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
@@ -214,6 +215,64 @@ export const managerDashboardService = {
       // SO pending review count
       prisma.saleOrder.count({
         where: { deletedAt: null, status: 'PENDING_REVIEW', quotation: { deletedAt: null, ...filterWhere } },
+      }),
+
+      // Customer top 10 by grandTotal
+      prisma.quotation.groupBy({
+        by: ['customerId'],
+        where: baseWhere,
+        _count: { id: true },
+        _sum: { grandTotal: true },
+        orderBy: [{ _sum: { grandTotal: 'desc' } }],
+        take: 10,
+      }),
+
+      // Aging — pending QTs with submittedAt
+      prisma.quotation.findMany({
+        where: {
+          ...baseWhere,
+          status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] },
+          submittedAt: { not: null },
+        },
+        select: { id: true, submittedAt: true, grandTotal: true },
+      }),
+
+      // SO status breakdown
+      prisma.saleOrder.groupBy({
+        by: ['status'],
+        where: { deletedAt: null, quotation: { deletedAt: null, ...filterWhere } },
+        _count: { id: true },
+        _sum: { grandTotal: true },
+      }),
+
+      // SO overdue (deadline passed, not yet completed/cancelled)
+      prisma.saleOrder.count({
+        where: {
+          deletedAt: null,
+          status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] },
+          deadlineDate: { lt: new Date() },
+          quotation: { deletedAt: null, ...filterWhere },
+        },
+      }),
+
+      // Margin/discount aggregate (approved QTs)
+      prisma.quotation.aggregate({
+        where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } },
+        _sum: { discountTotal: true, subtotal: true },
+        _count: { id: true },
+      }),
+
+      // Special discount requests count
+      prisma.quotation.count({
+        where: { ...baseWhere, specialDiscountRequested: true },
+      }),
+
+      // Approved count per salesperson (for win rate)
+      prisma.quotation.groupBy({
+        by: ['createdById'],
+        where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } },
+        _count: { id: true },
+        _sum: { grandTotal: true },
       }),
     ]);
 
@@ -312,6 +371,86 @@ export const managerDashboardService = {
       value: Number(t._sum.grandTotal ?? 0),
     }));
 
+    // --- Customer Insights ---
+    const customerIds = customerTopRaw.map((c) => c.customerId);
+    const customerDocs = await prisma.customer.findMany({
+      where: { id: { in: customerIds } },
+      select: { id: true, company: true },
+    });
+    const customerMap = new Map(customerDocs.map((c) => [c.id, c.company]));
+    const customerInsights = customerTopRaw.map((c) => ({
+      customerId: c.customerId,
+      customerCompany: customerMap.get(c.customerId) ?? '(ไม่ระบุ)',
+      qtCount: c._count.id,
+      totalValue: Number(c._sum.grandTotal ?? 0),
+    }));
+
+    // --- Quotation Aging ---
+    const now = Date.now();
+    const agingBuckets = {
+      lt1d:  { count: 0, value: 0 },
+      d1to3: { count: 0, value: 0 },
+      d3to7: { count: 0, value: 0 },
+      gt7d:  { count: 0, value: 0 },
+    };
+    for (const q of agingRaw) {
+      if (!q.submittedAt) continue;
+      const hours = (now - q.submittedAt.getTime()) / (1000 * 60 * 60);
+      const val = Number(q.grandTotal);
+      if (hours < 24)        { agingBuckets.lt1d.count++;  agingBuckets.lt1d.value  += val; }
+      else if (hours < 72)   { agingBuckets.d1to3.count++; agingBuckets.d1to3.value += val; }
+      else if (hours < 168)  { agingBuckets.d3to7.count++; agingBuckets.d3to7.value += val; }
+      else                   { agingBuckets.gt7d.count++;  agingBuckets.gt7d.value  += val; }
+    }
+
+    // --- SO Execution ---
+    const soExecution = {
+      statusBreakdown: soStatusBreakdownRaw.map((s) => ({
+        status: s.status,
+        count: s._count.id,
+        value: Number(s._sum.grandTotal ?? 0),
+      })),
+      overdueCount: soOverdueCount,
+      totalSos: soStatusBreakdownRaw.reduce((sum, s) => sum + s._count.id, 0),
+      completedValue: soStatusBreakdownRaw
+        .filter((s) => s.status === 'COMPLETED')
+        .reduce((sum, s) => sum + Number(s._sum.grandTotal ?? 0), 0),
+      completedCount: soStatusBreakdownRaw.find((s) => s.status === 'COMPLETED')?._count.id ?? 0,
+    };
+
+    // --- Margin Analysis ---
+    const approvedSubtotal = Number(marginAgg._sum.subtotal ?? 0);
+    const totalDiscountGiven = Number(marginAgg._sum.discountTotal ?? 0);
+    const avgDiscountRate = approvedSubtotal > 0 ? (totalDiscountGiven / approvedSubtotal) * 100 : 0;
+    const marginAnalysis = {
+      totalDiscountGiven,
+      totalApprovedSubtotal: approvedSubtotal,
+      avgDiscountRate: Math.round(avgDiscountRate * 10) / 10,
+      specialDiscountCount,
+      approvedCount: marginAgg._count.id,
+    };
+
+    // --- Forecast ---
+    const avgMonthlyRevenue = revenueTrend.length > 0
+      ? revenueTrend.reduce((sum, m) => sum + m.value, 0) / revenueTrend.length : 0;
+    const convRate = finalTotal > 0 ? finalApproved / finalTotal : 0;
+    const forecast = {
+      nextMonthForecast: Math.round(avgMonthlyRevenue * 1.05),
+      pipelineCoverage: convRate > 0
+        ? Math.round((Number(pendingValueAgg._sum.grandTotal ?? 0) * convRate))
+        : 0,
+      avgMonthlyRevenue: Math.round(avgMonthlyRevenue),
+    };
+
+    // --- Salesperson win rate (enhance topOfficers) ---
+    const salesApprovedMap = new Map(salesApprovedRaw.map((s) => [s.createdById, { count: s._count.id, value: Number(s._sum.grandTotal ?? 0) }]));
+    const topOfficersEnhanced = topOfficers.map((o) => {
+      const approved = salesApprovedMap.get(o.userId);
+      const winRate = o.count > 0 ? Math.round(((approved?.count ?? 0) / o.count) * 100) : 0;
+      const avgDealSize = o.count > 0 ? Math.round(o.value / o.count) : 0;
+      return { ...o, winRate, avgDealSize, approvedCount: approved?.count ?? 0, approvedValue: approved?.value ?? 0 };
+    });
+
     return {
       filter: options.filter || 'self',
       filterUserId: options.userId,
@@ -343,8 +482,13 @@ export const managerDashboardService = {
         expiryDate: q.expiryDate!.toISOString(),
         status: q.status,
       })),
-      topOfficers,
+      topOfficers: topOfficersEnhanced,
       topApprovers: [],
+      marginAnalysis,
+      customerInsights,
+      agingBuckets,
+      soExecution,
+      forecast,
       recentEscalated: recentEscalatedData.map((q) => ({
         id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal),
         customerCompany: q.customerCompany, createdByName: q.createdBy?.name || '-',
@@ -482,5 +626,10 @@ function emptyDashboard() {
     rejectionReasons: [],
     expiringQuotations: [],
     topOfficers: [], topApprovers: [], recentEscalated: [], statusBreakdown: [],
+    marginAnalysis: { totalDiscountGiven: 0, totalApprovedSubtotal: 0, avgDiscountRate: 0, specialDiscountCount: 0, approvedCount: 0 },
+    customerInsights: [],
+    agingBuckets: { lt1d: { count: 0, value: 0 }, d1to3: { count: 0, value: 0 }, d3to7: { count: 0, value: 0 }, gt7d: { count: 0, value: 0 } },
+    soExecution: { statusBreakdown: [], overdueCount: 0, totalSos: 0, completedValue: 0, completedCount: 0 },
+    forecast: { nextMonthForecast: 0, pipelineCoverage: 0, avgMonthlyRevenue: 0 },
   };
 }
