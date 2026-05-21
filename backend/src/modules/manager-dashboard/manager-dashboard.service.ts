@@ -627,7 +627,7 @@ export const managerDashboardService = {
 
   async userDetail(userId: string, currentUser: CurrentUser) {
     const allowed = await canViewUser(currentUser, userId);
-    if (!allowed) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0 }, byStatus: [], recent: [] };
+    if (!allowed) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0, approvedCount: 0, rejectedCount: 0, soCount: 0, soValue: 0 }, byStatus: [], recent: [], recentSos: [], monthlyTrend: [] };
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       include: {
@@ -643,15 +643,52 @@ export const managerDashboardService = {
         _count: { select: { reports: true } },
       },
     });
-    if (!user) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0 }, byStatus: [], recent: [] };
+    if (!user) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0, approvedCount: 0, rejectedCount: 0, soCount: 0, soValue: 0 }, byStatus: [], recent: [], recentSos: [], monthlyTrend: [] };
+
     const monthStart = startOfMonth();
-    const [totalCount, approvedAgg, thisMonthCount, byStatusRaw, recent] = await Promise.all([
+
+    // Build 6-month date buckets
+    const now = new Date();
+    const months6: Array<{ label: string; gte: Date; lt: Date }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const label = `${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}`;
+      months6.push({ label, gte: d, lt: next });
+    }
+
+    const [
+      totalCount, approvedAgg, thisMonthCount, byStatusRaw, recent,
+      soCountRaw, soAgg, recentSos,
+    ] = await Promise.all([
       prisma.quotation.count({ where: { createdById: userId, deletedAt: null } }),
-      prisma.quotation.aggregate({ where: { createdById: userId, status: 'APPROVED', deletedAt: null }, _sum: { grandTotal: true } }),
+      prisma.quotation.aggregate({ where: { createdById: userId, status: { in: ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'] }, deletedAt: null }, _sum: { grandTotal: true }, _count: { id: true } }),
       prisma.quotation.count({ where: { createdById: userId, createdAt: { gte: monthStart }, deletedAt: null } }),
       prisma.quotation.groupBy({ by: ['status'], where: { createdById: userId, deletedAt: null }, _count: { id: true } }),
-      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, quotationNo: true, status: true, grandTotal: true, createdAt: true } }),
+      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, quotationNo: true, status: true, grandTotal: true, createdAt: true, customerCompany: true } }),
+      prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } } }),
+      prisma.saleOrder.aggregate({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } }, _sum: { grandTotal: true } }),
+      prisma.saleOrder.findMany({ where: { deletedAt: null, quotation: { createdById: userId, deletedAt: null } }, orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, saleOrderNo: true, status: true, grandTotal: true, createdAt: true, customerCompany: true } }),
     ]);
+
+    // Monthly trend — parallel per bucket
+    const trendRaws = await Promise.all(
+      months6.map((m) =>
+        Promise.all([
+          prisma.quotation.count({ where: { createdById: userId, deletedAt: null, createdAt: { gte: m.gte, lt: m.lt } } }),
+          prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null, createdAt: { gte: m.gte, lt: m.lt } }, _sum: { grandTotal: true } }),
+        ]),
+      ),
+    );
+    const monthlyTrend = months6.map((m, i) => ({
+      month: m.label,
+      count: trendRaws[i][0],
+      value: Number(trendRaws[i][1]._sum.grandTotal ?? 0),
+    }));
+
+    const rejCount = byStatusRaw.find((s) => s.status === 'REJECTED')?._count.id ?? 0;
+    const approvedCount = approvedAgg._count.id;
+
     return {
       user: {
         id: user.id,
@@ -670,9 +707,19 @@ export const managerDashboardService = {
         approvalTier: user.role.level,
         position: user.managerLevel ? `${user.managerLevel} Manager` : user.role.nameTh,
       },
-      totals: { quotations: totalCount, approvedValue: Number(approvedAgg._sum.grandTotal ?? 0), thisMonth: thisMonthCount },
+      totals: {
+        quotations: totalCount,
+        approvedValue: Number(approvedAgg._sum.grandTotal ?? 0),
+        thisMonth: thisMonthCount,
+        approvedCount,
+        rejectedCount: rejCount,
+        soCount: soCountRaw,
+        soValue: Number(soAgg._sum.grandTotal ?? 0),
+      },
       byStatus: byStatusRaw.map((s) => ({ status: s.status, count: s._count.id })),
-      recent: recent.map((q) => ({ id: q.id, quotationNo: q.quotationNo, status: q.status, grandTotal: Number(q.grandTotal), createdAt: q.createdAt.toISOString() })),
+      recent: recent.map((q) => ({ id: q.id, quotationNo: q.quotationNo, status: q.status, grandTotal: Number(q.grandTotal), createdAt: q.createdAt.toISOString(), customerCompany: q.customerCompany })),
+      recentSos: recentSos.map((so) => ({ id: so.id, saleOrderNo: so.saleOrderNo, status: so.status, grandTotal: Number(so.grandTotal), createdAt: so.createdAt.toISOString(), customerCompany: so.customerCompany })),
+      monthlyTrend,
     };
   },
 };

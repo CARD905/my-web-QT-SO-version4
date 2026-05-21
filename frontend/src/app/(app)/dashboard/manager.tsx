@@ -802,7 +802,7 @@ function DashboardContent({
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                 const rankColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground';
                 return (
-                  <Link key={o.userId} href={`/users/${o.userId}`}
+                  <Link key={o.userId} href={`/manager/team/${o.userId}`}
                     className="block p-2 rounded-xl hover:bg-accent transition-colors"
                   >
                     <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] items-center gap-2 mb-1.5">
@@ -1108,8 +1108,25 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
     return 'ok';
   }
 
+  const totalQt   = Math.max(data.totals.quotations, 1);
+  const totalVal  = (data.totals.totalValue ?? 0) + (data.totals.pendingValue ?? 0);
   const pendingCount = (data.totals.pending ?? 0) + (data.totals.escalated ?? 0);
+
+  // isBaseline = stage 0, bar always 100%, no aging, drilldown = link to /quotations
   const stages = [
+    {
+      label: 'Quotation Issued',
+      sublabel: 'จุดเริ่มต้น — QT ทั้งหมด (baseline 100%)',
+      count: data.totals.quotations,
+      value: totalVal,
+      color: '#3b82f6',
+      grad: 'from-blue-500 to-indigo-600',
+      avgH: null as number | null | undefined,
+      warnH: 0, critH: 0,
+      top: [] as any[],
+      dateKey: null as string | null,
+      isBaseline: true,
+    },
     {
       label: 'Pending Approval',
       sublabel: 'รอผู้จัดการอนุมัติ',
@@ -1121,6 +1138,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
       warnH: 48, critH: 168,
       top: pd?.stage1Top ?? [],
       dateKey: 'submittedAt',
+      isBaseline: false,
     },
     {
       label: 'Approved → Waiting PO',
@@ -1133,6 +1151,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
       warnH: 72, critH: 168,
       top: pd?.stage2Top ?? [],
       dateKey: 'approvedAt',
+      isBaseline: false,
     },
     {
       label: 'PO Received',
@@ -1145,6 +1164,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
       warnH: 48, critH: 120,
       top: pd?.stage3Top ?? [],
       dateKey: 'poUploadedAt',
+      isBaseline: false,
     },
     {
       label: 'SO Confirmed',
@@ -1157,18 +1177,19 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
       warnH: 0, critH: 0,
       top: pd?.stage4Top ?? [],
       dateKey: 'createdAt',
+      isBaseline: false,
     },
   ];
 
-  const maxCount = Math.max(...stages.map((s) => s.count), 1);
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {stages.map((s, i) => {
-        const barPct = Math.max(Math.round((s.count / maxCount) * 100), s.count > 0 ? 8 : 0);
+        // bar width: stage 0 = 100%; others = count / totalQt
+        const pct = s.isBaseline ? 100 : Math.round((s.count / totalQt) * 100);
+        const barW = Math.max(pct, s.count > 0 ? 8 : 0);
         const lvl = ageLevel(s.avgH, s.warnH, s.critH);
         const isOpen = expanded === i;
-        const hasAlert = lvl !== 'ok' && s.count > 0;
+        const hasAlert = !s.isBaseline && lvl !== 'ok' && s.count > 0;
         const ageBadge = {
           ok:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
           warn: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -1177,13 +1198,10 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
 
         return (
           <div key={i}>
-            <button
-              onClick={() => setExpanded(isOpen ? null : i)}
-              className="w-full text-left"
-            >
+            <button onClick={() => setExpanded(isOpen ? null : i)} className="w-full text-left">
               <div className={`rounded-xl border transition-all duration-200 ${
                 isOpen ? 'border-border bg-accent/40' : 'border-transparent hover:border-border/60 hover:bg-accent/20'
-              } ${hasAlert ? 'ring-1 ring-amber-400/50' : ''}`}>
+              } ${hasAlert ? 'ring-1 ring-amber-400/50' : ''} ${s.isBaseline ? 'ring-1 ring-blue-400/30' : ''}`}>
 
                 {/* ── Main row ── */}
                 <div className="flex items-center gap-2 p-2.5">
@@ -1197,19 +1215,28 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                     <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 hidden sm:block">{s.sublabel}</div>
                   </div>
 
-                  {/* Bar */}
+                  {/* Bar — shows count inside */}
                   <div className="flex-1 h-7 bg-muted rounded-lg overflow-hidden">
                     <div
-                      className={`h-full rounded-lg flex items-center px-2 transition-all duration-700 bg-gradient-to-r ${s.grad}`}
-                      style={{ width: `${barPct}%` }}
+                      className={`h-full rounded-lg flex items-center px-2 gap-1.5 transition-all duration-700 bg-gradient-to-r ${s.grad}`}
+                      style={{ width: `${barW}%` }}
                     >
-                      {s.count > 0 && <span className="text-white text-xs font-bold whitespace-nowrap">{s.count}</span>}
+                      {s.count > 0 && (
+                        <span className="text-white text-xs font-bold whitespace-nowrap">{s.count} ใบ</span>
+                      )}
                     </div>
+                  </div>
+
+                  {/* % of total QT */}
+                  <div className="w-11 text-right shrink-0">
+                    <div className="text-sm font-bold tabular-nums" style={{ color: s.color }}>{pct}%</div>
+                    {!s.isBaseline && <div className="text-[9px] text-muted-foreground">of QT</div>}
                   </div>
 
                   {/* Value */}
                   <div className="w-20 text-right shrink-0">
                     <div className="text-xs font-bold tabular-nums" style={{ color: s.color }}>{formatMoney(s.value)}</div>
+                    <div className="text-[9px] text-muted-foreground">มูลค่า</div>
                   </div>
 
                   {/* Aging badge */}
@@ -1229,7 +1256,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                   <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
                 </div>
 
-                {/* ── Bottleneck alert banner (only when open) ── */}
+                {/* ── Bottleneck alert (open only) ── */}
                 {isOpen && hasAlert && (
                   <div className={`mx-3 mb-2 flex items-center gap-2 p-2 rounded-lg text-xs ${
                     lvl === 'crit'
@@ -1245,10 +1272,16 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                   </div>
                 )}
 
-                {/* ── Drilldown list ── */}
+                {/* ── Drilldown ── */}
                 {isOpen && (
                   <div className="mx-3 mb-3">
-                    {s.top.length === 0 ? (
+                    {s.isBaseline ? (
+                      <Link href="/quotations" onClick={(e) => e.stopPropagation()}
+                        className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-100 transition-colors">
+                        <ArrowRight className="h-3.5 w-3.5" />
+                        ดู Quotation ทั้งหมด ({data.totals.quotations} ใบ)
+                      </Link>
+                    ) : s.top.length === 0 ? (
                       <p className="text-center py-3 text-xs text-muted-foreground">ไม่มีรายการใน stage นี้</p>
                     ) : (
                       <>
@@ -1256,18 +1289,12 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                         <div className="space-y-1">
                           {(s.top as any[]).map((item) => {
                             const docNo = (item.quotationNo ?? item.saleOrderNo) as string;
-                            const rawDate = item[s.dateKey] as string | null | undefined;
-                            const ageHrs = rawDate
-                              ? (Date.now() - new Date(rawDate).getTime()) / (1000 * 60 * 60)
-                              : null;
+                            const rawDate = s.dateKey ? (item[s.dateKey] as string | null | undefined) : null;
+                            const ageHrs = rawDate ? (Date.now() - new Date(rawDate).getTime()) / (1000 * 60 * 60) : null;
                             const href = item.quotationNo ? `/quotations/${item.id}` : `/sale-orders/${item.id}`;
                             return (
-                              <Link
-                                key={item.id}
-                                href={href}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/60 hover:border-foreground/20 transition-colors gap-2"
-                              >
+                              <Link key={item.id} href={href} onClick={(e) => e.stopPropagation()}
+                                className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/60 hover:border-foreground/20 transition-colors gap-2">
                                 <div className="min-w-0 flex-1">
                                   <div className="text-xs font-semibold">{docNo}</div>
                                   <div className="text-[10px] text-muted-foreground truncate">{item.customerCompany}</div>
