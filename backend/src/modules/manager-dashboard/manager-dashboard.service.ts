@@ -129,6 +129,9 @@ export const managerDashboardService = {
       soConfirmedCount,
       soPendingCount,
       customerTopRaw, agingRaw, soStatusBreakdownRaw, soOverdueCount, marginAgg, specialDiscountCount, salesApprovedRaw,
+      // ─── Pipeline detail ──────────────────────────────────────────────────────
+      pipelineApprovedAgg, pipelinePoPendingAgg, pipelineSoConfirmedAgg,
+      pipelineStage1Raw, pipelineStage2Raw, pipelineStage3Raw, pipelineStage4Raw,
     ] = await Promise.all([
       prisma.quotation.count({ where: baseWhere }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
@@ -273,6 +276,46 @@ export const managerDashboardService = {
         where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } },
         _count: { id: true },
         _sum: { grandTotal: true },
+      }),
+
+      // ─── Pipeline detail: value aggregates per stage ──────────────────────────
+      prisma.quotation.aggregate({ where: { ...baseWhere, status: 'APPROVED' }, _sum: { grandTotal: true } }),
+      prisma.quotation.aggregate({ where: { ...baseWhere, status: 'PO_PENDING' }, _sum: { grandTotal: true } }),
+      prisma.saleOrder.aggregate({
+        where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { deletedAt: null, ...filterWhere } },
+        _sum: { grandTotal: true },
+      }),
+
+      // Pipeline stage 1: top 5 pending QTs (with quotationNo for drilldown)
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] }, submittedAt: { not: null } },
+        select: { id: true, quotationNo: true, grandTotal: true, submittedAt: true, customerCompany: true },
+        orderBy: { grandTotal: 'desc' },
+        take: 5,
+      }),
+
+      // Pipeline stage 2: top 5 approved QTs waiting for PO
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: 'APPROVED' },
+        select: { id: true, quotationNo: true, grandTotal: true, approvedAt: true, customerCompany: true },
+        orderBy: { grandTotal: 'desc' },
+        take: 5,
+      }),
+
+      // Pipeline stage 3: top 5 PO pending QTs
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: 'PO_PENDING' },
+        select: { id: true, quotationNo: true, grandTotal: true, poUploadedAt: true, customerCompany: true },
+        orderBy: { grandTotal: 'desc' },
+        take: 5,
+      }),
+
+      // Pipeline stage 4: top 5 SO confirmed
+      prisma.saleOrder.findMany({
+        where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { deletedAt: null, ...filterWhere } },
+        select: { id: true, saleOrderNo: true, grandTotal: true, createdAt: true, customerCompany: true },
+        orderBy: { grandTotal: 'desc' },
+        take: 5,
       }),
     ]);
 
@@ -451,6 +494,28 @@ export const managerDashboardService = {
       return { ...o, winRate, avgDealSize, approvedCount: approved?.count ?? 0, approvedValue: approved?.value ?? 0 };
     });
 
+    // ─── Pipeline detail ─────────────────────────────────────────────────────────
+    const pipelineNow = Date.now();
+    function avgHoursSince(items: Array<{ date: Date | null | undefined }>): number | null {
+      const valid = items.filter((x) => x.date);
+      if (valid.length === 0) return null;
+      return Math.round(
+        (valid.reduce((s, x) => s + (pipelineNow - x.date!.getTime()), 0) / valid.length / (1000 * 60 * 60)) * 10,
+      ) / 10;
+    }
+    const pipelineDetail = {
+      approvedOnlyValue: Number(pipelineApprovedAgg._sum.grandTotal ?? 0),
+      poPendingValue: Number(pipelinePoPendingAgg._sum.grandTotal ?? 0),
+      soConfirmedValue: Number(pipelineSoConfirmedAgg._sum.grandTotal ?? 0),
+      stage1AvgHours: avgHoursSince(pipelineStage1Raw.map((q) => ({ date: q.submittedAt }))),
+      stage2AvgHours: avgHoursSince(pipelineStage2Raw.map((q) => ({ date: q.approvedAt }))),
+      stage3AvgHours: avgHoursSince(pipelineStage3Raw.map((q) => ({ date: q.poUploadedAt }))),
+      stage1Top: pipelineStage1Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), submittedAt: q.submittedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage2Top: pipelineStage2Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), approvedAt: q.approvedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage3Top: pipelineStage3Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), poUploadedAt: q.poUploadedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage4Top: pipelineStage4Raw.map((so) => ({ id: so.id, saleOrderNo: so.saleOrderNo, grandTotal: Number(so.grandTotal), createdAt: so.createdAt.toISOString(), customerCompany: so.customerCompany })),
+    };
+
     return {
       filter: options.filter || 'self',
       filterUserId: options.userId,
@@ -489,6 +554,7 @@ export const managerDashboardService = {
       agingBuckets,
       soExecution,
       forecast,
+      pipelineDetail,
       recentEscalated: recentEscalatedData.map((q) => ({
         id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal),
         customerCompany: q.customerCompany, createdByName: q.createdBy?.name || '-',
@@ -631,5 +697,6 @@ function emptyDashboard() {
     agingBuckets: { lt1d: { count: 0, value: 0 }, d1to3: { count: 0, value: 0 }, d3to7: { count: 0, value: 0 }, gt7d: { count: 0, value: 0 } },
     soExecution: { statusBreakdown: [], overdueCount: 0, totalSos: 0, completedValue: 0, completedCount: 0 },
     forecast: { nextMonthForecast: 0, pipelineCoverage: 0, avgMonthlyRevenue: 0 },
+    pipelineDetail: { approvedOnlyValue: 0, poPendingValue: 0, soConfirmedValue: 0, stage1AvgHours: null, stage2AvgHours: null, stage3AvgHours: null, stage1Top: [], stage2Top: [], stage3Top: [], stage4Top: [] },
   };
 }

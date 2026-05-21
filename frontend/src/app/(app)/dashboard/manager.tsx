@@ -65,6 +65,18 @@ interface DashboardData {
   }>;
   alerts?: Array<{ type: 'danger' | 'warning' | 'info'; title: string; desc: string }>;
   rejectionReasons?: Array<{ reason: string; count: number }>;
+  pipelineDetail?: {
+    approvedOnlyValue: number;
+    poPendingValue: number;
+    soConfirmedValue: number;
+    stage1AvgHours: number | null;
+    stage2AvgHours: number | null;
+    stage3AvgHours: number | null;
+    stage1Top: Array<{ id: string; quotationNo: string; grandTotal: number; submittedAt: string | null; customerCompany: string }>;
+    stage2Top: Array<{ id: string; quotationNo: string; grandTotal: number; approvedAt: string | null; customerCompany: string }>;
+    stage3Top: Array<{ id: string; quotationNo: string; grandTotal: number; poUploadedAt: string | null; customerCompany: string }>;
+    stage4Top: Array<{ id: string; saleOrderNo: string; grandTotal: number; createdAt: string; customerCompany: string }>;
+  };
   bottlenecks?: Array<{
     type: string; count: number; value: number;
     reason: string; priority: 'high' | 'medium' | 'low';
@@ -462,33 +474,60 @@ function DashboardContent({
         </div>
       )}
 
-      {/* ══ SECTION 3: Sales Funnel + Revenue Area Chart (2 columns) ══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* ══ SECTION 3: Sales Funnel + Revenue Trend + Forecast (grouped) ══ */}
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-        {/* LEFT: Sales Pipeline Funnel */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
-            <TrendingUp className="h-4 w-4 text-blue-500" />
-            Sales Pipeline
+          {/* LEFT: Sales Pipeline Funnel */}
+          <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+            <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+              <TrendingUp className="h-4 w-4 text-blue-500" />
+              Sales Pipeline
+            </div>
+            <SalesFunnel data={data} conversionRate={conversionRate} />
           </div>
-          <SalesFunnel data={data} conversionRate={conversionRate} />
+
+          {/* RIGHT: Revenue Area Chart */}
+          <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+            <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-1">
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+              Revenue Trend (6 เดือน)
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">มูลค่าที่อนุมัติแล้วรายเดือน</p>
+            {revenueTrendData.length > 0
+              ? <RevenueAreaChart data={revenueTrendData} />
+              : (
+                <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">
+                  ยังไม่มีข้อมูล revenue
+                </div>
+              )
+            }
+          </div>
         </div>
 
-        {/* RIGHT: Revenue Area Chart */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-1">
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
-            Revenue Trend (6 เดือน)
+        {/* Revenue Forecast — การคาดการณ์รายได้ */}
+        <div className="bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-cyan-500/10 border border-indigo-500/30 rounded-2xl shadow-sm p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <TrendingUp className="h-4 w-4 text-indigo-500" />
+            <span className="text-indigo-700 dark:text-indigo-400">Revenue Forecast — การคาดการณ์รายได้</span>
           </div>
-          <p className="text-xs text-muted-foreground mb-3">มูลค่าที่อนุมัติแล้วรายเดือน</p>
-          {revenueTrendData.length > 0
-            ? <RevenueAreaChart data={revenueTrendData} />
-            : (
-              <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">
-                ยังไม่มีข้อมูล revenue
-              </div>
-            )
-          }
+          {!data.forecast ? (
+            <div className="text-center py-4 text-muted-foreground text-sm">ยังไม่มีข้อมูล</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                { icon: <BarChart2 className="h-5 w-5" />, label: 'Avg Revenue / เดือน', value: formatMoney(data.forecast.avgMonthlyRevenue), sub: 'เฉลี่ย 6 เดือนที่ผ่านมา', gradient: 'from-blue-500 to-indigo-600' },
+                { icon: <TrendingUp className="h-5 w-5" />, label: 'Forecast เดือนหน้า', value: formatMoney(data.forecast.nextMonthForecast), sub: 'ประมาณการ +5% growth', gradient: 'from-violet-500 to-purple-600' },
+                { icon: <Zap className="h-5 w-5" />, label: 'Pipeline Coverage', value: formatMoney(data.forecast.pipelineCoverage), sub: 'มูลค่า pending × conv. rate', gradient: 'from-cyan-500 to-teal-600' },
+              ].map((f) => (
+                <div key={f.label} className={`rounded-2xl p-4 text-white bg-gradient-to-br ${f.gradient} shadow`}>
+                  <div className="flex items-center gap-2 mb-2 opacity-80">{f.icon}<span className="text-xs font-medium uppercase tracking-wide">{f.label}</span></div>
+                  <div className="text-2xl font-bold">{f.value}</div>
+                  <div className="text-xs text-white/60 mt-1">{f.sub}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -763,7 +802,7 @@ function DashboardContent({
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                 const rankColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground';
                 return (
-                  <Link key={o.userId} href={`/manager/users/${o.userId}`}
+                  <Link key={o.userId} href={`/users/${o.userId}`}
                     className="block p-2 rounded-xl hover:bg-accent transition-colors"
                   >
                     <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] items-center gap-2 mb-1.5">
@@ -1045,108 +1084,218 @@ function DashboardContent({
         </div>
       </div>
 
-      {/* ══ SECTION 12: Revenue Forecast ══ */}
-      <div className="bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-cyan-500/10 border border-indigo-500/30 rounded-2xl shadow-sm p-5">
-        <div className="text-sm font-semibold flex items-center gap-2 mb-4">
-          <TrendingUp className="h-4 w-4 text-indigo-500" />
-          <span className="text-indigo-700 dark:text-indigo-400">Revenue Forecast — การคาดการณ์รายได้</span>
-        </div>
-        {!data.forecast ? (
-          <div className="text-center py-8 text-muted-foreground text-sm">ยังไม่มีข้อมูล</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[
-              {
-                icon: <BarChart2 className="h-5 w-5" />,
-                label: 'Avg Revenue / เดือน',
-                value: formatMoney(data.forecast.avgMonthlyRevenue),
-                sub: 'เฉลี่ย 6 เดือนที่ผ่านมา',
-                gradient: 'from-blue-500 to-indigo-600',
-              },
-              {
-                icon: <TrendingUp className="h-5 w-5" />,
-                label: 'Forecast เดือนหน้า',
-                value: formatMoney(data.forecast.nextMonthForecast),
-                sub: 'ประมาณการ +5% growth',
-                gradient: 'from-violet-500 to-purple-600',
-              },
-              {
-                icon: <Zap className="h-5 w-5" />,
-                label: 'Pipeline Coverage',
-                value: formatMoney(data.forecast.pipelineCoverage),
-                sub: 'มูลค่า pending × conv. rate',
-                gradient: 'from-cyan-500 to-teal-600',
-              },
-            ].map((f) => (
-              <div key={f.label} className={`rounded-2xl p-4 text-white bg-gradient-to-br ${f.gradient} shadow`}>
-                <div className="flex items-center gap-2 mb-2 opacity-80">{f.icon}<span className="text-xs font-medium uppercase tracking-wide">{f.label}</span></div>
-                <div className="text-2xl font-bold">{f.value}</div>
-                <div className="text-xs text-white/60 mt-1">{f.sub}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// SALES FUNNEL
+// SALES FUNNEL — with value, aging, bottleneck alerts, drilldown
 // ════════════════════════════════════════════════════════════════════════════
 function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversionRate: number }) {
-  const base = Math.max(data.totals.quotations, 1);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const pd = data.pipelineDetail;
+
+  function fmtAge(hours: number | null | undefined): string {
+    if (!hours || hours <= 0) return '—';
+    if (hours < 24) return `${Math.round(hours)}ชม.`;
+    return `${Math.round(hours / 24)}วัน`;
+  }
+  function ageLevel(h: number | null | undefined, warnH: number, critH: number): 'ok' | 'warn' | 'crit' {
+    if (!h) return 'ok';
+    if (h >= critH) return 'crit';
+    if (h >= warnH) return 'warn';
+    return 'ok';
+  }
+
+  const pendingCount = (data.totals.pending ?? 0) + (data.totals.escalated ?? 0);
   const stages = [
     {
-      label: 'Quotation Issued',
-      count: data.totals.quotations,
-      color: '#3b82f6',
-      pct: 100,
+      label: 'Pending Approval',
+      sublabel: 'รอผู้จัดการอนุมัติ',
+      count: pendingCount,
+      value: data.totals.pendingValue,
+      color: '#f59e0b',
+      grad: 'from-amber-500 to-orange-500',
+      avgH: pd?.stage1AvgHours,
+      warnH: 48, critH: 168,
+      top: pd?.stage1Top ?? [],
+      dateKey: 'submittedAt',
     },
     {
-      label: 'Approved',
+      label: 'Approved → Waiting PO',
+      sublabel: 'อนุมัติแล้ว รอรับ PO จากลูกค้า',
       count: data.totals.approved,
+      value: pd?.approvedOnlyValue ?? 0,
       color: '#06b6d4',
-      pct: Math.round((data.totals.approved / base) * 100),
+      grad: 'from-cyan-500 to-blue-500',
+      avgH: pd?.stage2AvgHours,
+      warnH: 72, critH: 168,
+      top: pd?.stage2Top ?? [],
+      dateKey: 'approvedAt',
     },
     {
       label: 'PO Received',
+      sublabel: 'รับ PO แล้ว รอยืนยัน SO',
       count: data.totals.poVerificationPending ?? 0,
+      value: pd?.poPendingValue ?? 0,
       color: '#14b8a6',
-      pct: Math.round(((data.totals.poVerificationPending ?? 0) / base) * 100),
+      grad: 'from-teal-500 to-emerald-500',
+      avgH: pd?.stage3AvgHours,
+      warnH: 48, critH: 120,
+      top: pd?.stage3Top ?? [],
+      dateKey: 'poUploadedAt',
     },
     {
       label: 'SO Confirmed',
+      sublabel: 'ได้รับคำสั่งซื้อแล้ว',
       count: data.totals.soConfirmed ?? 0,
+      value: pd?.soConfirmedValue ?? 0,
       color: '#10b981',
-      pct: conversionRate,
+      grad: 'from-emerald-500 to-green-600',
+      avgH: null as number | null | undefined,
+      warnH: 0, critH: 0,
+      top: pd?.stage4Top ?? [],
+      dateKey: 'createdAt',
     },
   ];
 
+  const maxCount = Math.max(...stages.map((s) => s.count), 1);
+
   return (
-    <div className="space-y-1.5">
-      {stages.map((s) => {
-        const w = `${Math.max(s.pct, s.count > 0 ? 15 : 5)}%`;
+    <div className="space-y-2">
+      {stages.map((s, i) => {
+        const barPct = Math.max(Math.round((s.count / maxCount) * 100), s.count > 0 ? 8 : 0);
+        const lvl = ageLevel(s.avgH, s.warnH, s.critH);
+        const isOpen = expanded === i;
+        const hasAlert = lvl !== 'ok' && s.count > 0;
+        const ageBadge = {
+          ok:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+          warn: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+          crit: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        }[lvl];
+
         return (
-          <div key={s.label} className="flex items-center gap-3">
-            <span className="w-32 text-xs text-right text-muted-foreground hidden sm:block truncate">{s.label}</span>
-            <div className="flex-1 h-9 bg-muted rounded-lg overflow-hidden relative">
-              <div
-                className="h-full rounded-lg flex items-center px-3 gap-2 transition-all duration-700"
-                style={{ width: w, background: `linear-gradient(to right, ${s.color}, ${s.color}cc)` }}
-              >
-                <span className="text-white text-xs font-semibold whitespace-nowrap">
-                  {s.count > 0 ? `${s.count} รายการ` : ''}
-                </span>
+          <div key={i}>
+            <button
+              onClick={() => setExpanded(isOpen ? null : i)}
+              className="w-full text-left"
+            >
+              <div className={`rounded-xl border transition-all duration-200 ${
+                isOpen ? 'border-border bg-accent/40' : 'border-transparent hover:border-border/60 hover:bg-accent/20'
+              } ${hasAlert ? 'ring-1 ring-amber-400/50' : ''}`}>
+
+                {/* ── Main row ── */}
+                <div className="flex items-center gap-2 p-2.5">
+                  {/* Stage number */}
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                    style={{ background: s.color }}>{i + 1}</div>
+
+                  {/* Labels */}
+                  <div className="w-28 shrink-0">
+                    <div className="text-xs font-semibold leading-tight">{s.label}</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 hidden sm:block">{s.sublabel}</div>
+                  </div>
+
+                  {/* Bar */}
+                  <div className="flex-1 h-7 bg-muted rounded-lg overflow-hidden">
+                    <div
+                      className={`h-full rounded-lg flex items-center px-2 transition-all duration-700 bg-gradient-to-r ${s.grad}`}
+                      style={{ width: `${barPct}%` }}
+                    >
+                      {s.count > 0 && <span className="text-white text-xs font-bold whitespace-nowrap">{s.count}</span>}
+                    </div>
+                  </div>
+
+                  {/* Value */}
+                  <div className="w-20 text-right shrink-0">
+                    <div className="text-xs font-bold tabular-nums" style={{ color: s.color }}>{formatMoney(s.value)}</div>
+                  </div>
+
+                  {/* Aging badge */}
+                  {s.avgH != null && s.avgH > 0 && (
+                    <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${ageBadge}`}>
+                      avg {fmtAge(s.avgH)}
+                    </div>
+                  )}
+
+                  {/* Bottleneck dot */}
+                  {hasAlert && (
+                    <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
+                      lvl === 'crit' ? 'bg-red-500' : 'bg-amber-400'
+                    }`} />
+                  )}
+
+                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                </div>
+
+                {/* ── Bottleneck alert banner (only when open) ── */}
+                {isOpen && hasAlert && (
+                  <div className={`mx-3 mb-2 flex items-center gap-2 p-2 rounded-lg text-xs ${
+                    lvl === 'crit'
+                      ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                      : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                  }`}>
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      <span className="font-semibold">{lvl === 'crit' ? 'Bottleneck วิกฤต' : 'Bottleneck เตือน'}:</span>
+                      {' '}งานเฉลี่ยค้างอยู่ <span className="font-semibold">{fmtAge(s.avgH)}</span>
+                      {s.value > 0 && <> · มูลค่า <span className="font-semibold">{formatMoney(s.value)}</span> ติดอยู่ที่ stage นี้</>}
+                    </span>
+                  </div>
+                )}
+
+                {/* ── Drilldown list ── */}
+                {isOpen && (
+                  <div className="mx-3 mb-3">
+                    {s.top.length === 0 ? (
+                      <p className="text-center py-3 text-xs text-muted-foreground">ไม่มีรายการใน stage นี้</p>
+                    ) : (
+                      <>
+                        <div className="text-[10px] text-muted-foreground uppercase font-semibold mb-1.5 px-1">Top รายการ (by มูลค่า)</div>
+                        <div className="space-y-1">
+                          {(s.top as any[]).map((item) => {
+                            const docNo = (item.quotationNo ?? item.saleOrderNo) as string;
+                            const rawDate = item[s.dateKey] as string | null | undefined;
+                            const ageHrs = rawDate
+                              ? (Date.now() - new Date(rawDate).getTime()) / (1000 * 60 * 60)
+                              : null;
+                            const href = item.quotationNo ? `/quotations/${item.id}` : `/sale-orders/${item.id}`;
+                            return (
+                              <Link
+                                key={item.id}
+                                href={href}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/60 hover:border-foreground/20 transition-colors gap-2"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-xs font-semibold">{docNo}</div>
+                                  <div className="text-[10px] text-muted-foreground truncate">{item.customerCompany}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="text-xs font-bold">{formatMoney(item.grandTotal)}</div>
+                                  {ageHrs !== null && ageHrs > 0 && (
+                                    <div className={`text-[10px] ${ageHrs >= s.critH && s.critH > 0 ? 'text-red-500' : ageHrs >= s.warnH && s.warnH > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                                      {fmtAge(ageHrs)}
+                                    </div>
+                                  )}
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-            <span className="w-12 text-right text-sm font-bold" style={{ color: s.color }}>{s.pct}%</span>
+            </button>
           </div>
         );
       })}
-      <div className="pt-2 border-t flex items-center justify-between text-xs text-muted-foreground mt-2">
-        <span>QT → SO Conversion</span>
+
+      <div className="pt-2 border-t flex items-center justify-between text-xs text-muted-foreground">
+        <span>QT → SO Conversion Rate</span>
         <span className="font-bold text-emerald-600 text-base">{conversionRate}%</span>
       </div>
     </div>
