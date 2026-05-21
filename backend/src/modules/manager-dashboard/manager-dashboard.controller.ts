@@ -65,6 +65,12 @@ export const managerDashboardController = {
     return success(res, data);
   },
 
+  async navCounts(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await managerDashboardService.navCounts(user);
+    return success(res, data);
+  },
+
   async pendingCount(req: Request, res: Response) {
     const user = requireUser(req);
     const data = await managerDashboardService.pendingCount(user);

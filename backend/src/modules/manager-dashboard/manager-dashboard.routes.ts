@@ -27,7 +27,13 @@ router.get(
   asyncHandler(managerDashboardController.filterableUsers),
 );
 
-// ── Pending count (badge) — all authenticated users ──
+// ── Nav counts (officer sidebar badges) ──
+router.get(
+  '/nav-counts',
+  asyncHandler(managerDashboardController.navCounts),
+);
+
+// ── Pending count (manager approval badge) ──
 router.get(
   '/pending-count',
   asyncHandler(managerDashboardController.pendingCount),

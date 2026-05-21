@@ -23,10 +23,11 @@ interface NavItem {
   onlyRoles?: string[];
   excludeRoles?: string[];
   children?: NavItem[];
-  showBadge?: boolean;  // show live pending-count badge
+  showBadge?: boolean;              // manager approval-queue count
+  officerBadge?: 'qt' | 'checklist' | 'so';  // officer sidebar counts
 }
 
-// ── Live approval-queue badge ─────────────────────────────────────────────────
+// ── Manager approval-queue badge ─────────────────────────────────────────────
 function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
   const [count, setCount] = useState<number | null>(null);
 
@@ -34,12 +35,11 @@ function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
     let cancelled = false;
     api.get<{ success: boolean; data?: { total: number } }>('/manager-dashboard/pending-count')
       .then((res) => { if (!cancelled) setCount(res.data.data?.total ?? 0); })
-      .catch(() => { /* silent — badge is non-critical */ });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
   if (!count || count <= 0) return null;
-
   if (collapsed) {
     return (
       <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
@@ -47,9 +47,49 @@ function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
       </span>
     );
   }
-
   return (
     <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+// ── Officer nav-count badge (shared single fetch via module cache) ─────────────
+type OfficerCounts = { qt: number; checklist: number; so: number };
+let _officerCountsCache: Promise<OfficerCounts> | null = null;
+function getOfficerCounts(): Promise<OfficerCounts> {
+  if (!_officerCountsCache) {
+    _officerCountsCache = api
+      .get<{ success: boolean; data?: OfficerCounts }>('/manager-dashboard/nav-counts')
+      .then((r) => r.data.data ?? { qt: 0, checklist: 0, so: 0 })
+      .catch(() => ({ qt: 0, checklist: 0, so: 0 }));
+    // expire after 60s so counts refresh on next page visit
+    setTimeout(() => { _officerCountsCache = null; }, 60_000);
+  }
+  return _officerCountsCache;
+}
+
+function OfficerNavBadge({ type, collapsed }: { type: 'qt' | 'checklist' | 'so'; collapsed: boolean }) {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getOfficerCounts().then((c) => {
+      if (!cancelled) setCount(c[type]);
+    });
+    return () => { cancelled = true; };
+  }, [type]);
+
+  if (!count || count <= 0) return null;
+  if (collapsed) {
+    return (
+      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-blue-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
+        {count > 9 ? '9+' : count}
+      </span>
+    );
+  }
+  return (
+    <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
       {count > 99 ? '99+' : count}
     </span>
   );
@@ -80,12 +120,14 @@ const NAV_ITEMS: NavItem[] = [
         labelKey: 'nav.quotationList',
         icon: FileText,
         requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
+        officerBadge: 'qt' as const,
       },
       {
         href: '/quotations/checklist',
         labelKey: 'nav.quotationChecklist',
         icon: CheckSquare,
         requires: { resource: 'quotation', action: 'view', scope: 'OWN' },
+        officerBadge: 'checklist' as const,
       },
     ],
   },
@@ -95,12 +137,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardList,
     excludeRoles: ['ADMIN'],
     requires: { resource: 'saleOrder', action: 'view', scope: 'OWN' },
+    officerBadge: 'so' as const,
   },
   {
     href: '/approval-queue',
     labelKey: 'nav.approvalQueue',
     icon: CheckSquare,
-    excludeRoles: ['ADMIN'],
+    excludeRoles: ['ADMIN', 'OFFICER'],
     showBadge: true,
   },
   {
@@ -271,10 +314,11 @@ function AuroraRingLogo({ theme, size = 44, uniqueId }: { theme: RoleTheme; size
 interface NavItemViewProps {
   item: NavItem; pathname: string; collapsed: boolean;
   theme: RoleTheme; t: (k: string) => string;
+  roleCode: string;
   onMobileClose?: () => void; level?: number;
 }
 
-function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
+function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileClose, level = 0 }: NavItemViewProps) {
   const Icon = item.icon;
   const children = item.children!;
   const anyChildActive = children.some((c) =>
@@ -310,7 +354,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
       <div className={cn('overflow-hidden transition-all duration-300 ease-out', open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0')}>
         <div className="pl-3 ml-3 border-l border-border/40 space-y-0.5">
           {children.map((child) => (
-            <NavItemView key={child.href ?? child.labelKey} item={child} pathname={pathname} collapsed={collapsed} theme={theme} t={t} onMobileClose={onMobileClose} level={level + 1} />
+            <NavItemView key={child.href ?? child.labelKey} item={child} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} level={level + 1} />
           ))}
         </div>
       </div>
@@ -318,14 +362,14 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, onMobileClose, leve
   );
 }
 
-function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level = 0 }: NavItemViewProps) {
+function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileClose, level = 0 }: NavItemViewProps) {
   const Icon = item.icon;
   const isLeafActive = item.href
     ? pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
     : false;
 
   if (item.children && item.children.length > 0) {
-    return <NavGroupItem item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} onMobileClose={onMobileClose} level={level} />;
+    return <NavGroupItem item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} level={level} />;
   }
   if (!item.href) return null;
 
@@ -343,9 +387,11 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
         <Icon className={cn('h-4 w-4', level > 0 && 'h-3.5 w-3.5')}
           style={{ color: isLeafActive ? theme.accentColor : undefined, filter: isLeafActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         {item.showBadge && collapsed && <ApprovalBadge collapsed={true} />}
+        {item.officerBadge && collapsed && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={true} />}
       </div>
       {!collapsed && <span className="truncate flex-1">{t(item.labelKey)}</span>}
       {!collapsed && item.showBadge && <ApprovalBadge collapsed={false} />}
+      {!collapsed && item.officerBadge && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={false} />}
     </Link>
   );
 }
@@ -422,7 +468,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
     <>
       <nav className="flex-1 overflow-y-auto p-3 space-y-1 relative">
         {items.map((item) => (
-          <NavItemView key={item.href ?? item.labelKey} item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} onMobileClose={onMobileClose} />
+          <NavItemView key={item.href ?? item.labelKey} item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} />
         ))}
       </nav>
       <div className="p-3 border-t border-border/40 shrink-0">

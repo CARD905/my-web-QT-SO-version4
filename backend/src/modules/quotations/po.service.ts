@@ -98,6 +98,7 @@ export const poService = {
     user: CurrentUser,
     poNumber: string,
     req?: Request,
+    deadlineDate?: Date,
   ) {
     const q = await prisma.quotation.findUnique({
       where: { id: quotationId },
@@ -129,6 +130,7 @@ export const poService = {
           poNumber: poNumber.trim(),           // ← PO Number จาก Officer
           poFileUrl: q.poFileUrl,             // ← แนบ URL ไฟล์ PO ด้วย
           issueDate: new Date(),
+          deadlineDate: deadlineDate ?? null,
           currency: q.currency,
           customerId: q.customerId,
           customerCompany: q.customerCompany,

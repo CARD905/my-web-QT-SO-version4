@@ -590,18 +590,28 @@ export const managerDashboardService = {
     return [];
   },
 
+  async navCounts(currentUser: CurrentUser): Promise<{ qt: number; checklist: number; so: number }> {
+    const [qt, checklist, so] = await Promise.all([
+      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { notIn: ['APPROVED', 'CANCELLED'] as any } } }),
+      prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['APPROVED', 'PO_REJECTED'] } } }),
+      prisma.saleOrder.count({ where: { deletedAt: null, status: { notIn: ['CONFIRMED', 'COMPLETED'] as any }, quotation: { createdById: currentUser.id } } }),
+    ]);
+    return { qt, checklist, so };
+  },
+
   async pendingCount(currentUser: CurrentUser): Promise<{ qtCount: number; soCount: number; total: number }> {
     const isManagerAbove = ['MANAGER', 'CEO', 'ADMIN'].includes(currentUser.roleCode);
     let qtCount = 0;
     let soCount = 0;
     if (isManagerAbove) {
-      // QTs assigned to this manager as currentApprover + PO submissions awaiting approval
-      const [pendingQt, poQt, pendingSo] = await Promise.all([
-        prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
+      // QTs assigned to me (normal + backup) + escalated over-budget + PO submissions + SOs for review
+      const [normalQt, escalatedQt, poQt, pendingSo] = await Promise.all([
+        prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
+        prisma.quotation.count({ where: { deletedAt: null, status: 'PENDING_ESCALATED', currentApproverId: currentUser.id } }),
         prisma.quotation.count({ where: { deletedAt: null, status: 'PO_PENDING' } }),
         prisma.saleOrder.count({ where: { deletedAt: null, status: 'PENDING_REVIEW' } }),
       ]);
-      qtCount = pendingQt + poQt;
+      qtCount = normalQt + escalatedQt + poQt;
       soCount = pendingSo;
     } else {
       // Officer: their QTs in pending states + their draft/rejected SOs

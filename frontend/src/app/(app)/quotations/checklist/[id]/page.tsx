@@ -69,7 +69,8 @@ export default function ChecklistDetailPage() {
   const [acting, setActing] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [poNumber, setPoNumber] = useState('');    // ← PO Number input
+  const [poNumber, setPoNumber] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userId = session?.user?.id;
@@ -123,7 +124,7 @@ export default function ChecklistDetailPage() {
     try {
       const res = await api.post<ApiResponse<{ quotation: ChecklistQuotation; saleOrder: { id: string; saleOrderNo: string } }>>(
         `/quotations/${id}/po-submit`,
-        { poNumber: poNumber.trim() },
+        { poNumber: poNumber.trim(), deadlineDate: deadlineDate || undefined },
       );
       const soId = res.data.data?.saleOrder?.id;
       const soNo = res.data.data?.saleOrder?.saleOrderNo;
@@ -332,20 +333,35 @@ export default function ChecklistDetailPage() {
                 <Upload className="h-4 w-4 text-primary" />ใบ Purchase Order (PO)
               </h2>
 
-              {/* ✅ PO Number Input */}
+              {/* PO Number + Deadline Date inputs */}
               {canUpload && (
-                <div className="mb-4">
-                  <Label htmlFor="poNumber" className="text-xs font-semibold flex items-center gap-1.5 mb-1.5">
-                    <Hash className="h-3.5 w-3.5" />
-                    หมายเลขใบสั่งซื้อ (PO Number) <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="poNumber"
-                    value={poNumber}
-                    onChange={(e) => setPoNumber(e.target.value)}
-                    placeholder="เช่น PO-2026-0001"
-                    className="text-sm"
-                  />
+                <div className="mb-4 space-y-3">
+                  <div>
+                    <Label htmlFor="poNumber" className="text-xs font-semibold flex items-center gap-1.5 mb-1.5">
+                      <Hash className="h-3.5 w-3.5" />
+                      หมายเลขใบสั่งซื้อ (PO Number) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="poNumber"
+                      value={poNumber}
+                      onChange={(e) => setPoNumber(e.target.value)}
+                      placeholder="เช่น PO-2026-0001"
+                      className="text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="deadlineDate" className="text-xs font-semibold flex items-center gap-1.5 mb-1.5">
+                      <Clock className="h-3.5 w-3.5" />
+                      วันส่งมอบ Sale Order (Deadline)
+                    </Label>
+                    <Input
+                      id="deadlineDate"
+                      type="date"
+                      value={deadlineDate}
+                      onChange={(e) => setDeadlineDate(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
                 </div>
               )}
 
