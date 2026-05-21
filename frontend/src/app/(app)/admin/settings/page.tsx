@@ -59,8 +59,12 @@ export default function AdminSettingsPage() {
     finally { setSaving(false); }
   };
 
+  // Keys ที่ถูกแทนที่ด้วย keys ใหม่แล้ว — ซ่อนออกจาก UI
+  const HIDDEN_KEYS = new Set(['normal_discount_max', 'special_discount_max', 'vat_enabled', 'vat_rate']);
+
   // Group settings
   const grouped = settings.reduce((acc, s) => {
+    if (HIDDEN_KEYS.has(s.key)) return acc;
     if (!acc[s.group]) acc[s.group] = [];
     acc[s.group].push(s);
     return acc;

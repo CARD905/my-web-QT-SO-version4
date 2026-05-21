@@ -23,34 +23,52 @@ import type { ApiResponse, CompanySettings, SaleOrder } from '@/types/api';
 const MANAGER_ROLES = ['MANAGER', 'CEO', 'ADMIN', 'APPROVER'];
 
 // ════════════════════════════════════════════════════════════════════════════
-// Reject Dialog
+// Action Confirm Dialog — ใช้กับทุก action (submit / approve / reject)
 // ════════════════════════════════════════════════════════════════════════════
-function RejectDialog({ onClose, onConfirm, loading }: {
-  onClose: () => void;
-  onConfirm: (reason: string) => void;
-  loading: boolean;
+function ActionConfirmDialog({ title, description, confirmLabel, confirmVariant = 'default',
+  confirmIcon, requireComment, commentLabel, commentPlaceholder, onClose, onConfirm, loading,
+}: {
+  title: string; description: string;
+  confirmLabel: string; confirmVariant?: 'default' | 'destructive' | 'emerald';
+  confirmIcon?: React.ReactNode; requireComment?: boolean;
+  commentLabel?: string; commentPlaceholder?: string;
+  onClose: () => void; onConfirm: (comment?: string) => void; loading: boolean;
 }) {
-  const [reason, setReason] = useState('');
+  const [comment, setComment] = useState('');
+  const canConfirm = !requireComment || comment.trim().length >= 2;
+  const btnClass = confirmVariant === 'emerald'
+    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+    : '';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-background rounded-2xl border shadow-2xl w-full max-w-md p-6">
-        <h3 className="font-bold text-lg mb-1">ปฏิเสธ Sale Order</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Sale Order จะกลับไปอยู่ในรายการรอดำเนินการ Officer สามารถแก้ไขและส่งใหม่ได้
-        </p>
-        <textarea
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={3} autoFocus
-          placeholder="ระบุเหตุผล..."
-          className="w-full border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <div className="flex gap-2 justify-end mt-4">
+        <h3 className="font-bold text-lg mb-1">{title}</h3>
+        <p className="text-sm text-muted-foreground mb-4">{description}</p>
+        {requireComment && (
+          <div className="mb-4">
+            <Label className="text-xs font-semibold mb-1.5 block">
+              {commentLabel ?? 'คอมเมนต์'} <span className="text-destructive">*</span>
+            </Label>
+            <textarea
+              value={comment} onChange={(e) => setComment(e.target.value)}
+              rows={3} autoFocus placeholder={commentPlaceholder ?? 'ระบุรายละเอียด...'}
+              className="w-full border border-input rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {!canConfirm && comment.length > 0 && (
+              <p className="text-[11px] text-destructive mt-1">กรุณาระบุอย่างน้อย 2 ตัวอักษร</p>
+            )}
+          </div>
+        )}
+        <div className="flex gap-2 justify-end mt-2">
           <Button variant="outline" onClick={onClose} disabled={loading}>ยกเลิก</Button>
-          <Button variant="destructive" disabled={loading || reason.trim().length < 2}
-            onClick={() => onConfirm(reason.trim())}>
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            <XCircle className="h-4 w-4" />ยืนยันปฏิเสธ
+          <Button
+            variant={confirmVariant === 'emerald' ? 'default' : confirmVariant}
+            className={btnClass}
+            disabled={loading || !canConfirm}
+            onClick={() => onConfirm(comment.trim() || undefined)}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmIcon}
+            {confirmLabel}
           </Button>
         </div>
       </div>
@@ -108,7 +126,7 @@ export default function SaleOrderDetailPage() {
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
-  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [dialogAction, setDialogAction] = useState<'submit' | 'resubmit' | 'approve' | 'reject' | null>(null);
   const [deadlineEdit, setDeadlineEdit] = useState('');
   const [savingDeadline, setSavingDeadline] = useState(false);
 
@@ -136,34 +154,21 @@ export default function SaleOrderDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleSubmit = async () => {
-    if (!confirm('ส่ง Sale Order ให้ Manager อนุมัติ?')) return;
-    setActing('submit');
+  const handleConfirmAction = async (comment?: string) => {
+    if (!dialogAction) return;
+    setActing(dialogAction);
     try {
-      await api.post(`/sale-orders/${id}/submit`);
-      toast.success('ส่งให้ Manager อนุมัติเรียบร้อย');
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setActing(null); }
-  };
-
-  const handleApprove = async () => {
-    if (!confirm('อนุมัติ Sale Order นี้?')) return;
-    setActing('approve');
-    try {
-      await api.post(`/sale-orders/${id}/approve`);
-      toast.success('อนุมัติ Sale Order เรียบร้อย');
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setActing(null); }
-  };
-
-  const handleReject = async (reason: string) => {
-    setActing('reject');
-    try {
-      await api.post(`/sale-orders/${id}/reject`, { reason });
-      toast.success('ปฏิเสธ Sale Order — เก็บไว้ในรายการรอดำเนินการ');
-      setShowRejectDialog(false);
+      if (dialogAction === 'submit' || dialogAction === 'resubmit') {
+        await api.post(`/sale-orders/${id}/submit`, comment ? { comment } : {});
+        toast.success('ส่งให้ Manager อนุมัติเรียบร้อย');
+      } else if (dialogAction === 'approve') {
+        await api.post(`/sale-orders/${id}/approve`, { comment });
+        toast.success('อนุมัติ Sale Order เรียบร้อย');
+      } else if (dialogAction === 'reject') {
+        await api.post(`/sale-orders/${id}/reject`, { reason: comment });
+        toast.success('ปฏิเสธ Sale Order — Officer สามารถแก้ไขและส่งใหม่ได้');
+      }
+      setDialogAction(null);
       await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setActing(null); }
@@ -223,24 +228,24 @@ export default function SaleOrderDetailPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {isDraft && isOwner && (
-            <Button onClick={handleSubmit} disabled={acting !== null}>
+            <Button onClick={() => setDialogAction('submit')} disabled={acting !== null}>
               {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               ส่งให้ Manager อนุมัติ
             </Button>
           )}
           {isRejected && isOwner && (
-            <Button onClick={handleSubmit} disabled={acting !== null}>
-              {acting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <Button onClick={() => setDialogAction('resubmit')} disabled={acting !== null}>
+              {acting === 'resubmit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               ส่งให้ Manager ใหม่
             </Button>
           )}
           {isPending && isManager && (
             <>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApprove} disabled={acting !== null}>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setDialogAction('approve')} disabled={acting !== null}>
                 {acting === 'approve' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 อนุมัติ
               </Button>
-              <Button variant="destructive" onClick={() => setShowRejectDialog(true)} disabled={acting !== null}>
+              <Button variant="destructive" onClick={() => setDialogAction('reject')} disabled={acting !== null}>
                 <XCircle className="h-4 w-4" />ปฏิเสธ
               </Button>
             </>
@@ -444,11 +449,40 @@ export default function SaleOrderDetailPage() {
         </div>
       </div>
 
-      {showRejectDialog && (
-        <RejectDialog
-          onClose={() => setShowRejectDialog(false)}
-          onConfirm={handleReject}
-          loading={acting === 'reject'}
+      {dialogAction === 'submit' && (
+        <ActionConfirmDialog
+          title="ส่ง Sale Order ให้ Manager อนุมัติ"
+          description="Sale Order จะเปลี่ยนเป็นสถานะ รอตรวจสอบ และส่งให้ Manager ทราบ"
+          confirmLabel="ยืนยันส่ง" confirmVariant="default" confirmIcon={<Send className="h-4 w-4" />}
+          requireComment={false}
+          onClose={() => setDialogAction(null)} onConfirm={handleConfirmAction} loading={acting === 'submit'}
+        />
+      )}
+      {dialogAction === 'resubmit' && (
+        <ActionConfirmDialog
+          title="ส่งให้ Manager อนุมัติอีกครั้ง"
+          description="Sale Order ที่ถูกปฏิเสธจะถูกส่งกลับให้ Manager ตรวจสอบใหม่"
+          confirmLabel="ยืนยันส่งใหม่" confirmVariant="default" confirmIcon={<Send className="h-4 w-4" />}
+          requireComment commentLabel="คอมเมนต์ / ชี้แจงการแก้ไข" commentPlaceholder="อธิบายสิ่งที่แก้ไขหรือเหตุผลที่ส่งใหม่..."
+          onClose={() => setDialogAction(null)} onConfirm={handleConfirmAction} loading={acting === 'resubmit'}
+        />
+      )}
+      {dialogAction === 'approve' && (
+        <ActionConfirmDialog
+          title="อนุมัติ Sale Order"
+          description="Sale Order จะเปลี่ยนเป็นสถานะ CONFIRMED และ Officer จะได้รับการแจ้งเตือน"
+          confirmLabel="ยืนยันอนุมัติ" confirmVariant="emerald" confirmIcon={<CheckCircle2 className="h-4 w-4" />}
+          requireComment commentLabel="คอมเมนต์การอนุมัติ" commentPlaceholder="เช่น ตรวจสอบรายละเอียดแล้ว ถูกต้องทุกประการ..."
+          onClose={() => setDialogAction(null)} onConfirm={handleConfirmAction} loading={acting === 'approve'}
+        />
+      )}
+      {dialogAction === 'reject' && (
+        <ActionConfirmDialog
+          title="ปฏิเสธ Sale Order"
+          description="Sale Order จะกลับไปที่ Officer เพื่อแก้ไขและส่งใหม่"
+          confirmLabel="ยืนยันปฏิเสธ" confirmVariant="destructive" confirmIcon={<XCircle className="h-4 w-4" />}
+          requireComment commentLabel="เหตุผลที่ปฏิเสธ" commentPlaceholder="ระบุเหตุผล เช่น ราคาไม่ถูกต้อง, ขาดเอกสาร..."
+          onClose={() => setDialogAction(null)} onConfirm={handleConfirmAction} loading={acting === 'reject'}
         />
       )}
     </div>

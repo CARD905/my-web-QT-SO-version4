@@ -15,6 +15,12 @@ export const dashboardService = {
       deletedAt: null,
     };
 
+    const taskSelect = {
+      id: true, quotationNo: true, customerCompany: true,
+      status: true, expiryDate: true, updatedAt: true,
+      rejectionReason: true, grandTotal: true,
+    };
+
     const [
       totalQuotations,
       draftCount,
@@ -25,6 +31,10 @@ export const dashboardService = {
       myExpiringSoon,
       recentQuotations,
       mySaleOrders,
+      taskItems,
+      waitingItems,
+      overdueItems,
+      notifications,
     ] = await Promise.all([
       prisma.quotation.count({ where: baseWhere }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'DRAFT' } }),
@@ -39,42 +49,59 @@ export const dashboardService = {
         where: {
           ...baseWhere,
           status: { in: ['DRAFT', 'PENDING'] },
-          expiryDate: {
-            gte: new Date(),
-            lte: addDays(new Date(), EXPIRING_SOON_DAYS),
-          },
+          expiryDate: { gte: new Date(), lte: addDays(new Date(), EXPIRING_SOON_DAYS) },
         },
         orderBy: { expiryDate: 'asc' },
         take: 5,
-        select: {
-          id: true,
-          quotationNo: true,
-          customerCompany: true,
-          grandTotal: true,
-          expiryDate: true,
-          status: true,
-        },
+        select: { id: true, quotationNo: true, customerCompany: true, grandTotal: true, expiryDate: true, status: true },
       }),
       prisma.quotation.findMany({
         where: baseWhere,
         orderBy: { updatedAt: 'desc' },
         take: RECENT_ACTIVITY_LIMIT,
-        select: {
-          id: true,
-          quotationNo: true,
-          customerCompany: true,
-          grandTotal: true,
-          status: true,
-          updatedAt: true,
-        },
+        select: { id: true, quotationNo: true, customerCompany: true, grandTotal: true, status: true, updatedAt: true, expiryDate: true },
       }),
-      prisma.saleOrder.count({
-        where: {
-          deletedAt: null,
-          quotation: { createdById: salesUserId },
-        },
+      prisma.saleOrder.count({ where: { deletedAt: null, quotation: { createdById: salesUserId } } }),
+      // DRAFT + REJECTED → ต้องดำเนินการ
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: { in: ['DRAFT', 'REJECTED'] } },
+        orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+        take: 20,
+        select: taskSelect,
+      }),
+      // PENDING → รออยู่ที่คนอื่น
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: 'PENDING' },
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+        select: taskSelect,
+      }),
+      // EXPIRED → เกินกำหนด
+      prisma.quotation.findMany({
+        where: { ...baseWhere, status: 'EXPIRED' },
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+        select: taskSelect,
+      }),
+      // Notifications ของ user นี้
+      prisma.notification.findMany({
+        where: { userId: salesUserId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
       }),
     ]);
+
+    const toTask = (q: typeof taskItems[number], actionLabel: string, priority: 'high' | 'medium' | 'low') => ({
+      id: q.id,
+      quotationNo: q.quotationNo,
+      customerCompany: q.customerCompany,
+      status: q.status,
+      dueDate: q.expiryDate,
+      updatedAt: q.updatedAt,
+      priority,
+      actionLabel,
+      rejectionReason: (q as any).rejectionReason ?? null,
+    });
 
     return {
       totals: {
@@ -90,6 +117,13 @@ export const dashboardService = {
       },
       expiringSoon: myExpiringSoon,
       recent: recentQuotations,
+      tasks: [
+        ...taskItems.filter((q) => q.status === 'REJECTED').map((q) => toTask(q, 'แก้ไข', 'high')),
+        ...taskItems.filter((q) => q.status === 'DRAFT').map((q) => toTask(q, 'ดำเนินการ', 'medium')),
+      ],
+      waitingItems: waitingItems.map((q) => toTask(q, 'ติดตาม', 'low')),
+      overdueItems: overdueItems.map((q) => toTask(q, 'ต่ออายุ', 'high')),
+      notifications,
     };
   },
 
