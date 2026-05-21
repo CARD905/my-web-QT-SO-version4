@@ -21,9 +21,20 @@ import {
   UpdateQuotationInput,
 } from './quotations.schema';
 
-const NORMAL_DISCOUNT_MAX = 20;
-const SPECIAL_DISCOUNT_MAX = 50;
+const NORMAL_DISCOUNT_MAX = 20; // fallback default
+const SPECIAL_DISCOUNT_MAX = 50; // fallback default
 const HIGH_VALUE_THRESHOLD = 100000;
+
+async function getDiscountLimits() {
+  const [normalSetting, specialSetting] = await Promise.all([
+    prisma.systemSetting.findUnique({ where: { key: 'discount.normalMax' } }),
+    prisma.systemSetting.findUnique({ where: { key: 'discount.specialMax' } }),
+  ]);
+  return {
+    normalMax: normalSetting ? (parseFloat(normalSetting.value) || NORMAL_DISCOUNT_MAX) : NORMAL_DISCOUNT_MAX,
+    specialMax: specialSetting ? (parseFloat(specialSetting.value) || SPECIAL_DISCOUNT_MAX) : SPECIAL_DISCOUNT_MAX,
+  };
+}
 const EXPIRING_SOON_DAYS = 7;
 
 export interface CurrentUser {
@@ -253,11 +264,12 @@ export const quotationsService = {
       description: `Created quotation ${quotation.quotationNo}`, req,
     });
 
+    const limits = await getDiscountLimits();
     const maxPctDiscount = input.items
       .filter((it) => it.discountType === 'PERCENTAGE')
       .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
 
-    if (maxPctDiscount > NORMAL_DISCOUNT_MAX && (input as any).specialDiscountReason) {
+    if (maxPctDiscount > limits.normalMax && (input as any).specialDiscountReason) {
       await prisma.quotation.update({
         where: { id: quotation.id },
         data: {
@@ -916,10 +928,11 @@ export const quotationsService = {
       throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
     }
 
+    const rejectLimits = await getDiscountLimits();
     const cappedItems = q.items.map((it) => ({
       quantity: Number(it.quantity), unitPrice: Number(it.unitPrice),
-      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > NORMAL_DISCOUNT_MAX
-        ? NORMAL_DISCOUNT_MAX : Number(it.discount),
+      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > rejectLimits.normalMax
+        ? rejectLimits.normalMax : Number(it.discount),
       discountType: it.discountType,
     }));
     const { subtotal, discountTotal, vatAmount, grandTotal, itemTotals } = calcQuotation(
@@ -938,7 +951,7 @@ export const quotationsService = {
         data: {
           subtotal, discountTotal, vatAmount, grandTotal,
           specialDiscountStatus: 'REJECTED',
-          specialDiscountFinalPct: NORMAL_DISCOUNT_MAX,
+          specialDiscountFinalPct: rejectLimits.normalMax,
           specialDiscountById: currentUser.id,
           specialDiscountAt: new Date(),
         },
@@ -949,7 +962,7 @@ export const quotationsService = {
       data: {
         userId: q.createdById, type: 'QUOTATION_REJECTED' as any,
         title: '❌ Special Discount ถูกปฏิเสธ',
-        message: `${q.quotationNo} — ส่วนลดถูกปรับเหลือ ${NORMAL_DISCOUNT_MAX}% อัตโนมัติ`,
+        message: `${q.quotationNo} — ส่วนลดถูกปรับเหลือ ${rejectLimits.normalMax}% อัตโนมัติ`,
         link: `/quotations/${q.id}`,
       },
     });
@@ -960,15 +973,16 @@ export const quotationsService = {
       description: `Rejected special discount for ${q.quotationNo}`, req,
     });
 
-    return { message: `Special discount rejected. Discounts auto-reduced to ${NORMAL_DISCOUNT_MAX}%` };
+    return { message: `Special discount rejected. Discounts auto-reduced to ${rejectLimits.normalMax}%` };
   },
 
   async modifySpecialDiscount(id: string, finalPercent: number, currentUser: CurrentUser, req?: Request) {
     if (!['CEO'].includes(currentUser.roleCode)) {
       throw new AppError(403, 'FORBIDDEN', 'Only CEO can modify special discounts');
     }
-    if (finalPercent < 0 || finalPercent > SPECIAL_DISCOUNT_MAX) {
-      throw new AppError(400, 'BAD_REQUEST', `Final percent must be between 0 and ${SPECIAL_DISCOUNT_MAX}`);
+    const modifyLimits = await getDiscountLimits();
+    if (finalPercent < 0 || finalPercent > modifyLimits.specialMax) {
+      throw new AppError(400, 'BAD_REQUEST', `Final percent must be between 0 and ${modifyLimits.specialMax}`);
     }
     const q = await prisma.quotation.findFirst({
       where: { id, deletedAt: null },
@@ -981,7 +995,7 @@ export const quotationsService = {
 
     const modifiedItems = q.items.map((it) => ({
       quantity: Number(it.quantity), unitPrice: Number(it.unitPrice),
-      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > NORMAL_DISCOUNT_MAX
+      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > modifyLimits.normalMax
         ? finalPercent : Number(it.discount),
       discountType: it.discountType,
     }));

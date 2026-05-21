@@ -20,6 +20,7 @@ interface SystemSetting {
 const GROUP_LABELS: Record<string, string> = {
   general: '⚙️ General',
   vat: '🧾 VAT',
+  discount: '💰 Discount',
   approval: '✅ Approval',
   numbering: '🔢 Running Number',
 };

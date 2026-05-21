@@ -18,9 +18,6 @@ import { useT } from '@/lib/i18n';
 import { cn, formatDateInput, formatMoney, formatNumber } from '@/lib/utils';
 import type { ApiResponse, Customer, Product } from '@/types/api';
 
-const NORMAL_DISCOUNT_MAX = 20;
-const SPECIAL_DISCOUNT_MAX = 50;
-
 interface LineItem {
   id: string;
   productId?: string;
@@ -42,18 +39,22 @@ const newItem = (): LineItem => ({
   discount: 0, discountType: 'PERCENTAGE',
 });
 
-function detectSpecialDiscount(items: LineItem[]): { hasSpecial: boolean; maxPct: number } {
+function detectSpecialDiscount(items: LineItem[], normalMax: number): { hasSpecial: boolean; maxPct: number } {
   let maxPct = 0, hasSpecial = false;
   for (const it of items) {
-    if (it.discountType === 'PERCENTAGE' && it.discount > NORMAL_DISCOUNT_MAX) {
+    const gross = it.quantity * it.unitPrice;
+    const effectivePct = it.discountType === 'PERCENTAGE'
+      ? it.discount
+      : (gross > 0 ? (it.discount / gross) * 100 : 0);
+    if (effectivePct > normalMax) {
       hasSpecial = true;
-      if (it.discount > maxPct) maxPct = it.discount;
+      if (effectivePct > maxPct) maxPct = effectivePct;
     }
   }
-  return { hasSpecial, maxPct };
+  return { hasSpecial, maxPct: Math.round(maxPct * 100) / 100 };
 }
 
-function SpecialDiscountPanel({ maxPct, reason, onReasonChange }: { maxPct: number; reason: string; onReasonChange: (v: string) => void }) {
+function SpecialDiscountPanel({ maxPct, reason, onReasonChange, normalMax }: { maxPct: number; reason: string; onReasonChange: (v: string) => void; normalMax: number }) {
   return (
     <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
       <CardContent className="pt-5">
@@ -70,7 +71,7 @@ function SpecialDiscountPanel({ maxPct, reason, onReasonChange }: { maxPct: numb
                 </Badge>
               </div>
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                ส่วนลดเกิน {NORMAL_DISCOUNT_MAX}% ต้องได้รับการอนุมัติจาก CEO ก่อน
+                ส่วนลดเกิน {normalMax}% ต้องได้รับการอนุมัติจาก CEO ก่อน
               </p>
             </div>
             <div>
@@ -90,7 +91,7 @@ function SpecialDiscountPanel({ maxPct, reason, onReasonChange }: { maxPct: numb
               <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-700 dark:text-amber-300 space-y-0.5">
                 <div>CEO จะได้รับ Notification พร้อม 3 ตัวเลือก:</div>
-                <div>🔴 ปฏิเสธ → ระบบลด discount เหลือ {NORMAL_DISCOUNT_MAX}%</div>
+                <div>🔴 ปฏิเสธ → ระบบลด discount เหลือ {normalMax}%</div>
                 <div>🟡 อนุมัติบางส่วน → CEO กำหนด % ใหม่เอง</div>
                 <div>🟢 อนุมัติ → ผ่านตามที่ขอ ({maxPct}%)</div>
               </div>
@@ -115,7 +116,9 @@ export default function NewQuotationPage() {
   const [expiryDate, setExpiryDate] = useState(expireDefault);
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
   const [vatEnabled, setVatEnabled] = useState(true);
-  const [vatRate] = useState(7);
+  const [vatRate, setVatRate] = useState(7);
+  const [normalDiscountMax, setNormalDiscountMax] = useState(20);
+  const [specialDiscountMax, setSpecialDiscountMax] = useState(50);
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [conditions, setConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([newItem()]);
@@ -126,12 +129,18 @@ export default function NewQuotationPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [cRes, pRes] = await Promise.all([
+        const [cRes, pRes, sRes] = await Promise.all([
           api.get<ApiResponse<Customer[]>>('/customers?limit=100'),
           api.get<ApiResponse<Product[]>>('/products?limit=100&isActive=true'),
+          api.get<ApiResponse<{ normalDiscountMax: number; specialDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
         ]);
         setCustomers(cRes.data.data ?? []);
         setProducts(pRes.data.data ?? []);
+        if (sRes.data.data) {
+          setNormalDiscountMax(sRes.data.data.normalDiscountMax);
+          setSpecialDiscountMax(sRes.data.data.specialDiscountMax);
+          setVatRate(sRes.data.data.defaultVatRate);
+        }
       } catch (err) { toast.error(getApiErrorMessage(err)); }
     })();
   }, []);
@@ -153,8 +162,13 @@ export default function NewQuotationPage() {
     setItems((prev) => prev.map((it) => {
       if (it.id !== id) return it;
       const updated = { ...it, ...patch };
-      if ('discount' in patch && updated.discountType === 'PERCENTAGE') {
-        updated.discount = Math.min(updated.discount, SPECIAL_DISCOUNT_MAX);
+      if ('discount' in patch || 'discountType' in patch || 'quantity' in patch || 'unitPrice' in patch) {
+        const gross = updated.quantity * updated.unitPrice;
+        if (updated.discountType === 'PERCENTAGE') {
+          updated.discount = Math.min(updated.discount, specialDiscountMax);
+        } else if (updated.discountType === 'FIXED' && gross > 0) {
+          updated.discount = Math.min(updated.discount, (specialDiscountMax / 100) * gross);
+        }
       }
       return updated;
     }));
@@ -192,7 +206,7 @@ export default function NewQuotationPage() {
     return { subtotal: grossSubtotal, discountTotal, vatAmount, grandTotal: afterDisc + vatAmount, itemTotals };
   }, [items, vatEnabled, vatRate]);
 
-  const { hasSpecial, maxPct } = useMemo(() => detectSpecialDiscount(items), [items]);
+  const { hasSpecial, maxPct } = useMemo(() => detectSpecialDiscount(items, normalDiscountMax), [items, normalDiscountMax]);
 
   const submitForm = async (mode: 'draft' | 'submit') => {
     if (!customerId) { toast.error('Please select a customer'); return; }
@@ -311,8 +325,8 @@ export default function NewQuotationPage() {
               <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                 <Lock className="h-3 w-3" />
                 ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดปกติสูงสุด
-                <span className="font-semibold text-foreground">{NORMAL_DISCOUNT_MAX}%</span>
-                {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{SPECIAL_DISCOUNT_MAX}%</span>
+                <span className="font-semibold text-foreground">{normalDiscountMax}%</span>
+                {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{specialDiscountMax}%</span>
               </p>
             </div>
             <Button variant="outline" size="sm" disabled={isFullyDisabled} onClick={() => setItems((p) => [...p, newItem()])}>
@@ -332,7 +346,11 @@ export default function NewQuotationPage() {
 
           <div className="space-y-2 mt-2">
             {items.map((item, idx) => {
-              const isSpecialItem = item.discountType === 'PERCENTAGE' && item.discount > NORMAL_DISCOUNT_MAX;
+              const gross = item.quantity * item.unitPrice;
+              const effectivePct = item.discountType === 'PERCENTAGE'
+                ? item.discount
+                : (gross > 0 ? (item.discount / gross) * 100 : 0);
+              const isSpecialItem = effectivePct > normalDiscountMax;
               const isBelowMin = item.minUnitPrice > 0 && item.unitPrice < item.minUnitPrice;
               return (
                 <div key={item.id} className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}>
@@ -372,13 +390,18 @@ export default function NewQuotationPage() {
                     )}
                   </div>
 
-                  <div className="relative">
+                  <div className="relative space-y-0.5">
                     <Input type="number" min="0" step="0.01"
-                      max={item.discountType === 'PERCENTAGE' ? SPECIAL_DISCOUNT_MAX : undefined}
+                      max={item.discountType === 'PERCENTAGE' ? specialDiscountMax : (gross > 0 ? (specialDiscountMax / 100) * gross : undefined)}
                       disabled={isFullyDisabled} value={item.discount}
                       onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
                       className={`h-9 text-right ${isSpecialItem ? 'border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : ''}`} />
-                    {isSpecialItem && <Star className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-500 pointer-events-none" />}
+                    {isSpecialItem && <Star className="absolute right-1.5 top-2 h-3 w-3 text-amber-500 pointer-events-none" />}
+                    {item.discountType === 'FIXED' && gross > 0 && (
+                      <div className="text-[10px] text-right text-muted-foreground">
+                        สูงสุด {formatNumber((specialDiscountMax / 100) * gross)}
+                      </div>
+                    )}
                   </div>
 
                   <select value={item.discountType} disabled={isFullyDisabled}
@@ -399,7 +422,7 @@ export default function NewQuotationPage() {
         </CardContent>
       </Card>
 
-      {hasSpecial && <SpecialDiscountPanel maxPct={maxPct} reason={specialDiscountReason} onReasonChange={setSpecialDiscountReason} />}
+      {hasSpecial && <SpecialDiscountPanel maxPct={maxPct} reason={specialDiscountReason} onReasonChange={setSpecialDiscountReason} normalMax={normalDiscountMax} />}
 
       {/* Summary */}
       <Card>

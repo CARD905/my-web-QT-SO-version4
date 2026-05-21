@@ -49,6 +49,14 @@ function adminOnly(req: any) {
   return user;
 }
 
+// ─── Quotation Settings (public read — any authenticated user) ────────────────
+router.get('/quotation-settings',
+  asyncHandler(async (_req, res) => {
+    const data = await adminService.getQuotationSettings();
+    return success(res, data);
+  }),
+);
+
 // ─── System Settings ─────────────────────────────────────────────────────────
 router.get('/settings',
   requireAnyPermission(['user', 'view', 'ALL']),
