@@ -590,6 +590,31 @@ export const managerDashboardService = {
     return [];
   },
 
+  async pendingCount(currentUser: CurrentUser): Promise<{ qtCount: number; soCount: number; total: number }> {
+    const isManagerAbove = ['MANAGER', 'CEO', 'ADMIN'].includes(currentUser.roleCode);
+    let qtCount = 0;
+    let soCount = 0;
+    if (isManagerAbove) {
+      // QTs assigned to this manager as currentApprover + PO submissions awaiting approval
+      const [pendingQt, poQt, pendingSo] = await Promise.all([
+        prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
+        prisma.quotation.count({ where: { deletedAt: null, status: 'PO_PENDING' } }),
+        prisma.saleOrder.count({ where: { deletedAt: null, status: 'PENDING_REVIEW' } }),
+      ]);
+      qtCount = pendingQt + poQt;
+      soCount = pendingSo;
+    } else {
+      // Officer: their QTs in pending states + their draft/rejected SOs
+      const [pendingQt, actionSo] = await Promise.all([
+        prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } } }),
+        prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['DRAFT', 'REJECTED'] }, quotation: { createdById: currentUser.id } } }),
+      ]);
+      qtCount = pendingQt;
+      soCount = actionSo;
+    }
+    return { qtCount, soCount, total: qtCount + soCount };
+  },
+
   async usersList(currentUser: CurrentUser) {
     if (!['CEO', 'ADMIN', 'MANAGER'].includes(currentUser.roleCode)) return [];
     let userIds: string[] | null = null;

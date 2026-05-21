@@ -64,4 +64,10 @@ export const managerDashboardController = {
     const data = await managerDashboardService.userDetail(req.params.userId, user);
     return success(res, data);
   },
+
+  async pendingCount(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await managerDashboardService.pendingCount(user);
+    return success(res, data);
+  },
 };

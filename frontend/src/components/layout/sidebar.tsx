@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { usePermissions } from '@/hooks/use-permissions';
+import { api } from '@/lib/api';
 
 interface NavItem {
   href?: string;
@@ -20,8 +21,38 @@ interface NavItem {
   icon: LucideIcon;
   requires?: { resource: string; action: string; scope?: 'OWN' | 'TEAM' | 'DEPARTMENT' | 'ALL' };
   onlyRoles?: string[];
-  excludeRoles?: string[];   // ✅ ใหม่ — ซ่อนถ้า role อยู่ใน list นี้
+  excludeRoles?: string[];
   children?: NavItem[];
+  showBadge?: boolean;  // show live pending-count badge
+}
+
+// ── Live approval-queue badge ─────────────────────────────────────────────────
+function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ success: boolean; data?: { total: number } }>('/manager-dashboard/pending-count')
+      .then((res) => { if (!cancelled) setCount(res.data.data?.total ?? 0); })
+      .catch(() => { /* silent — badge is non-critical */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!count || count <= 0) return null;
+
+  if (collapsed) {
+    return (
+      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
+        {count > 9 ? '9+' : count}
+      </span>
+    );
+  }
+
+  return (
+    <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -69,8 +100,8 @@ const NAV_ITEMS: NavItem[] = [
     href: '/approval-queue',
     labelKey: 'nav.approvalQueue',
     icon: CheckSquare,
-    excludeRoles: ['ADMIN', 'OFFICER'],
-    requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
+    excludeRoles: ['ADMIN'],
+    showBadge: true,
   },
   {
     href: '/special-discount',
@@ -311,8 +342,10 @@ function NavItemView({ item, pathname, collapsed, theme, t, onMobileClose, level
       <div className={cn('relative flex items-center justify-center shrink-0', isLeafActive && 'scale-110')}>
         <Icon className={cn('h-4 w-4', level > 0 && 'h-3.5 w-3.5')}
           style={{ color: isLeafActive ? theme.accentColor : undefined, filter: isLeafActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
+        {item.showBadge && collapsed && <ApprovalBadge collapsed={true} />}
       </div>
       {!collapsed && <span className="truncate flex-1">{t(item.labelKey)}</span>}
+      {!collapsed && item.showBadge && <ApprovalBadge collapsed={false} />}
     </Link>
   );
 }

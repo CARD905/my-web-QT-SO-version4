@@ -27,6 +27,12 @@ router.get(
   asyncHandler(managerDashboardController.filterableUsers),
 );
 
+// ── Pending count (badge) — all authenticated users ──
+router.get(
+  '/pending-count',
+  asyncHandler(managerDashboardController.pendingCount),
+);
+
 router.get(
   '/users',
   requireAnyPermission(
