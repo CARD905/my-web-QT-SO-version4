@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
   CheckSquare, Star, Mail, History, Settings, Activity,
-  Key, BarChart3, LogIn,
+  Key, BarChart3, LogIn, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -187,6 +187,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: History,
     excludeRoles: ['ADMIN', 'OFFICER'],
     requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
+  },
+  {
+    href: '/manual',
+    labelKey: 'nav.manual',
+    icon: BookOpen,
+    onlyRoles: ['OFFICER', 'SALES', 'MANAGER'],
   },
 
   // ── MASTER DATA — ADMIN + CEO + MANAGER เห็น ─────────────────────────────

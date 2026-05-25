@@ -41,8 +41,6 @@ interface DashboardData {
     soPending?: number;
     conversionRate?: number;
     waitingPo?: number;
-    draftCount?: number;
-    draftValue?: number;
   };
   todayActivity: { approved: number; rejected: number };
   monthActivity?: { approved: number; rejected: number };
@@ -1106,10 +1104,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
   }
 
   const totalQt   = Math.max(data.totals.quotations, 1);
-  const draftCount = data.totals.draftCount ?? 0;
-  const draftValue = data.totals.draftValue ?? 0;
-  const draftPct   = totalQt > 0 ? Math.round((draftCount / totalQt) * 100) : 0;
-  const totalVal  = (data.totals.totalValue ?? 0) + (data.totals.pendingValue ?? 0) + draftValue;
+  const totalVal  = (data.totals.totalValue ?? 0) + (data.totals.pendingValue ?? 0);
   const pendingCount = (data.totals.pending ?? 0) + (data.totals.escalated ?? 0);
 
   // isBaseline = stage 0, bar always 100%, no aging, drilldown = link to /quotations
@@ -1276,25 +1271,11 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                 {isOpen && (
                   <div className="mx-3 mb-3">
                     {s.isBaseline ? (
-                      <div className="space-y-2">
-                        {/* Draft sub-breakdown */}
-                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-400 shrink-0" />
-                            <span className="font-medium text-muted-foreground">Draft (ยังไม่ส่ง)</span>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0 text-muted-foreground">
-                            <span className="font-semibold text-foreground">{draftCount} ใบ</span>
-                            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">{draftPct}%</span>
-                            <span>{formatMoney(draftValue)}</span>
-                          </div>
-                        </div>
-                        <Link href="/quotations" onClick={(e) => e.stopPropagation()}
-                          className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-100 transition-colors">
-                          <ArrowRight className="h-3.5 w-3.5" />
-                          ดู Quotation ทั้งหมด ({data.totals.quotations} ใบ)
-                        </Link>
-                      </div>
+                      <Link href="/quotations" onClick={(e) => e.stopPropagation()}
+                        className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-100 transition-colors">
+                        <ArrowRight className="h-3.5 w-3.5" />
+                        ดู Quotation ทั้งหมด ({data.totals.quotations} ใบ)
+                      </Link>
                     ) : s.top.length === 0 ? (
                       <p className="text-center py-3 text-xs text-muted-foreground">ไม่มีรายการใน stage นี้</p>
                     ) : (
