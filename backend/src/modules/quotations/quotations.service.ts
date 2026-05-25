@@ -265,40 +265,6 @@ export const quotationsService = {
       description: `Created quotation ${quotation.quotationNo}`, req,
     });
 
-    const limits = await getDiscountLimits();
-    const maxPctDiscount = input.items
-      .filter((it) => it.discountType === 'PERCENTAGE')
-      .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
-
-    if (maxPctDiscount > limits.normalMax && (input as any).specialDiscountReason) {
-      const firstApprover = await findNextApprover(prisma as any, userId, Number(quotation.grandTotal));
-      await prisma.quotation.update({
-        where: { id: quotation.id },
-        data: {
-          specialDiscountRequested: true,
-          specialDiscountPercent: maxPctDiscount,
-          specialDiscountReason: (input as any).specialDiscountReason,
-          specialDiscountStatus: 'PENDING',
-          // Auto-submit into the normal approval chain
-          ...(firstApprover ? {
-            status: 'PENDING' as any,
-            submittedAt: new Date(),
-            currentApproverId: firstApprover.approverId,
-          } : {}),
-        },
-      });
-      if (firstApprover) {
-        await createNotification(prisma as any, {
-          userId: firstApprover.approverId,
-          type: 'QUOTATION_SUBMITTED',
-          title: `⭐ ขออนุมัติ Special Discount ${maxPctDiscount}%`,
-          message: `${quotation.quotationNo} จาก ${quotation.customerCompany} — ${(input as any).specialDiscountReason}`,
-          link: `/quotations/${quotation.id}`,
-          metadata: { quotationId: quotation.id, requestedPct: maxPctDiscount },
-        });
-      }
-    }
-
     return quotation;
   },
 
@@ -380,7 +346,10 @@ export const quotationsService = {
   // SUBMIT — Officer ส่งให้ Section Manager
   // ============================================================
   async submit(id: string, input: SubmitQuotationInput, userId: string, req?: Request) {
-    const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
+    const existing = await prisma.quotation.findFirst({
+      where: { id, deletedAt: null },
+      include: { items: { select: { discount: true, discountType: true } } },
+    });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only submit your own quotations');
     if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
@@ -402,13 +371,14 @@ export const quotationsService = {
     if (isResubmit && existing.rejectedById) {
       const rejector = await prisma.user.findUnique({
         where: { id: existing.rejectedById },
-        select: { id: true, name: true, role: { select: { code: true } } },
+        select: { id: true, name: true, managerLevel: true, role: { select: { code: true } } },
       });
       if (rejector && !isOfficer(rejector.role.code)) {
         targetApproverId = rejector.id;
         targetApproverName = rejector.name;
-        // PENDING_ESCALATED เฉพาะเมื่อส่งให้ CEO
-        targetStatus = rejector.role.code === 'CEO' ? 'PENDING_ESCALATED' : 'PENDING';
+        // PENDING only when going back to Section Manager (first in chain); any higher level = PENDING_ESCALATED
+        const isSectionManager = rejector.role.code === 'MANAGER' && (rejector as any).managerLevel === 'SECTION';
+        targetStatus = isSectionManager ? 'PENDING' : 'PENDING_ESCALATED';
       }
     }
 
@@ -418,6 +388,20 @@ export const quotationsService = {
       targetApproverId = found.approverId;
       targetApproverName = found.approverName;
     }
+
+    // Detect special discount: any % discount exceeding Division Manager's discountLimit → flag for CEO chain
+    const maxPctDiscount = (existing.items as Array<{ discount: any; discountType: string }>)
+      .filter((it) => it.discountType === 'PERCENTAGE')
+      .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
+    const divisionManager = await prisma.user.findFirst({
+      where: { deletedAt: null, role: { code: 'MANAGER' }, managerLevel: 'DIVISION', isActive: true },
+      select: { discountLimit: true },
+    });
+    const divisionDiscountLimit = divisionManager?.discountLimit ? Number(divisionManager.discountLimit) : null;
+    const shouldBeSpecialDiscount = divisionDiscountLimit !== null && maxPctDiscount > divisionDiscountLimit;
+    const specialDiscountData: Record<string, any> = shouldBeSpecialDiscount
+      ? { specialDiscountRequested: true, specialDiscountPercent: maxPctDiscount, specialDiscountStatus: 'PENDING' }
+      : { specialDiscountRequested: false, specialDiscountStatus: null, specialDiscountPercent: null };
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
@@ -429,7 +413,8 @@ export const quotationsService = {
           rejectedById: null,
           rejectedAt: null,
           rejectionReason: null,
-        },
+          ...specialDiscountData,
+        } as any,
         include: quotationDetailInclude,
       });
 
@@ -442,7 +427,9 @@ export const quotationsService = {
       await createNotification(tx, {
         userId: targetApproverId!,
         type: isResubmit ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
-        title: isResubmit ? '🔄 Quotation resubmitted' : '📋 Quotation รออนุมัติ',
+        title: isResubmit ? '🔄 Quotation resubmitted'
+          : shouldBeSpecialDiscount ? `⭐ Quotation รออนุมัติ (ส่วนลด ${maxPctDiscount}%)`
+          : '📋 Quotation รออนุมัติ',
         message: `${q.quotationNo} จาก ${q.customerCompany} (${q.grandTotal} ${q.currency})`,
         link: `/quotations/${q.id}`,
         metadata: { quotationId: q.id },
@@ -495,8 +482,8 @@ export const quotationsService = {
     });
     if (!managerUser) throw new AppError(404, 'USER_NOT_FOUND', 'Manager not found');
 
-    // PENDING_ESCALATED = รอ CEO เท่านั้น; ถ้าส่งต่อไป manager ระดับอื่น ยังคง PENDING
-    const escalateStatus = next.roleCode === 'CEO' ? 'PENDING_ESCALATED' : 'PENDING';
+    // Any escalation beyond the first approver → PENDING_ESCALATED
+    const escalateStatus = 'PENDING_ESCALATED';
 
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({

@@ -18,7 +18,7 @@ import type { ApiResponse, Quotation, SaleOrder } from '@/types/api';
 const QT_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:           { label: 'Pending',        color: '#f59e0b', bg: '#fef3c7' },
   PENDING_BACKUP:    { label: 'Pending Backup',  color: '#f97316', bg: '#ffedd5' },
-  PENDING_ESCALATED: { label: 'เกินวงเงิน',      color: '#ef4444', bg: '#fee2e2' },
+  PENDING_ESCALATED: { label: 'ส่งต่อแล้ว',      color: '#ef4444', bg: '#fee2e2' },
   PO_PENDING:        { label: 'PO รอตรวจ',      color: '#06b6d4', bg: '#cffafe' },
 };
 

@@ -246,7 +246,7 @@ export default function QuotationDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const { data: session } = useSession();
-  const { role, can } = usePermissions();
+  const { role } = usePermissions();
 
   const [q, setQ] = useState<Quotation | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
@@ -335,11 +335,9 @@ export default function QuotationDetailPage() {
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const isCeo = role?.code === 'CEO';
-  const isSpecialDiscountPendingCEO = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING';
-
-  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner && !isSpecialDiscountPendingCEO;
-  const canCancel = q.status === 'DRAFT' && (isOwner || isElevated) && !isSpecialDiscountPendingCEO;
+  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+  const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
   const canRenew  = q.status === 'EXPIRED' && isOwner;
 
@@ -605,12 +603,11 @@ export default function QuotationDetailPage() {
             </div>
             <div className="flex-1">
               <div className="font-semibold text-amber-800 dark:text-amber-200">
-                รอ CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% (ผ่านสายงานอนุมัติ)
+                Special Discount {(q as any).specialDiscountPercent}% — รออนุมัติผ่านสายงาน
               </div>
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                คำขอกำลังส่งต่อตามสายงานอนุมัติ — Manager แต่ละระดับสามารถส่งต่อหรือปฏิเสธได้ เฉพาะ CEO สามารถอนุมัติได้
+                ส่วนลดเกินอำนาจ Division Manager — คำขอกำลังส่งต่อตามสายงานอนุมัติ (Section → Department → Division → CEO)
               </p>
-              <p className="text-xs text-muted-foreground mt-1">เหตุผล: {(q as any).specialDiscountReason}</p>
             </div>
           </CardContent>
         </Card>
@@ -620,22 +617,8 @@ export default function QuotationDetailPage() {
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>
-              <div className="font-semibold text-emerald-800 dark:text-emerald-200">CEO อนุมัติ Special Discount {(q as any).specialDiscountPercent}% แล้ว</div>
+              <div className="font-semibold text-emerald-800 dark:text-emerald-200">Special Discount {(q as any).specialDiscountPercent}% ได้รับการอนุมัติแล้ว</div>
               <p className="text-xs text-muted-foreground mt-0.5">Quotation ได้รับการอนุมัติพร้อมกัน</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'MODIFIED' && (
-        <Card className="border-blue-400 bg-blue-50 dark:bg-blue-900/20">
-          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
-            <Star className="h-5 w-5 text-blue-600 shrink-0" />
-            <div>
-              <div className="font-semibold text-blue-800 dark:text-blue-200">
-                CEO ปรับ Special Discount เป็น {(q as any).specialDiscountFinalPct}%
-                <span className="text-muted-foreground font-normal text-xs ml-2">(ขอ {(q as any).specialDiscountPercent}%)</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
             </div>
           </CardContent>
         </Card>
@@ -645,8 +628,8 @@ export default function QuotationDetailPage() {
           <CardContent className="pt-4 pb-4 flex gap-3 items-center">
             <XCircle className="h-5 w-5 text-red-600 shrink-0" />
             <div>
-              <div className="font-semibold text-red-800 dark:text-red-200">CEO ปฏิเสธ Special Discount — ส่วนลดถูกปรับเหลือ 20% อัตโนมัติ</div>
-              <p className="text-xs text-muted-foreground mt-0.5">สามารถส่งขออนุมัติ Quotation ได้เลย</p>
+              <div className="font-semibold text-red-800 dark:text-red-200">Special Discount ถูกปฏิเสธ — ส่วนลดถูกปรับเหลือ {(q as any).specialDiscountFinalPct ?? 20}% อัตโนมัติ</div>
+              <p className="text-xs text-muted-foreground mt-0.5">สามารถแก้ไขและส่งขออนุมัติใหม่ได้</p>
             </div>
           </CardContent>
         </Card>

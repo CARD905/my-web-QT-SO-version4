@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, Loader2, Plus, Save, Send, Trash2, X,
-  AlertTriangle, Star, Info, Lock,
+  Star, Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -54,55 +54,6 @@ function detectSpecialDiscount(items: LineItem[], normalMax: number): { hasSpeci
   return { hasSpecial, maxPct: Math.round(maxPct * 100) / 100 };
 }
 
-function SpecialDiscountPanel({ maxPct, reason, onReasonChange, normalMax }: { maxPct: number; reason: string; onReasonChange: (v: string) => void; normalMax: number }) {
-  return (
-    <Card className="border-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20">
-      <CardContent className="pt-5">
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0">
-            <Star className="h-5 w-5 text-amber-600" />
-          </div>
-          <div className="flex-1 space-y-3">
-            <div>
-              <div className="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
-                ขอ Special Discount
-                <Badge variant="outline" className="text-[10px] bg-amber-100 text-amber-700 border-amber-400">
-                  {maxPct}% → ต้องขออนุมัติ CEO
-                </Badge>
-              </div>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                ส่วนลดเกิน {normalMax}% ต้องได้รับการอนุมัติจาก CEO ก่อน
-              </p>
-            </div>
-            <div>
-              <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                เหตุผลที่ขอส่วนลดพิเศษ <span className="text-destructive">*</span>
-              </Label>
-              <textarea value={reason} onChange={(e) => onReasonChange(e.target.value)} rows={3}
-                placeholder="เช่น ลูกค้า VIP ซื้อปริมาณมาก, โปรเจกต์ระยะยาว..."
-                className="mt-1.5 w-full rounded-md border border-amber-300 bg-white dark:bg-amber-950/50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none placeholder:text-amber-400" />
-              {!reason.trim() && (
-                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3" />กรุณาระบุเหตุผลก่อนบันทึก
-                </p>
-              )}
-            </div>
-            <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-100 dark:bg-amber-800/30">
-              <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-700 dark:text-amber-300 space-y-0.5">
-                <div>CEO จะได้รับ Notification พร้อม 3 ตัวเลือก:</div>
-                <div>🔴 ปฏิเสธ → ระบบลด discount เหลือ {normalMax}%</div>
-                <div>🟡 อนุมัติบางส่วน → CEO กำหนด % ใหม่เอง</div>
-                <div>🟢 อนุมัติ → ผ่านตามที่ขอ ({maxPct}%)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function NewQuotationPage() {
   const t = useT();
   const router = useRouter();
@@ -124,7 +75,6 @@ export default function NewQuotationPage() {
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [conditions, setConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([newItem()]);
-  const [specialDiscountReason, setSpecialDiscountReason] = useState('');
   const [submitting, setSubmitting] = useState<'draft' | 'submit' | null>(null);
   const [locked, setLocked] = useState(false);
 
@@ -219,18 +169,16 @@ export default function NewQuotationPage() {
       toast.error('ราคาสินค้าบางรายการต่ำกว่าราคา Master Data — กรุณาตรวจสอบก่อนบันทึก');
       return;
     }
-    if (hasSpecial && !specialDiscountReason.trim()) { toast.error('กรุณาระบุเหตุผลสำหรับ Special Discount ก่อนบันทึก'); return; }
     if (mode === 'submit') {
-      if (!confirm(`ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`)) return;
-    }
-    if (mode === 'draft' && hasSpecial) {
-      if (!confirm(`ยืนยันส่งขอ Special Discount ${maxPct}%?\n\nระบบจะส่งคำขอผ่านสายงานอนุมัติ (Manager → CEO)\nเฉพาะ CEO เท่านั้นที่สามารถอนุมัติได้\nหลังจากส่งแล้ว จะไม่สามารถกลับมาแก้ไขส่วนลดได้`)) return;
+      const confirmMsg = hasSpecial
+        ? `ยืนยันส่งใบเสนอราคา?\n\nมีส่วนลดสูง ${maxPct}% — ระบบจะส่งผ่านสายงานอนุมัติตามลำดับ`
+        : `ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`;
+      if (!confirm(confirmMsg)) return;
     }
     setSubmitting(mode);
     try {
       const createRes = await api.post<ApiResponse<{ id: string; quotationNo: string }>>('/quotations', {
         customerId, issueDate, expiryDate, currency, vatEnabled, vatRate, paymentTerms, conditions,
-        specialDiscountReason: hasSpecial ? specialDiscountReason.trim() : undefined,
         items: items.map((it, idx) => ({
           productId: it.productId, productSku: it.productSku, productName: it.productName,
           description: it.description, quantity: it.quantity, unit: it.unit,
@@ -239,12 +187,10 @@ export default function NewQuotationPage() {
       });
       const quotation = createRes.data.data;
       if (!quotation) throw new Error('No data returned');
-      if (mode === 'submit' && !hasSpecial) {
+      if (mode === 'submit') {
         await api.post(`/quotations/${quotation.id}/submit`, {});
         setLocked(true);
         toast.success(`${quotation.quotationNo} ส่งขออนุมัติเรียบร้อย`);
-      } else if (hasSpecial) {
-        toast.success(`${quotation.quotationNo} ส่งขอ Special Discount เรียบร้อย — รออนุมัติผ่านสายงาน`);
       } else {
         toast.success(`${quotation.quotationNo} บันทึก draft แล้ว`);
       }
@@ -458,7 +404,19 @@ export default function NewQuotationPage() {
         </CardContent>
       </Card>
 
-      {hasSpecial && <SpecialDiscountPanel maxPct={maxPct} reason={specialDiscountReason} onReasonChange={setSpecialDiscountReason} normalMax={normalDiscountMax} />}
+      {hasSpecial && (
+        <Card className="border border-amber-300 bg-amber-50/60 dark:bg-amber-900/20">
+          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
+            <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0">
+              <Star className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="text-sm text-amber-800 dark:text-amber-200">
+              <span className="font-semibold">ส่วนลดสูง {maxPct}%</span>
+              <span className="text-amber-700 dark:text-amber-300 ml-2">— เมื่อส่งขออนุมัติ ระบบจะส่งผ่านสายงานตามลำดับ (Section → Department → Division → CEO)</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary */}
       <Card>
@@ -519,22 +477,18 @@ export default function NewQuotationPage() {
             </div>
             <div className="flex gap-2 ml-auto">
               {!locked && <Button variant="ghost" onClick={handleCancel} disabled={isProcessing}><X className="h-4 w-4" />ยกเลิก</Button>}
-              <Button variant="outline" onClick={() => submitForm('draft')} disabled={isFullyDisabled || (hasSpecial && !specialDiscountReason.trim())}>
+              <Button variant="outline" onClick={() => submitForm('draft')} disabled={isFullyDisabled}>
                 {submitting === 'draft' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {hasSpecial ? 'บันทึก + ส่งขอ Special Discount' : t('common.saveDraft')}
+                {t('common.saveDraft')}
               </Button>
-              {!hasSpecial && (
-                <Button onClick={() => submitForm('submit')} disabled={isFullyDisabled} className="bg-emerald-600 hover:bg-emerald-700">
-                  {submitting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  {locked ? 'ส่งแล้ว — รออนุมัติ' : t('quotation.submitForApproval')}
-                </Button>
-              )}
-              {hasSpecial && (
-                <Button onClick={() => submitForm('draft')} disabled={isFullyDisabled || !specialDiscountReason.trim()} className="bg-amber-600 hover:bg-amber-700">
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Star className="h-4 w-4" />}
-                  ส่งขอ Special Discount
-                </Button>
-              )}
+              <Button
+                onClick={() => submitForm('submit')}
+                disabled={isFullyDisabled}
+                className={hasSpecial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+              >
+                {submitting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : hasSpecial ? <Star className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {locked ? 'ส่งแล้ว — รออนุมัติ' : t('quotation.submitForApproval')}
+              </Button>
             </div>
           </div>
         </div>
