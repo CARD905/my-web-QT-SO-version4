@@ -132,8 +132,10 @@ export const managerDashboardService = {
       // ─── Pipeline detail ──────────────────────────────────────────────────────
       pipelineApprovedAgg, pipelinePoPendingAgg, pipelineSoConfirmedAgg,
       pipelineStage1Raw, pipelineStage2Raw, pipelineStage3Raw, pipelineStage4Raw,
+      // ─── Draft breakdown ──────────────────────────────────────────────────────
+      draftCount, draftValueAgg,
     ] = await Promise.all([
-      prisma.quotation.count({ where: baseWhere }),
+      prisma.quotation.count({ where: { ...baseWhere, status: { notIn: ['EXPIRED', 'CANCELLED'] } } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING_ESCALATED' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'APPROVED' } }),
@@ -317,6 +319,10 @@ export const managerDashboardService = {
         orderBy: { grandTotal: 'desc' },
         take: 5,
       }),
+
+      // Draft count + value for Stage 1 sub-breakdown
+      prisma.quotation.count({ where: { ...baseWhere, status: 'DRAFT' } }),
+      prisma.quotation.aggregate({ where: { ...baseWhere, status: 'DRAFT' }, _sum: { grandTotal: true } }),
     ]);
 
     // ─── Build trendData ──────────────────────────────────────────────────────
@@ -531,6 +537,8 @@ export const managerDashboardService = {
         poVerificationPending: poVerificationPendingCount,
         soConfirmed: soConfirmedCount,
         soPending: soPendingCount,
+        draftCount,
+        draftValue: Number(draftValueAgg._sum.grandTotal ?? 0),
       },
       todayActivity: { approved: todayApprovedCount, rejected: todayRejectedCount },
       monthActivity: { approved: monthApprovedCount, rejected: monthRejectedCount },
@@ -767,7 +775,7 @@ function startOfMonth(): Date { const d = new Date(); d.setDate(1); d.setHours(0
 function emptyDashboard() {
   return {
     filter: 'self' as DashboardFilter, filterUserId: undefined, isApproverView: false,
-    totals: { quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0, totalValue: 0, pendingValue: 0, poVerificationPending: 0, soConfirmed: 0, soPending: 0 },
+    totals: { quotations: 0, pending: 0, escalated: 0, approved: 0, rejected: 0, totalValue: 0, pendingValue: 0, poVerificationPending: 0, soConfirmed: 0, soPending: 0, draftCount: 0, draftValue: 0 },
     todayActivity: { approved: 0, rejected: 0 },
     monthActivity: { approved: 0, rejected: 0 },
     allTimeActivity: { approved: 0, rejected: 0 },

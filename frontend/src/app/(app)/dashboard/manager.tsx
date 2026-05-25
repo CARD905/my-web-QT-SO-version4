@@ -41,6 +41,8 @@ interface DashboardData {
     soPending?: number;
     conversionRate?: number;
     waitingPo?: number;
+    draftCount?: number;
+    draftValue?: number;
   };
   todayActivity: { approved: number; rejected: number };
   monthActivity?: { approved: number; rejected: number };
@@ -142,7 +144,7 @@ export default function ManagerDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [users, setUsers] = useState<FilterableUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterValue, setFilterValue] = useState<string>('self');
+  const [filterValue, setFilterValue] = useState<string>('team');
   const [spinning, setSpinning] = useState(false);
 
   const isExecutive = role?.code === 'CEO' || role?.code === 'ADMIN';
@@ -199,13 +201,12 @@ export default function ManagerDashboardPage() {
   const subordinates = users.filter((u) => u.role.code !== 'MANAGER');
   const selectedUser = filterValue.startsWith('user:')
     ? users.find((u) => u.id === filterValue.slice(5)) : null;
-  const filterLabel = filterValue === 'self' ? 'Me (Default)'
-    : filterValue === 'team' ? 'My Team'
+  const filterLabel = filterValue === 'team' ? 'My Team'
     : filterValue === 'all' ? 'ทั้งระบบ'
-    : selectedUser ? `${selectedUser.name} (${selectedUser.role.nameTh})` : 'User';
+    : selectedUser ? `${selectedUser.name} (${selectedUser.role.nameTh})` : 'My Team';
   const isTeamView = filterValue === 'team' || filterValue === 'all';
   const isUserView = filterValue.startsWith('user:');
-  const isSelfView = filterValue === 'self';
+  const isSelfView = false;
 
   return (
     <div className="space-y-0 max-w-7xl">
@@ -231,13 +232,9 @@ export default function ManagerDashboardPage() {
                 onChange={(e) => setFilterValue(e.target.value)}
                 className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
               >
-                <option value="self" className="text-black bg-white">— Me (Default)</option>
-                {role?.code === 'MANAGER' && <option value="team" className="text-black bg-white">— My Team</option>}
+                <option value="team" className="text-black bg-white">— My Team</option>
                 {isExecutive && (
-                  <>
-                    <option value="team" className="text-black bg-white">— My Team</option>
-                    <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
-                  </>
+                  <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
                 )}
                 {managers.length > 0 && (
                   <optgroup label="Managers">
@@ -1109,7 +1106,10 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
   }
 
   const totalQt   = Math.max(data.totals.quotations, 1);
-  const totalVal  = (data.totals.totalValue ?? 0) + (data.totals.pendingValue ?? 0);
+  const draftCount = data.totals.draftCount ?? 0;
+  const draftValue = data.totals.draftValue ?? 0;
+  const draftPct   = totalQt > 0 ? Math.round((draftCount / totalQt) * 100) : 0;
+  const totalVal  = (data.totals.totalValue ?? 0) + (data.totals.pendingValue ?? 0) + draftValue;
   const pendingCount = (data.totals.pending ?? 0) + (data.totals.escalated ?? 0);
 
   // isBaseline = stage 0, bar always 100%, no aging, drilldown = link to /quotations
@@ -1276,11 +1276,25 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                 {isOpen && (
                   <div className="mx-3 mb-3">
                     {s.isBaseline ? (
-                      <Link href="/quotations" onClick={(e) => e.stopPropagation()}
-                        className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-100 transition-colors">
-                        <ArrowRight className="h-3.5 w-3.5" />
-                        ดู Quotation ทั้งหมด ({data.totals.quotations} ใบ)
-                      </Link>
+                      <div className="space-y-2">
+                        {/* Draft sub-breakdown */}
+                        <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-400 shrink-0" />
+                            <span className="font-medium text-muted-foreground">Draft (ยังไม่ส่ง)</span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0 text-muted-foreground">
+                            <span className="font-semibold text-foreground">{draftCount} ใบ</span>
+                            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">{draftPct}%</span>
+                            <span>{formatMoney(draftValue)}</span>
+                          </div>
+                        </div>
+                        <Link href="/quotations" onClick={(e) => e.stopPropagation()}
+                          className="flex items-center justify-center gap-2 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-400 hover:bg-blue-100 transition-colors">
+                          <ArrowRight className="h-3.5 w-3.5" />
+                          ดู Quotation ทั้งหมด ({data.totals.quotations} ใบ)
+                        </Link>
+                      </div>
                     ) : s.top.length === 0 ? (
                       <p className="text-center py-3 text-xs text-muted-foreground">ไม่มีรายการใน stage นี้</p>
                     ) : (
