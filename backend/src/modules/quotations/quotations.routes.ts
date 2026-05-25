@@ -32,13 +32,6 @@ router.delete('/comments/:commentId', asyncHandler(quotationsController.deleteCo
 
 router.get('/checklist', asyncHandler(poController.checklist));
 
-// ✅ Special Discount — CEO only (ต้องอยู่ก่อน /:id)
-router.get(
-  '/special-discount/pending',
-  requireAnyPermission(['quotation', 'approve', 'ALL']),
-  asyncHandler(quotationsController.listSpecialDiscountRequests),
-);
-
 // ─── LIST / GET ──────────────────────────────────────────────────────────────
 
 router.get(
@@ -161,23 +154,6 @@ router.post(
   '/:id/po-reject',
   requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(poController.reject),
-);
-
-// ✅ SPECIAL DISCOUNT — CEO/Admin เท่านั้น
-router.post(
-  '/:id/special-discount/approve',
-  requireAnyPermission(['quotation', 'approve', 'ALL']),
-  asyncHandler(quotationsController.approveSpecialDiscount),
-);
-router.post(
-  '/:id/special-discount/reject',
-  requireAnyPermission(['quotation', 'approve', 'ALL']),
-  asyncHandler(quotationsController.rejectSpecialDiscount),
-);
-router.post(
-  '/:id/special-discount/modify',
-  requireAnyPermission(['quotation', 'approve', 'ALL']),
-  asyncHandler(quotationsController.modifySpecialDiscount),
 );
 
 // ─── COMMENTS ────────────────────────────────────────────────────────────────

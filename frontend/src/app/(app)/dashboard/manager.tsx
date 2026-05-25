@@ -85,7 +85,6 @@ interface DashboardData {
     totalDiscountGiven: number;
     totalApprovedSubtotal: number;
     avgDiscountRate: number;
-    specialDiscountCount: number;
     approvedCount: number;
   };
   customerInsights?: Array<{
@@ -935,7 +934,6 @@ function DashboardContent({
                 {[
                   { label: 'ส่วนลดรวม (Approved)', value: formatMoney(data.marginAnalysis.totalDiscountGiven), color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-900/20' },
                   { label: 'Avg Discount Rate', value: `${data.marginAnalysis.avgDiscountRate.toFixed(1)}%`, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-                  { label: 'Special Discount Req.', value: data.marginAnalysis.specialDiscountCount, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20' },
                   { label: 'QT Approved ทั้งหมด', value: data.marginAnalysis.approvedCount, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
                 ].map((item) => (
                   <div key={item.label} className={`rounded-xl p-3 ${item.bg}`}>

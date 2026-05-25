@@ -108,32 +108,6 @@ export const quotationsController = {
     return success(res, data);
   },
 
-  async listSpecialDiscountRequests(req: Request, res: Response) {
-    const user = requireUser(req);
-    const result = await quotationsService.listSpecialDiscountRequests(user);
-    return success(res, result);
-  },
-
-  async approveSpecialDiscount(req: Request, res: Response) {
-    const user = requireUser(req);
-    const result = await quotationsService.approveSpecialDiscount(req.params.id, user, req);
-    return success(res, result, 'Special discount approved ✅');
-  },
-
-  async rejectSpecialDiscount(req: Request, res: Response) {
-    const user = requireUser(req);
-    const result = await quotationsService.rejectSpecialDiscount(req.params.id, user, req);
-    return success(res, result, 'Special discount rejected — discounts auto-reduced to 20%');
-  },
-
-  async modifySpecialDiscount(req: Request, res: Response) {
-    const user = requireUser(req);
-    const { finalPercent } = req.body as { finalPercent: number };
-    if (typeof finalPercent !== 'number') throw new AppError(400, 'BAD_REQUEST', 'finalPercent is required');
-    const result = await quotationsService.modifySpecialDiscount(req.params.id, finalPercent, user, req);
-    return success(res, result, `Special discount modified to ${finalPercent}%`);
-  },
-
   async renew(req: Request, res: Response) {
     const user = requireUser(req);
     const data = await quotationsService.renew(req.params.id, user.id, req);

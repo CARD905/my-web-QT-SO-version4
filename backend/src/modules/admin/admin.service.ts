@@ -758,7 +758,6 @@ export const adminService = {
   async getSystemSettings(group?: string) {
     const DEFAULT_SETTINGS = [
       { key: 'discount.normalMax', value: '20', type: 'number', group: 'discount', label: 'Normal Discount Max (%)' },
-      { key: 'discount.specialMax', value: '50', type: 'number', group: 'discount', label: 'Special Discount Max (%)' },
       { key: 'vat.defaultRate', value: '7', type: 'number', group: 'vat', label: 'Default VAT Rate (%)' },
     ];
     for (const s of DEFAULT_SETTINGS) {
@@ -776,14 +775,12 @@ export const adminService = {
   },
 
   async getQuotationSettings() {
-    const [normal, special, vat] = await Promise.all([
+    const [normal, vat] = await Promise.all([
       prisma.systemSetting.findUnique({ where: { key: 'discount.normalMax' } }),
-      prisma.systemSetting.findUnique({ where: { key: 'discount.specialMax' } }),
       prisma.systemSetting.findUnique({ where: { key: 'vat.defaultRate' } }),
     ]);
     return {
       normalDiscountMax: normal ? (parseFloat(normal.value) || 20) : 20,
-      specialDiscountMax: special ? (parseFloat(special.value) || 50) : 50,
       defaultVatRate: vat ? (parseFloat(vat.value) || 7) : 7,
     };
   },

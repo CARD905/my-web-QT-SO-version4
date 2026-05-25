@@ -265,7 +265,7 @@ export default function AdminApprovalPage() {
           {loading ? <Skeleton className="h-20" /> : (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                CEO อนุมัติส่วนลดได้สูงสุดเท่าใด — Special Discount (&gt;normalMax%) จะถูกส่งขึ้นมาถึง CEO โดยอัตโนมัติ
+                CEO อนุมัติส่วนลดได้สูงสุดเท่าใด
               </p>
               <div className="flex items-center gap-3">
                 <Input

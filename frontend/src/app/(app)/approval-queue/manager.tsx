@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Inbox, AlertTriangle, FileText, ShoppingCart,
   CheckCircle2, ChevronRight, RefreshCw, ArrowUpRight, Flame, TrendingUp,
+  Crown,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -191,7 +192,6 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
 
   return (
     <div className="rounded-2xl border border-red-300 dark:border-red-800 overflow-hidden shadow-lg shadow-red-500/10">
-      {/* Header */}
       <div className="bg-gradient-to-r from-red-900/80 via-red-800/60 to-rose-900/50 px-4 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-red-500/30 flex items-center justify-center shrink-0">
@@ -215,8 +215,6 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
           ดูทั้งหมด <ArrowUpRight className="h-3 w-3" />
         </Link>
       </div>
-
-      {/* Grid of cards */}
       <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
         {items.map((q) => <QtCard key={q.id} q={q} compact />)}
       </div>
@@ -231,10 +229,7 @@ function exceedsApproverLimits(q: Quotation, myId: string | undefined): boolean 
   const discountLimit = Number((q.currentApprover as any).discountLimit ?? 0);
   const grandTotal = Number(q.grandTotal);
   const maxDiscount = q.maxDiscountPct ?? 0;
-  // Special Discount pending → ต้อง escalate จนถึง CEO เสมอ ไม่ว่าจะมี discountLimit หรือไม่
-  const isSpecialDiscountPending = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING';
-  return isSpecialDiscountPending ||
-    (moneyLimit > 0 && grandTotal > moneyLimit) ||
+  return (moneyLimit > 0 && grandTotal > moneyLimit) ||
     (discountLimit > 0 && maxDiscount > discountLimit);
 }
 
@@ -242,6 +237,7 @@ function exceedsApproverLimits(q: Quotation, myId: string | undefined): boolean 
 export default function ApprovalQueuePage() {
   const { role, user, loading: permLoading } = usePermissions();
   const myId = user?.id;
+  const isCeo = role?.code === 'CEO';
   const isManager = role?.code === 'MANAGER' || role?.code === 'CEO' || role?.code === 'ADMIN';
 
   const [qtItems,        setQtItems]        = useState<Quotation[]>([]);
@@ -275,8 +271,13 @@ export default function ApprovalQueuePage() {
 
         const poItems = poRes.data.data ?? [];
 
-        // CEO/ADMIN: no limits — everything goes to "can approve"
-        if (role?.code === 'CEO' || role?.code === 'ADMIN') {
+        if (role?.code === 'CEO') {
+          // CEO: only quotations explicitly routed to this user (Division Manager escalated up)
+          const ceoQt = uniquePending.filter((q) => q.currentApprover?.id === myId);
+          const ceoPo = poItems.filter((q) => q.currentApprover?.id === myId);
+          setQtItems([...ceoQt, ...ceoPo]);
+          setEscalatedItems([]);
+        } else if (role?.code === 'ADMIN') {
           setQtItems([...uniquePending, ...poItems]);
           setEscalatedItems([]);
         } else {
@@ -347,12 +348,17 @@ export default function ApprovalQueuePage() {
             Approval Queue
           </h1>
           <p className="text-[12px] text-amber-200/70 mt-0.5">
-            {isManager ? 'รายการที่รอการอนุมัติ / ตรวจสอบจากคุณ' : 'รายการที่อยู่ระหว่างดำเนินการ'}
+            {isCeo
+              ? 'Quotation ที่ Division Manager ส่งต่อมาให้คุณพิจารณา'
+              : isManager
+              ? 'รายการที่รอการอนุมัติ / ตรวจสอบจากคุณ'
+              : 'รายการที่อยู่ระหว่างดำเนินการ'
+            }
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Summary counters */}
-          {isManager && escalatedItems.length > 0 && (
+          {isManager && !isCeo && escalatedItems.length > 0 && (
             <div className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-1.5">
               <Flame className="h-3.5 w-3.5 text-red-300" />
               <span className="text-white font-bold text-sm">{loading ? '…' : escalatedItems.length}</span>
@@ -376,7 +382,7 @@ export default function ApprovalQueuePage() {
       </div>
 
       {/* ── Over-budget section (Manager only) ── */}
-      {isManager && (
+      {isManager && !isCeo && (
         <OverBudgetSection items={escalatedItems} loading={loading} />
       )}
 
@@ -385,15 +391,15 @@ export default function ApprovalQueuePage() {
 
         {/* Quotation Panel */}
         <Panel
-          title={isManager ? 'Quotation รออนุมัติ' : 'Quotation ของฉัน'}
-          icon={<FileText className="h-4 w-4 text-amber-300" />}
+          title={isCeo ? 'Quotation รอการตัดสินใจ CEO' : isManager ? 'Quotation รออนุมัติ' : 'Quotation ของฉัน'}
+          icon={isCeo ? <Crown className="h-4 w-4 text-amber-300" /> : <FileText className="h-4 w-4 text-amber-300" />}
           count={qtItems.length}
           loading={loading}
           viewAllHref="/quotations"
           accent="from-amber-900/30 to-orange-900/20 dark:from-amber-900/40 dark:to-orange-900/30"
         >
           {!loading && qtItems.length === 0 && (
-            <EmptyPanel label={isManager ? 'ไม่มี Quotation รออนุมัติ' : 'ไม่มี Quotation ที่อยู่ระหว่างดำเนินการ'} />
+            <EmptyPanel label={isCeo ? 'ไม่มี Quotation ที่ Division Manager ส่งมาให้' : isManager ? 'ไม่มี Quotation รออนุมัติ' : 'ไม่มี Quotation ที่อยู่ระหว่างดำเนินการ'} />
           )}
           {qtItems.map((q) => <QtCard key={q.id} q={q} />)}
         </Panel>
@@ -422,7 +428,7 @@ export default function ApprovalQueuePage() {
             <TrendingUp className="h-3.5 w-3.5" />
             รวม <span className="font-semibold text-foreground">{totalCount}</span> รายการรอดำเนินการ
           </span>
-          {isManager && escalatedItems.length > 0 && (
+          {isManager && !isCeo && escalatedItems.length > 0 && (
             <span className="flex items-center gap-1.5 text-red-500">
               <Flame className="h-3 w-3" />
               เกินอำนาจ <span className="font-semibold">{escalatedItems.length}</span>

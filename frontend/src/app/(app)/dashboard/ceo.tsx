@@ -61,7 +61,7 @@ interface CeoDashboardData {
   };
   marginAnalysis?: {
     totalDiscountGiven: number; avgDiscountRate: number;
-    specialDiscountCount: number; approvedCount: number;
+    approvedCount: number;
     totalApprovedSubtotal: number;
   };
   soExecution?: {
@@ -442,8 +442,7 @@ function CeoDashboardContent({
   ];
   const attentions = [
     ...(data.totals.pending > 10 ? [`${data.totals.pending} QT รออนุมัติสะสมในระบบ`] : []),
-    ...((data.marginAnalysis?.specialDiscountCount ?? 0) > 0 ? [`${data.marginAnalysis!.specialDiscountCount} Special Discount Requests`] : []),
-    ...(convRate < 40 && data.totals.quotations > 5 ? [`Conversion Rate ${convRate}% ต่ำกว่าเป้า (50%)`] : []),
+...(convRate < 40 && data.totals.quotations > 5 ? [`Conversion Rate ${convRate}% ต่ำกว่าเป้า (50%)`] : []),
     // Rejection patterns
     ...((data.rejectionReasons?.length ?? 0) > 0
       ? [`Rejection Pattern: "${data.rejectionReasons![0].reason}" (${data.rejectionReasons![0].count}×)`]
@@ -947,33 +946,8 @@ function CeoDashboardContent({
             </div>
           )}
 
-          {/* Special Discount + Rejection Reasons */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-            {/* Special Discount */}
-            <div className="rounded-xl p-3.5 bg-muted/30 border border-border/40">
-              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
-                <Zap className="h-3.5 w-3.5 text-amber-500" />
-                Special Discount Requests
-              </div>
-              {data.marginAnalysis.specialDiscountCount > 0 ? (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{data.marginAnalysis.specialDiscountCount}</div>
-                    <div className="text-[11px] text-muted-foreground">คำขอพิเศษ รออนุมัติ CEO</div>
-                  </div>
-                  <Button asChild size="sm" variant="outline" className="h-7 text-xs">
-                    <Link href="/special-discount">ดูรายการ <ArrowUpRight className="h-3 w-3 ml-0.5" /></Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />ไม่มี Special Discount รอพิจารณา
-                </div>
-              )}
-            </div>
-
-            {/* Rejection Reasons */}
-            <div className="rounded-xl p-3.5 bg-muted/30 border border-border/40">
+          {/* Rejection Reasons */}
+          <div className="rounded-xl p-3.5 bg-muted/30 border border-border/40 mt-2">
               <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
                 <XCircle className="h-3.5 w-3.5 text-red-500" />
                 Rejection Patterns
@@ -991,7 +965,6 @@ function CeoDashboardContent({
                 <div className="text-xs text-muted-foreground">ยังไม่มีข้อมูล Rejection Pattern</div>
               )}
             </div>
-          </div>
         </div>
       )}
 
@@ -1295,7 +1268,6 @@ function CeoDashboardContent({
           <div className="mt-4 pt-4 border-t border-slate-700/40 flex flex-wrap gap-2">
             {[
               { href: '/approval-queue', label: 'Approval Center', icon: <Shield className="h-3 w-3" /> },
-              { href: '/special-discount', label: 'Special Discounts', icon: <Zap className="h-3 w-3" /> },
               { href: '/history', label: 'Audit Trail', icon: <BookOpen className="h-3 w-3" /> },
               { href: '/quotations', label: 'All Quotations', icon: <FileText className="h-3 w-3" /> },
             ].map((l) => (

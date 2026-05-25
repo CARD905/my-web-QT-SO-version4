@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle, Lock, Star } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -62,7 +62,6 @@ export default function EditQuotationPage() {
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
   const [normalDiscountMax, setNormalDiscountMax] = useState(20);
-  const [specialDiscountMax, setSpecialDiscountMax] = useState(50);
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [conditions, setConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([]);
@@ -76,7 +75,7 @@ export default function EditQuotationPage() {
           api.get<ApiResponse<Quotation>>(`/quotations/${id}`),
           api.get<ApiResponse<Customer[]>>('/customers?limit=100'),
           api.get<ApiResponse<Product[]>>('/products?limit=100&isActive=true'),
-          api.get<ApiResponse<{ normalDiscountMax: number; specialDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
+          api.get<ApiResponse<{ normalDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
           api.get<ApiResponse<ProductCategory[]>>('/product-categories'),
         ]);
         const q = qRes.data.data;
@@ -97,7 +96,6 @@ export default function EditQuotationPage() {
         setCategories(catRes.data.data ?? []);
         if (sRes.data.data) {
           setNormalDiscountMax(sRes.data.data.normalDiscountMax);
-          setSpecialDiscountMax(sRes.data.data.specialDiscountMax);
         }
 
         setCustomerId(q.customerId);
@@ -142,9 +140,9 @@ export default function EditQuotationPage() {
       if ('discount' in patch || 'discountType' in patch || 'quantity' in patch || 'unitPrice' in patch) {
         const gross = updated.quantity * updated.unitPrice;
         if (updated.discountType === 'PERCENTAGE') {
-          updated.discount = Math.min(updated.discount, specialDiscountMax);
+          updated.discount = Math.min(updated.discount, normalDiscountMax);
         } else if (updated.discountType === 'FIXED' && gross > 0) {
-          updated.discount = Math.min(updated.discount, (specialDiscountMax / 100) * gross);
+          updated.discount = Math.min(updated.discount, (normalDiscountMax / 100) * gross);
         }
       }
       return updated;
@@ -380,9 +378,8 @@ export default function EditQuotationPage() {
               <h2 className="text-base font-semibold">{t('quotation.lineItems')}</h2>
               <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                 <Lock className="h-3 w-3" />
-                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดปกติสูงสุด
+                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดสูงสุด
                 <span className="font-semibold text-foreground">{normalDiscountMax}%</span>
-                {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{specialDiscountMax}%</span>
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setItems((p) => [...p, newItem()])}>
@@ -432,14 +429,10 @@ export default function EditQuotationPage() {
           <div className="space-y-2 mt-2">
             {items.map((item, idx) => {
               const gross = item.quantity * item.unitPrice;
-              const effectivePct = item.discountType === 'PERCENTAGE'
-                ? item.discount
-                : (gross > 0 ? (item.discount / gross) * 100 : 0);
-              const isSpecialItem = effectivePct > normalDiscountMax;
               return (
               <div
                 key={item.id}
-                className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_100px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}
+                className="grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_100px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 bg-muted/30 md:bg-transparent"
               >
                 <div>
                   <select
@@ -517,15 +510,14 @@ export default function EditQuotationPage() {
                     type="number"
                     min="0"
                     step="0.01"
-                    max={item.discountType === 'PERCENTAGE' ? specialDiscountMax : (gross > 0 ? (specialDiscountMax / 100) * gross : undefined)}
+                    max={item.discountType === 'PERCENTAGE' ? normalDiscountMax : (gross > 0 ? (normalDiscountMax / 100) * gross : undefined)}
                     value={item.discount}
                     onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
-                    className={`h-9 text-right ${isSpecialItem ? 'border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : ''}`}
+                    className="h-9 text-right"
                   />
-                  {isSpecialItem && <Star className="absolute right-1.5 top-2 h-3 w-3 text-amber-500 pointer-events-none" />}
                   {item.discountType === 'FIXED' && gross > 0 && (
                     <div className="text-[10px] text-right text-muted-foreground">
-                      สูงสุด {formatNumber((specialDiscountMax / 100) * gross)}
+                      สูงสุด {formatNumber((normalDiscountMax / 100) * gross)}
                     </div>
                   )}
                 </div>

@@ -21,20 +21,7 @@ import {
   UpdateQuotationInput,
 } from './quotations.schema';
 
-const NORMAL_DISCOUNT_MAX = 20; // fallback default
-const SPECIAL_DISCOUNT_MAX = 50; // fallback default
 const HIGH_VALUE_THRESHOLD = 100000;
-
-async function getDiscountLimits() {
-  const [normalSetting, specialSetting] = await Promise.all([
-    prisma.systemSetting.findUnique({ where: { key: 'discount.normalMax' } }),
-    prisma.systemSetting.findUnique({ where: { key: 'discount.specialMax' } }),
-  ]);
-  return {
-    normalMax: normalSetting ? (parseFloat(normalSetting.value) || NORMAL_DISCOUNT_MAX) : NORMAL_DISCOUNT_MAX,
-    specialMax: specialSetting ? (parseFloat(specialSetting.value) || SPECIAL_DISCOUNT_MAX) : SPECIAL_DISCOUNT_MAX,
-  };
-}
 const EXPIRING_SOON_DAYS = 7;
 
 export interface CurrentUser {
@@ -297,10 +284,6 @@ export const quotationsService = {
     if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot edit quotation with status ${existing.status}`);
     }
-    if ((existing as any).specialDiscountRequested && (existing as any).specialDiscountStatus === 'PENDING') {
-      throw new AppError(409, 'SPECIAL_DISCOUNT_PENDING', 'ไม่สามารถแก้ไขได้ — รอการอนุมัติ Special Discount ก่อน');
-    }
-
     const customer = await prisma.customer.findFirst({ where: { id: input.customerId, deletedAt: null } });
     if (!customer) throw new AppError(404, 'CUSTOMER_NOT_FOUND', 'Customer not found');
     if (input.expiryDate < input.issueDate) throw new AppError(400, 'INVALID_DATE', 'Expiry date must be after issue date');
@@ -406,20 +389,6 @@ export const quotationsService = {
       targetApproverName = found.approverName;
     }
 
-    // Detect special discount: any % discount exceeding Division Manager's discountLimit → flag for CEO chain
-    const maxPctDiscount = (existing.items as Array<{ discount: any; discountType: string }>)
-      .filter((it) => it.discountType === 'PERCENTAGE')
-      .reduce((max, it) => Math.max(max, Number(it.discount)), 0);
-    const divisionManager = await prisma.user.findFirst({
-      where: { deletedAt: null, role: { code: 'MANAGER' }, managerLevel: 'DIVISION', isActive: true },
-      select: { discountLimit: true },
-    });
-    const divisionDiscountLimit = divisionManager?.discountLimit ? Number(divisionManager.discountLimit) : null;
-    const shouldBeSpecialDiscount = divisionDiscountLimit !== null && maxPctDiscount > divisionDiscountLimit;
-    const specialDiscountData: Record<string, any> = shouldBeSpecialDiscount
-      ? { specialDiscountRequested: true, specialDiscountPercent: maxPctDiscount, specialDiscountStatus: 'PENDING' }
-      : { specialDiscountRequested: false, specialDiscountStatus: null, specialDiscountPercent: null };
-
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
@@ -430,8 +399,7 @@ export const quotationsService = {
           rejectedById: null,
           rejectedAt: null,
           rejectionReason: null,
-          ...specialDiscountData,
-        } as any,
+        },
         include: quotationDetailInclude,
       });
 
@@ -444,9 +412,7 @@ export const quotationsService = {
       await createNotification(tx, {
         userId: targetApproverId!,
         type: isResubmit ? 'QUOTATION_RESUBMITTED' : 'QUOTATION_SUBMITTED',
-        title: isResubmit ? '🔄 Quotation resubmitted'
-          : shouldBeSpecialDiscount ? `⭐ Quotation รออนุมัติ (ส่วนลด ${maxPctDiscount}%)`
-          : '📋 Quotation รออนุมัติ',
+        title: isResubmit ? '🔄 Quotation resubmitted' : '📋 Quotation รออนุมัติ',
         message: `${q.quotationNo} จาก ${q.customerCompany} (${q.grandTotal} ${q.currency})`,
         link: `/quotations/${q.id}`,
         metadata: { quotationId: q.id },
@@ -608,18 +574,6 @@ export const quotationsService = {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 
-    // ถ้าเป็น Special Discount (discount เกินอำนาจ Division Manager) → เฉพาะ CEO เท่านั้นที่อนุมัติได้
-    // ทุก manager ในสาย MUST escalate จนถึง CEO
-    const isSpecialDiscountPending =
-      !!(existing as any).specialDiscountRequested &&
-      (existing as any).specialDiscountStatus === 'PENDING';
-    if (isSpecialDiscountPending && !isCeo) {
-      throw new AppError(
-        403, 'SPECIAL_DISCOUNT_REQUIRES_CEO',
-        `ใบนี้มีคำขอ Special Discount ${(existing as any).specialDiscountPercent ?? ''}% เกินอำนาจ Division Manager — กรุณากด "ส่งต่อ" เพื่อส่งขึ้นสายงานจนถึง CEO`,
-      );
-    }
-
     // เช็ค money limit (CEO ไม่มีขีดจำกัด)
     const approverLimit = Number(approverUser.approvalLimit ?? 0);
     const grandTotal = Number(existing.grandTotal);
@@ -647,8 +601,6 @@ export const quotationsService = {
       throw new AppError(409, 'EXPIRED', 'Cannot approve expired quotation');
     }
 
-    const isSpecialDiscount = !!(existing as any).specialDiscountRequested;
-
     const quotation = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
@@ -657,13 +609,6 @@ export const quotationsService = {
           approvedAt: new Date(),
           approvedById: approverId,
           currentApproverId: null,
-          // CEO approves special discount along with the quotation
-          ...(isSpecialDiscount ? {
-            specialDiscountStatus: 'APPROVED',
-            specialDiscountFinalPct: (existing as any).specialDiscountPercent,
-            specialDiscountById: approverId,
-            specialDiscountAt: new Date(),
-          } : {}),
         },
         include: quotationDetailInclude,
       });
@@ -910,229 +855,6 @@ export const quotationsService = {
     const isAdmin = currentUser.roleCode === 'ADMIN' || currentUser.roleCode === 'CEO';
     if (!isOwner && !isAdmin) throw new AppError(403, 'FORBIDDEN', 'Cannot delete other users comment');
     await prisma.quotationComment.delete({ where: { id: commentId } });
-  },
-
-  // ============================================================
-  // SPECIAL DISCOUNT
-  // ============================================================
-  async listSpecialDiscountRequests(currentUser: CurrentUser) {
-    return prisma.quotation.findMany({
-      where: { deletedAt: null, specialDiscountRequested: true, specialDiscountStatus: 'PENDING' },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true, quotationNo: true, customerCompany: true, grandTotal: true, currency: true,
-        specialDiscountPercent: true, specialDiscountReason: true, specialDiscountStatus: true, createdAt: true,
-        createdBy: { select: { id: true, name: true, email: true } },
-        items: { select: { productName: true, discount: true, discountType: true, lineTotal: true } },
-      },
-    });
-  },
-
-  async approveSpecialDiscount(id: string, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO can approve special discounts');
-    }
-    const q = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
-    if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING') {
-      throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
-    }
-
-    // CEO ต้องเป็น currentApprover — quotation ต้องถูก escalate ผ่านสายงานมาถึง CEO ก่อน
-    if (q.currentApproverId !== currentUser.id) {
-      throw new AppError(
-        403, 'NOT_IN_CEO_QUEUE',
-        'Quotation ยังไม่ถูกส่งต่อมาถึง CEO — กรุณารอให้ Manager ในสายงาน escalate ขึ้นมาก่อน',
-      );
-    }
-
-    // Approve ทั้ง Special Discount และ Quotation พร้อมกันในขั้นตอนเดียว
-    const ceoUser = await prisma.user.findUnique({
-      where: { id: currentUser.id },
-      include: { role: true },
-    });
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const result = await tx.quotation.update({
-        where: { id },
-        data: {
-          status: 'APPROVED',
-          approvedAt: new Date(),
-          approvedById: currentUser.id,
-          currentApproverId: null,
-          specialDiscountStatus: 'APPROVED',
-          specialDiscountFinalPct: (q as any).specialDiscountPercent,
-          specialDiscountById: currentUser.id,
-          specialDiscountAt: new Date(),
-        },
-        include: quotationDetailInclude,
-      });
-
-      // บันทึก approval log
-      await tx.quotationApproval.create({
-        data: {
-          quotationId: id,
-          approverId: currentUser.id,
-          approverName: ceoUser!.name,
-          approverEmail: ceoUser!.email,
-          approverRoleId: ceoUser!.roleId,
-          approverRoleCode: 'CEO',
-          approverRoleName: ceoUser!.role.nameTh,
-          step: q.currentStep + 1,
-          totalSteps: q.totalSteps,
-          status: 'APPROVED',
-          comment: `Special Discount ${(q as any).specialDiscountPercent}% approved`,
-          grandTotalAtAction: q.grandTotal,
-          approverLimitAtAction: null,
-          exceedsLimit: false,
-          quotationVersion: q.version,
-        },
-      });
-
-      await tx.notification.create({
-        data: {
-          userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
-          title: '⭐ Special Discount อนุมัติแล้ว',
-          message: `${q.quotationNo} — CEO อนุมัติส่วนลด ${(q as any).specialDiscountPercent}% และ Quotation เรียบร้อยแล้ว — กรุณาอัปโหลดใบ PO`,
-          link: `/quotations/checklist/${q.id}`,
-        },
-      });
-
-      return result;
-    });
-
-    await logActivity(prisma, {
-      userId: currentUser.id, action: 'quotation.specialDiscount.approve',
-      entityType: 'Quotation', entityId: id,
-      description: `CEO approved special discount ${(q as any).specialDiscountPercent}% + quotation ${q.quotationNo}`, req,
-    });
-
-    return updated;
-  },
-
-  async rejectSpecialDiscount(id: string, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO can reject special discounts');
-    }
-    const q = await prisma.quotation.findFirst({
-      where: { id, deletedAt: null },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
-    });
-    if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING') {
-      throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
-    }
-
-    const rejectLimits = await getDiscountLimits();
-    const cappedItems = q.items.map((it) => ({
-      quantity: Number(it.quantity), unitPrice: Number(it.unitPrice),
-      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > rejectLimits.normalMax
-        ? rejectLimits.normalMax : Number(it.discount),
-      discountType: it.discountType,
-    }));
-    const { subtotal, discountTotal, vatAmount, grandTotal, itemTotals } = calcQuotation(
-      cappedItems, q.vatEnabled, Number(q.vatRate),
-    );
-
-    await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < q.items.length; i++) {
-        await tx.quotationItem.update({
-          where: { id: q.items[i].id },
-          data: { discount: cappedItems[i].discount, lineTotal: itemTotals[i] },
-        });
-      }
-      await tx.quotation.update({
-        where: { id },
-        data: {
-          subtotal, discountTotal, vatAmount, grandTotal,
-          specialDiscountStatus: 'REJECTED',
-          specialDiscountFinalPct: rejectLimits.normalMax,
-          specialDiscountById: currentUser.id,
-          specialDiscountAt: new Date(),
-        },
-      });
-    });
-
-    await prisma.notification.create({
-      data: {
-        userId: q.createdById, type: 'QUOTATION_REJECTED' as any,
-        title: '❌ Special Discount ถูกปฏิเสธ',
-        message: `${q.quotationNo} — ส่วนลดถูกปรับเหลือ ${rejectLimits.normalMax}% อัตโนมัติ`,
-        link: `/quotations/${q.id}`,
-      },
-    });
-
-    await logActivity(prisma, {
-      userId: currentUser.id, action: 'quotation.specialDiscount.reject',
-      entityType: 'Quotation', entityId: id,
-      description: `Rejected special discount for ${q.quotationNo}`, req,
-    });
-
-    return { message: `Special discount rejected. Discounts auto-reduced to ${rejectLimits.normalMax}%` };
-  },
-
-  async modifySpecialDiscount(id: string, finalPercent: number, currentUser: CurrentUser, req?: Request) {
-    if (!['CEO'].includes(currentUser.roleCode)) {
-      throw new AppError(403, 'FORBIDDEN', 'Only CEO can modify special discounts');
-    }
-    const modifyLimits = await getDiscountLimits();
-    if (finalPercent < 0 || finalPercent > modifyLimits.specialMax) {
-      throw new AppError(400, 'BAD_REQUEST', `Final percent must be between 0 and ${modifyLimits.specialMax}`);
-    }
-    const q = await prisma.quotation.findFirst({
-      where: { id, deletedAt: null },
-      include: { items: { orderBy: { sortOrder: 'asc' } } },
-    });
-    if (!q) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
-    if ((q as any).specialDiscountStatus !== 'PENDING') {
-      throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
-    }
-
-    const modifiedItems = q.items.map((it) => ({
-      quantity: Number(it.quantity), unitPrice: Number(it.unitPrice),
-      discount: it.discountType === 'PERCENTAGE' && Number(it.discount) > modifyLimits.normalMax
-        ? finalPercent : Number(it.discount),
-      discountType: it.discountType,
-    }));
-    const { subtotal, discountTotal, vatAmount, grandTotal, itemTotals } = calcQuotation(
-      modifiedItems, q.vatEnabled, Number(q.vatRate),
-    );
-
-    await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < q.items.length; i++) {
-        await tx.quotationItem.update({
-          where: { id: q.items[i].id },
-          data: { discount: modifiedItems[i].discount, lineTotal: itemTotals[i] },
-        });
-      }
-      await tx.quotation.update({
-        where: { id },
-        data: {
-          subtotal, discountTotal, vatAmount, grandTotal,
-          specialDiscountStatus: 'MODIFIED',
-          specialDiscountFinalPct: finalPercent,
-          specialDiscountById: currentUser.id,
-          specialDiscountAt: new Date(),
-        },
-      });
-    });
-
-    await prisma.notification.create({
-      data: {
-        userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
-        title: '🟡 Special Discount ได้รับการปรับ',
-        message: `${q.quotationNo} — CEO อนุมัติ ${finalPercent}%`,
-        link: `/quotations/${q.id}`,
-      },
-    });
-
-    await logActivity(prisma, {
-      userId: currentUser.id, action: 'quotation.specialDiscount.modify',
-      entityType: 'Quotation', entityId: id,
-      description: `Modified special discount for ${q.quotationNo}: → ${finalPercent}%`, req,
-    });
-
-    return { message: `Special discount modified to ${finalPercent}%` };
   },
 
   // ============================================================

@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Loader2, Plus, Save, Send, Trash2, X,
-  Star, Lock,
+  ArrowLeft, Loader2, Plus, Save, Send, Trash2, X, Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -39,20 +38,6 @@ const newItem = (): LineItem => ({
   discount: 0, discountType: 'PERCENTAGE',
 });
 
-function detectSpecialDiscount(items: LineItem[], normalMax: number): { hasSpecial: boolean; maxPct: number } {
-  let maxPct = 0, hasSpecial = false;
-  for (const it of items) {
-    const gross = it.quantity * it.unitPrice;
-    const effectivePct = it.discountType === 'PERCENTAGE'
-      ? it.discount
-      : (gross > 0 ? (it.discount / gross) * 100 : 0);
-    if (effectivePct > normalMax) {
-      hasSpecial = true;
-      if (effectivePct > maxPct) maxPct = effectivePct;
-    }
-  }
-  return { hasSpecial, maxPct: Math.round(maxPct * 100) / 100 };
-}
 
 export default function NewQuotationPage() {
   const t = useT();
@@ -71,7 +56,6 @@ export default function NewQuotationPage() {
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
   const [normalDiscountMax, setNormalDiscountMax] = useState(20);
-  const [specialDiscountMax, setSpecialDiscountMax] = useState(50);
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [conditions, setConditions] = useState('');
   const [items, setItems] = useState<LineItem[]>([newItem()]);
@@ -84,7 +68,7 @@ export default function NewQuotationPage() {
         const [cRes, pRes, sRes, catRes] = await Promise.all([
           api.get<ApiResponse<Customer[]>>('/customers?limit=100'),
           api.get<ApiResponse<Product[]>>('/products?limit=100&isActive=true'),
-          api.get<ApiResponse<{ normalDiscountMax: number; specialDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
+          api.get<ApiResponse<{ normalDiscountMax: number; defaultVatRate: number }>>('/admin/quotation-settings'),
           api.get<ApiResponse<ProductCategory[]>>('/product-categories'),
         ]);
         setCustomers(cRes.data.data ?? []);
@@ -92,7 +76,6 @@ export default function NewQuotationPage() {
         setCategories(catRes.data.data ?? []);
         if (sRes.data.data) {
           setNormalDiscountMax(sRes.data.data.normalDiscountMax);
-          setSpecialDiscountMax(sRes.data.data.specialDiscountMax);
           setVatRate(sRes.data.data.defaultVatRate);
         }
       } catch (err) { toast.error(getApiErrorMessage(err)); }
@@ -119,9 +102,9 @@ export default function NewQuotationPage() {
       if ('discount' in patch || 'discountType' in patch || 'quantity' in patch || 'unitPrice' in patch) {
         const gross = updated.quantity * updated.unitPrice;
         if (updated.discountType === 'PERCENTAGE') {
-          updated.discount = Math.min(updated.discount, specialDiscountMax);
+          updated.discount = Math.min(updated.discount, normalDiscountMax);
         } else if (updated.discountType === 'FIXED' && gross > 0) {
-          updated.discount = Math.min(updated.discount, (specialDiscountMax / 100) * gross);
+          updated.discount = Math.min(updated.discount, (normalDiscountMax / 100) * gross);
         }
       }
       return updated;
@@ -160,9 +143,7 @@ export default function NewQuotationPage() {
     return { subtotal: grossSubtotal, discountTotal, vatAmount, grandTotal: afterDisc + vatAmount, itemTotals };
   }, [items, vatEnabled, vatRate]);
 
-  const { hasSpecial, maxPct } = useMemo(() => detectSpecialDiscount(items, normalDiscountMax), [items, normalDiscountMax]);
-
-  const submitForm = async (mode: 'draft' | 'submit') => {
+const submitForm = async (mode: 'draft' | 'submit') => {
     if (!customerId) { toast.error('Please select a customer'); return; }
     if (items.some((it) => !it.productName.trim() || it.quantity <= 0)) { toast.error('Please fill in all product names and quantities'); return; }
     if (items.some((it) => it.minUnitPrice > 0 && it.unitPrice < it.minUnitPrice)) {
@@ -170,10 +151,7 @@ export default function NewQuotationPage() {
       return;
     }
     if (mode === 'submit') {
-      const confirmMsg = hasSpecial
-        ? `ยืนยันส่งใบเสนอราคา?\n\nมีส่วนลดสูง ${maxPct}% — ระบบจะส่งผ่านสายงานอนุมัติตามลำดับ`
-        : `ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`;
-      if (!confirm(confirmMsg)) return;
+      if (!confirm(`ยืนยันส่งใบเสนอราคาเพื่อขออนุมัติ?\n\nหลังจากส่งแล้ว จะไม่สามารถยกเลิกหรือกลับมาแก้ไขได้`)) return;
     }
     setSubmitting(mode);
     try {
@@ -224,7 +202,6 @@ export default function NewQuotationPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold">QT-NEW</h1>
             <Badge className="status-draft" variant="outline">● {t('common.draft')}</Badge>
-            {hasSpecial && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-400 text-[10px]"><Star className="h-3 w-3 mr-1" />Special Discount</Badge>}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">{t('quotation.newQuotation')}</p>
         </div>
@@ -279,9 +256,8 @@ export default function NewQuotationPage() {
               <h2 className="text-base font-semibold">{t('quotation.lineItems')}</h2>
               <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                 <Lock className="h-3 w-3" />
-                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดปกติสูงสุด
+                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดสูงสุด
                 <span className="font-semibold text-foreground">{normalDiscountMax}%</span>
-                {' · '}Special สูงสุด <span className="font-semibold text-amber-600">{specialDiscountMax}%</span>
               </p>
             </div>
             <Button variant="outline" size="sm" disabled={isFullyDisabled} onClick={() => setItems((p) => [...p, newItem()])}>
@@ -329,13 +305,9 @@ export default function NewQuotationPage() {
           <div className="space-y-2 mt-2">
             {items.map((item, idx) => {
               const gross = item.quantity * item.unitPrice;
-              const effectivePct = item.discountType === 'PERCENTAGE'
-                ? item.discount
-                : (gross > 0 ? (item.discount / gross) * 100 : 0);
-              const isSpecialItem = effectivePct > normalDiscountMax;
               const isBelowMin = item.minUnitPrice > 0 && item.unitPrice < item.minUnitPrice;
               return (
-                <div key={item.id} className={`grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 ${isSpecialItem ? 'border-amber-300 bg-amber-50/50 dark:bg-amber-900/10' : 'bg-muted/30 md:bg-transparent'}`}>
+                <div key={item.id} className="grid grid-cols-1 md:grid-cols-[1.5fr_1.5fr_70px_110px_80px_80px_100px_40px] gap-2 p-2 rounded-lg border md:border-0 bg-muted/30 md:bg-transparent">
                   <div>
                     <select value={item.productId || ''} disabled={isFullyDisabled} onChange={(e) => onProductSelect(item.id, e.target.value)}
                       className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:opacity-60">
@@ -374,14 +346,13 @@ export default function NewQuotationPage() {
 
                   <div className="relative space-y-0.5">
                     <Input type="number" min="0" step="0.01"
-                      max={item.discountType === 'PERCENTAGE' ? specialDiscountMax : (gross > 0 ? (specialDiscountMax / 100) * gross : undefined)}
+                      max={item.discountType === 'PERCENTAGE' ? normalDiscountMax : (gross > 0 ? (normalDiscountMax / 100) * gross : undefined)}
                       disabled={isFullyDisabled} value={item.discount}
                       onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
-                      className={`h-9 text-right ${isSpecialItem ? 'border-amber-400 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300' : ''}`} />
-                    {isSpecialItem && <Star className="absolute right-1.5 top-2 h-3 w-3 text-amber-500 pointer-events-none" />}
+                      className="h-9 text-right" />
                     {item.discountType === 'FIXED' && gross > 0 && (
                       <div className="text-[10px] text-right text-muted-foreground">
-                        สูงสุด {formatNumber((specialDiscountMax / 100) * gross)}
+                        สูงสุด {formatNumber((normalDiscountMax / 100) * gross)}
                       </div>
                     )}
                   </div>
@@ -404,20 +375,6 @@ export default function NewQuotationPage() {
         </CardContent>
       </Card>
 
-      {hasSpecial && (
-        <Card className="border border-amber-300 bg-amber-50/60 dark:bg-amber-900/20">
-          <CardContent className="pt-4 pb-4 flex gap-3 items-center">
-            <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-800 flex items-center justify-center shrink-0">
-              <Star className="h-4 w-4 text-amber-600" />
-            </div>
-            <div className="text-sm text-amber-800 dark:text-amber-200">
-              <span className="font-semibold">ส่วนลดสูง {maxPct}%</span>
-              <span className="text-amber-700 dark:text-amber-300 ml-2">— เมื่อส่งขออนุมัติ ระบบจะส่งผ่านสายงานตามลำดับ (Section → Department → Division → CEO)</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Summary */}
       <Card>
         <CardContent className="pt-6">
@@ -425,7 +382,7 @@ export default function NewQuotationPage() {
             <div className="w-full md:w-80 space-y-3">
               <div className="text-xs font-semibold text-muted-foreground uppercase">{t('quotation.summary')}</div>
               <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.subtotal')}</span><span className="font-medium">{formatMoney(calc.subtotal, currency)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground flex items-center gap-1">{t('quotation.discount')}{hasSpecial && <Star className="h-3 w-3 text-amber-500" />}</span><span className="font-medium text-destructive">-{formatMoney(calc.discountTotal, currency)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.discount')}</span><span className="font-medium text-destructive">-{formatMoney(calc.discountTotal, currency)}</span></div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground flex items-center gap-2">
                   {t('quotation.vat')} ({vatRate}%)
@@ -469,11 +426,6 @@ export default function NewQuotationPage() {
                 <span className="text-muted-foreground">รวมสุทธิ:</span>
                 <span className="text-lg font-bold text-primary">{formatMoney(calc.grandTotal, currency)}</span>
               </div>
-              {hasSpecial && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 border border-amber-300 text-xs text-amber-700 dark:text-amber-300">
-                  <Star className="h-3 w-3" />Special Discount {maxPct}% — รออนุมัติผ่านสายงาน
-                </div>
-              )}
             </div>
             <div className="flex gap-2 ml-auto">
               {!locked && <Button variant="ghost" onClick={handleCancel} disabled={isProcessing}><X className="h-4 w-4" />ยกเลิก</Button>}
@@ -484,9 +436,9 @@ export default function NewQuotationPage() {
               <Button
                 onClick={() => submitForm('submit')}
                 disabled={isFullyDisabled}
-                className={hasSpecial ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'}
+                className="bg-emerald-600 hover:bg-emerald-700"
               >
-                {submitting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : hasSpecial ? <Star className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                {submitting === 'submit' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {locked ? 'ส่งแล้ว — รออนุมัติ' : t('quotation.submitForApproval')}
               </Button>
             </div>

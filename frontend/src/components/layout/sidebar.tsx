@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
-  CheckSquare, Star, Mail, History, Settings, Activity,
+  CheckSquare, Mail, History, Settings, Activity,
   Key, BarChart3, LogIn, BookOpen,
   type LucideIcon,
 } from 'lucide-react';
@@ -176,13 +176,6 @@ const NAV_ITEMS: NavItem[] = [
     showBadge: true,
   },
   {
-    href: '/special-discount',
-    labelKey: 'nav.specialDiscount',
-    icon: Star,
-    onlyRoles: ['CEO'],
-    requires: { resource: 'quotation', action: 'approve', scope: 'ALL' },
-  },
-  {
     href: '/history',
     labelKey: 'nav.history',
     icon: History,
@@ -305,7 +298,6 @@ const CEO_NAV_ITEMS: NavItem[] = [
   { dividerLabel: 'EXECUTIVE', labelKey: '', icon: LayoutDashboard },
   { href: '/dashboard',       labelKey: 'nav.dashboard',    icon: LayoutDashboard },
   { href: '/approval-queue',  labelKey: 'nav.approvalQueue', icon: CheckSquare, showBadge: true },
-  { href: '/special-discount', labelKey: 'nav.specialDiscount', icon: Star },
   // ── GROUP 2: OPERATIONS ─────────────────────────────────────────────────
   { dividerLabel: 'OPERATIONS', labelKey: '', icon: FileText },
   {

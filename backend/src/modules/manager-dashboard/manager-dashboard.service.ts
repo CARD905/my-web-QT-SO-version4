@@ -128,7 +128,7 @@ export const managerDashboardService = {
       revenueTrendRaw,
       soConfirmedCount,
       soPendingCount,
-      customerTopRaw, agingRaw, soStatusBreakdownRaw, soOverdueCount, marginAgg, specialDiscountCount, salesApprovedRaw,
+      customerTopRaw, agingRaw, soStatusBreakdownRaw, soOverdueCount, marginAgg, salesApprovedRaw,
       // ─── Pipeline detail ──────────────────────────────────────────────────────
       pipelineApprovedAgg, pipelinePoPendingAgg, pipelineSoConfirmedAgg,
       pipelineStage1Raw, pipelineStage2Raw, pipelineStage3Raw, pipelineStage4Raw,
@@ -263,11 +263,6 @@ export const managerDashboardService = {
         where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } },
         _sum: { discountTotal: true, subtotal: true },
         _count: { id: true },
-      }),
-
-      // Special discount requests count
-      prisma.quotation.count({
-        where: { ...baseWhere, specialDiscountRequested: true },
       }),
 
       // Approved count per salesperson (for win rate)
@@ -470,7 +465,6 @@ export const managerDashboardService = {
       totalDiscountGiven,
       totalApprovedSubtotal: approvedSubtotal,
       avgDiscountRate: Math.round(avgDiscountRate * 10) / 10,
-      specialDiscountCount,
       approvedCount: marginAgg._count.id,
     };
 
@@ -778,7 +772,7 @@ function emptyDashboard() {
     rejectionReasons: [],
     expiringQuotations: [],
     topOfficers: [], topApprovers: [], recentEscalated: [], statusBreakdown: [],
-    marginAnalysis: { totalDiscountGiven: 0, totalApprovedSubtotal: 0, avgDiscountRate: 0, specialDiscountCount: 0, approvedCount: 0 },
+    marginAnalysis: { totalDiscountGiven: 0, totalApprovedSubtotal: 0, avgDiscountRate: 0, approvedCount: 0 },
     customerInsights: [],
     agingBuckets: { lt1d: { count: 0, value: 0 }, d1to3: { count: 0, value: 0 }, d3to7: { count: 0, value: 0 }, gt7d: { count: 0, value: 0 } },
     soExecution: { statusBreakdown: [], overdueCount: 0, totalSos: 0, completedValue: 0, completedCount: 0 },

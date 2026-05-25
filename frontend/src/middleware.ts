@@ -7,7 +7,6 @@ import type { NextRequest } from 'next/server';
 const ADMIN_BLOCKED = [
   '/quotations',
   '/sale-orders',
-  '/special-discount',
   '/approval-queue',
   '/history',
   '/team',
