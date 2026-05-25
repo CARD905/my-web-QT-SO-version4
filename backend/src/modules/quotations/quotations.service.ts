@@ -154,7 +154,12 @@ export const quotationsService = {
         include: {
           createdBy: { select: { id: true, name: true } },
           approvedBy: { select: { id: true, name: true } },
-          currentApprover: { select: { id: true, name: true } },
+          currentApprover: {
+            select: {
+              id: true, name: true,
+              approvalLimit: true, discountLimit: true, managerLevel: true,
+            },
+          },
           customer: { select: { id: true, company: true } },
           saleOrder: { select: { id: true, saleOrderNo: true } },
           _count: { select: { items: true, comments: true } },
@@ -163,7 +168,19 @@ export const quotationsService = {
       prisma.quotation.count({ where }),
     ]);
 
-    return { data, meta: buildPaginationMeta(total, page, limit) };
+    // Compute max % discount per quotation for approval-queue limit check
+    const ids = data.map((q) => q.id);
+    const maxDiscountRows = ids.length > 0
+      ? await prisma.quotationItem.groupBy({
+          by: ['quotationId'],
+          where: { quotationId: { in: ids }, discountType: 'PERCENTAGE' },
+          _max: { discount: true },
+        })
+      : [];
+    const discountMap = new Map(maxDiscountRows.map((r) => [r.quotationId, Number(r._max.discount ?? 0)]));
+    const enriched = data.map((q) => ({ ...q, maxDiscountPct: discountMap.get(q.id) ?? 0 }));
+
+    return { data: enriched, meta: buildPaginationMeta(total, page, limit) };
   },
 
   // ============================================================

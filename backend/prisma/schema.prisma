@@ -772,6 +772,7 @@ enum NotificationType {
   PO_APPROVED
   PO_REJECTED
   SO_CREATED
+  CUSTOMER_EDIT_REQUEST
 }
 
 enum Lang {

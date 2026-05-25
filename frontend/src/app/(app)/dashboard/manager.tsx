@@ -361,7 +361,7 @@ function DashboardContent({
   const alerts: Array<{ type: 'danger' | 'warning' | 'info'; title: string; desc: string }> =
     data.alerts ?? [
       ...(data.totals.escalated > 0
-        ? [{ type: 'danger' as const, title: `${data.totals.escalated} escalated case${data.totals.escalated > 1 ? 's' : ''} รอ CEO อนุมัติ`, desc: 'ใบเสนอราคามูลค่าสูงเกินอำนาจอนุมัติ' }]
+        ? [{ type: 'danger' as const, title: `${data.totals.escalated} รายการเกินอำนาจการอนุมัติ`, desc: 'เกินวงเงินหรือสิทธิ์ส่วนลด — ต้องส่งต่อผู้มีอำนาจถัดไป' }]
         : []),
       ...(data.totals.pending > 5
         ? [{ type: 'warning' as const, title: `${data.totals.pending} ใบรออนุมัติ`, desc: 'ตรวจสอบว่ามีรายการเกิน SLA 48 ชั่วโมงหรือไม่' }]
@@ -379,7 +379,7 @@ function DashboardContent({
       ? [{ type: 'PO Validation Pending', count: data.totals.poVerificationPending!, value: 0, reason: 'PO รอตรวจสอบความถูกต้อง', priority: 'medium' as const }]
       : []),
     ...(data.totals.escalated > 0
-      ? [{ type: 'Escalated Cases', count: data.totals.escalated, value: 0, reason: 'มูลค่าเกินอำนาจอนุมัติ — รอ CEO', priority: 'high' as const }]
+      ? [{ type: 'Escalated Cases', count: data.totals.escalated, value: 0, reason: 'เกินวงเงินหรือสิทธิ์ส่วนลด — ต้องส่งต่อ', priority: 'high' as const }]
       : []),
   ];
 

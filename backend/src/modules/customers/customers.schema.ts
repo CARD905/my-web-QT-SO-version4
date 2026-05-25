@@ -16,5 +16,11 @@ export const updateCustomerSchema = createCustomerSchema.partial();
 
 export const listCustomersSchema = paginationSchema;
 
+export const editRequestSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(2000),
+  requestedChanges: z.string().min(1, 'Requested changes description is required').max(2000),
+});
+
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+export type EditRequestInput = z.infer<typeof editRequestSchema>;

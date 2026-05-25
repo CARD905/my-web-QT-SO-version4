@@ -251,6 +251,7 @@ export interface Quotation {
   poRejectionReason?: string | null;
   poUploadHistory?: unknown;
   poNumber?: string | null;
+  maxDiscountPct?: number;
 }
 
 export interface QuotationComment {

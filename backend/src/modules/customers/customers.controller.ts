@@ -25,6 +25,19 @@ export const customersController = {
     return success(res, customer, 'Customer updated');
   },
 
+  async editRequest(req: Request, res: Response) {
+    if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
+    const user = req.user as { id: string; name?: string };
+    const result = await customersService.editRequest(
+      req.params.id,
+      req.body,
+      user.id,
+      user.name ?? 'Manager',
+      req,
+    );
+    return success(res, result, 'Edit request sent to admin');
+  },
+
   async remove(req: Request, res: Response) {
     if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
     await customersService.softDelete(req.params.id, req.user.id, req);

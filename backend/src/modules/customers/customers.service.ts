@@ -3,7 +3,7 @@ import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/response';
 import { buildPaginationMeta, getPaginationParams, PaginationQuery } from '../../utils/pagination';
 import { logActivity } from '../../utils/activity-log';
-import { CreateCustomerInput, UpdateCustomerInput } from './customers.schema';
+import { CreateCustomerInput, EditRequestInput, UpdateCustomerInput } from './customers.schema';
 import { Request } from 'express';
 
 export const customersService = {
@@ -112,6 +112,46 @@ export const customersService = {
     });
 
     return updated;
+  },
+
+  async editRequest(id: string, input: EditRequestInput, requesterId: string, requesterName: string, req?: Request) {
+    const customer = await this.getById(id);
+
+    const admins = await prisma.user.findMany({
+      where: { deletedAt: null, isActive: true, role: { code: 'ADMIN' } },
+      select: { id: true },
+    });
+
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
+          userId: admin.id,
+          type: 'CUSTOMER_EDIT_REQUEST' as any,
+          title: '📝 ขอแก้ไขข้อมูลลูกค้า',
+          message: `${requesterName} ขอแก้ไขข้อมูลลูกค้า "${customer.company}" — ${input.requestedChanges}`,
+          link: `/customers`,
+          metadata: {
+            customerId: id,
+            customerCompany: customer.company,
+            requesterId,
+            requesterName,
+            reason: input.reason,
+            requestedChanges: input.requestedChanges,
+          },
+        })),
+      });
+    }
+
+    await logActivity(prisma, {
+      userId: requesterId,
+      action: 'EDIT_REQUEST',
+      entityType: 'Customer',
+      entityId: id,
+      description: `Edit request for customer "${customer.company}": ${input.requestedChanges}`,
+      req,
+    });
+
+    return { success: true };
   },
 
   async softDelete(id: string, userId: string, req?: Request) {

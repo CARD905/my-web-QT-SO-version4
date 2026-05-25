@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, Users, X, Loader2, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Users, X, Loader2, Edit2, Trash2, Lock, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -52,7 +52,6 @@ export default function CustomersPage() {
     return () => clearTimeout(handler);
   }, [search, load]);
 
-  // ─── Stable callbacks ด้วย useCallback ── ป้องกัน modal useEffect re-run ──
   const handleCloseCreate = useCallback(() => setShowCreate(false), []);
   const handleSavedCreate = useCallback(() => {
     setShowCreate(false);
@@ -160,21 +159,22 @@ export default function CustomersPage() {
       )}
 
       {showCreate && (
-        <CustomerModal mode="create" onClose={handleCloseCreate} onSaved={handleSavedCreate} />
+        <CustomerModal mode="create" isManager={false} onClose={handleCloseCreate} onSaved={handleSavedCreate} />
       )}
       {editingId && (
-        <CustomerModal mode="edit" id={editingId} onClose={handleCloseEdit} onSaved={handleSavedEdit} />
+        <CustomerModal mode="edit" id={editingId} isManager={isManager} onClose={handleCloseEdit} onSaved={handleSavedEdit} />
       )}
     </div>
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Customer Modal — fixed: remove onClose from deps, use functional state updates
+// Customer Modal
 // ════════════════════════════════════════════════════════════════════════════
-function CustomerModal({ mode, id, onClose, onSaved }: {
+function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
   mode: 'create' | 'edit';
   id?: string;
+  isManager: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -190,6 +190,9 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
   });
   const [loading, setLoading] = useState(mode === 'edit');
   const [submitting, setSubmitting] = useState(false);
+  const [showEditRequest, setShowEditRequest] = useState(false);
+
+  const restrictedForManager = isManager && mode === 'edit';
 
   useEffect(() => {
     if (mode !== 'edit' || !id) return;
@@ -222,13 +225,10 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
         if (!cancelled) setLoading(false);
       });
 
-    // Cleanup: cancel the update if component unmounts or id changes
     return () => { cancelled = true; };
-    // ✅ ไม่ใส่ onClose ใน deps — ป้องกัน re-fetch เมื่อ parent re-render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id]);
 
-  // ✅ ใช้ functional update ป้องกัน stale closure
   const update = (k: keyof typeof form, v: string) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
@@ -255,61 +255,247 @@ function CustomerModal({ mode, id, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-      <Card className="w-full max-w-2xl shadow-2xl animate-slide-up">
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+        <Card className="w-full max-w-2xl shadow-2xl animate-slide-up">
+          <div className="flex items-center justify-between p-6 border-b">
+            <h2 className="text-xl font-bold">
+              {mode === 'create' ? t('customer.newCustomer') : 'แก้ไขลูกค้า'}
+            </h2>
+            <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
+          </div>
+
+          {loading ? (
+            <CardContent className="pt-6 space-y-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </CardContent>
+          ) : (
+            <CardContent className="pt-6 space-y-4">
+              {/* Restricted fields for manager — read-only with lock icon */}
+              {restrictedForManager && (
+                <div className="rounded-lg border border-muted bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Lock className="h-3.5 w-3.5" />
+                      <span>ข้อมูลที่แก้ไขได้เฉพาะ Admin — ต้องขอแก้ไข</span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5 border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                      onClick={() => setShowEditRequest(true)}
+                    >
+                      <Send className="h-3 w-3" />
+                      ขอแก้ไขข้อมูล
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">{t('customer.contactName')}</Label>
+                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
+                        {form.contactName || '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">{t('customer.company')}</Label>
+                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
+                        {form.company || '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">{t('customer.taxId')}</Label>
+                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
+                        {form.taxId || '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Editable fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {!restrictedForManager && (
+                  <>
+                    <div>
+                      <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
+                      <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
+                    </div>
+                    <div>
+                      <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
+                      <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">{t('customer.taxId')}</Label>
+                      <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
+                    </div>
+                  </>
+                )}
+                <div className={restrictedForManager ? '' : ''}>
+                  <Label className="text-xs">{t('customer.email')}</Label>
+                  <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" autoFocus={restrictedForManager} />
+                </div>
+                <div>
+                  <Label className="text-xs">{t('customer.phone')}</Label>
+                  <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">{t('customer.billingAddress')}</Label>
+                <Input value={form.billingAddress} onChange={(e) => update('billingAddress', e.target.value)} className="mt-1.5" />
+              </div>
+              <div>
+                <Label className="text-xs">{t('customer.shippingAddress')}</Label>
+                <Input value={form.shippingAddress} onChange={(e) => update('shippingAddress', e.target.value)} className="mt-1.5" />
+              </div>
+            </CardContent>
+          )}
+
+          <div className="flex justify-end gap-2 p-6 border-t">
+            <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
+            <Button onClick={submit} disabled={submitting || loading}>
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t('common.save')}
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      {showEditRequest && id && (
+        <EditRequestDialog
+          customerId={id}
+          customerCompany={form.company}
+          currentContactName={form.contactName}
+          currentCompany={form.company}
+          currentTaxId={form.taxId}
+          onClose={() => setShowEditRequest(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Edit Request Dialog — Manager sends change request to Admin
+// ════════════════════════════════════════════════════════════════════════════
+function EditRequestDialog({
+  customerId,
+  customerCompany,
+  currentContactName,
+  currentCompany,
+  currentTaxId,
+  onClose,
+}: {
+  customerId: string;
+  customerCompany: string;
+  currentContactName: string;
+  currentCompany: string;
+  currentTaxId: string;
+  onClose: () => void;
+}) {
+  const [newContactName, setNewContactName] = useState('');
+  const [newCompany, setNewCompany] = useState('');
+  const [newTaxId, setNewTaxId] = useState('');
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const buildRequestedChanges = () => {
+    const lines: string[] = [];
+    if (newContactName.trim()) lines.push(`Contact Name: "${currentContactName}" → "${newContactName.trim()}"`);
+    if (newCompany.trim()) lines.push(`Company: "${currentCompany}" → "${newCompany.trim()}"`);
+    if (newTaxId.trim()) lines.push(`Tax ID: "${currentTaxId || '(ว่าง)'}" → "${newTaxId.trim()}"`);
+    return lines.join(', ');
+  };
+
+  const submit = async () => {
+    const requestedChanges = buildRequestedChanges();
+    if (!requestedChanges) {
+      toast.error('กรุณาระบุข้อมูลที่ต้องการแก้ไข');
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error('กรุณาระบุเหตุผลที่ต้องการแก้ไข');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api.post(`/customers/${customerId}/edit-request`, {
+        reason: reason.trim(),
+        requestedChanges,
+      });
+      toast.success('ส่งคำขอแก้ไขไปยัง Admin แล้ว');
+      onClose();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 animate-fade-in">
+      <Card className="w-full max-w-lg shadow-2xl animate-slide-up">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-bold">
-            {mode === 'create' ? t('customer.newCustomer') : 'แก้ไขลูกค้า'}
-          </h2>
+          <div>
+            <h2 className="text-lg font-bold">ขอแก้ไขข้อมูลลูกค้า</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{customerCompany}</p>
+          </div>
           <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
         </div>
 
-        {loading ? (
-          <CardContent className="pt-6 space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        ) : (
-          <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
-                <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
-              </div>
-              <div>
-                <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
-                <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
-              </div>
-              <div>
-                <Label className="text-xs">{t('customer.taxId')}</Label>
-                <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
-              </div>
-              <div>
-                <Label className="text-xs">{t('customer.email')}</Label>
-                <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" />
-              </div>
-              <div>
-                <Label className="text-xs">{t('customer.phone')}</Label>
-                <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
-              </div>
-            </div>
+        <CardContent className="pt-6 space-y-5">
+          <div className="space-y-3">
+            <p className="text-sm font-medium">ข้อมูลที่ต้องการแก้ไข (ระบุเฉพาะที่ต้องการเปลี่ยน)</p>
+
             <div>
-              <Label className="text-xs">{t('customer.billingAddress')}</Label>
-              <Input value={form.billingAddress} onChange={(e) => update('billingAddress', e.target.value)} className="mt-1.5" />
+              <Label className="text-xs text-muted-foreground">Contact Name ปัจจุบัน: <span className="font-medium text-foreground">{currentContactName || '—'}</span></Label>
+              <Input
+                placeholder="ชื่อผู้ติดต่อใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
+                value={newContactName}
+                onChange={(e) => setNewContactName(e.target.value)}
+                className="mt-1.5"
+              />
             </div>
+
             <div>
-              <Label className="text-xs">{t('customer.shippingAddress')}</Label>
-              <Input value={form.shippingAddress} onChange={(e) => update('shippingAddress', e.target.value)} className="mt-1.5" />
+              <Label className="text-xs text-muted-foreground">Company ปัจจุบัน: <span className="font-medium text-foreground">{currentCompany || '—'}</span></Label>
+              <Input
+                placeholder="ชื่อบริษัทใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
+                value={newCompany}
+                onChange={(e) => setNewCompany(e.target.value)}
+                className="mt-1.5"
+              />
             </div>
-          </CardContent>
-        )}
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Tax ID ปัจจุบัน: <span className="font-medium text-foreground">{currentTaxId || '—'}</span></Label>
+              <Input
+                placeholder="Tax ID ใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
+                value={newTaxId}
+                onChange={(e) => setNewTaxId(e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-medium">เหตุผลที่ต้องการแก้ไข <span className="text-destructive">*</span></Label>
+            <textarea
+              placeholder="อธิบายเหตุผลที่ต้องการแก้ไขข้อมูล เช่น บริษัทเปลี่ยนชื่อ, ข้อมูลผิดพลาด ฯลฯ"
+              value={reason}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
+              rows={3}
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+            />
+          </div>
+        </CardContent>
 
         <div className="flex justify-end gap-2 p-6 border-t">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
-          <Button onClick={submit} disabled={submitting || loading}>
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {t('common.save')}
+          <Button variant="outline" onClick={onClose} disabled={submitting}>ยกเลิก</Button>
+          <Button onClick={submit} disabled={submitting} className="bg-amber-600 hover:bg-amber-700">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            ส่งคำขอแก้ไข
           </Button>
         </div>
       </Card>

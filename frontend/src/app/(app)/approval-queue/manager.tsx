@@ -177,7 +177,7 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
       <div className="rounded-2xl border border-red-300 dark:border-red-800 overflow-hidden">
         <div className="bg-gradient-to-r from-red-900/60 to-rose-900/40 px-4 py-3 flex items-center gap-2">
           <Flame className="h-4 w-4 text-red-300" />
-          <span className="text-[13px] font-semibold text-white">งานเกินวงเงิน — รออนุมัติจาก Manager</span>
+          <span className="text-[13px] font-semibold text-white">งานเกินอำนาจการอนุมัติ — รออนุมัติจาก Manager</span>
         </div>
         <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
           {[0,1,2].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
@@ -199,7 +199,7 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[13px] font-bold text-white">งานเกินวงเงิน</span>
+              <span className="text-[13px] font-bold text-white">งานเกินอำนาจการอนุมัติ</span>
               <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-[11px] font-bold text-white shadow">
                 {items.length}
               </span>
@@ -207,7 +207,7 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
             </div>
             <div className="text-[11px] text-red-200/60 mt-0.5">
               มูลค่ารวม <span className="font-semibold text-red-200">{formatMoney(totalValue)}</span>
-              {' '}· ใบเสนอราคาเกินวงเงินผู้อนุมัติ ต้องการการตัดสินใจจาก Manager
+              {' '}· เกินวงเงินหรือสิทธิ์ส่วนลดของคุณ — ต้องส่งต่อผู้มีอำนาจถัดไป
             </div>
           </div>
         </div>
@@ -224,9 +224,20 @@ function OverBudgetSection({ items, loading }: { items: Quotation[]; loading: bo
   );
 }
 
+// ─── Helper: does this quotation exceed the given approver's limits? ──────────
+function exceedsApproverLimits(q: Quotation, myId: string | undefined): boolean {
+  if (!myId || !q.currentApprover || q.currentApprover.id !== myId) return false;
+  const moneyLimit = Number((q.currentApprover as any).approvalLimit ?? 0);
+  const discountLimit = Number((q.currentApprover as any).discountLimit ?? 0);
+  const grandTotal = Number(q.grandTotal);
+  const maxDiscount = q.maxDiscountPct ?? 0;
+  return (moneyLimit > 0 && grandTotal > moneyLimit) || (discountLimit > 0 && maxDiscount > discountLimit);
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 export default function ApprovalQueuePage() {
-  const { role, loading: permLoading } = usePermissions();
+  const { role, user, loading: permLoading } = usePermissions();
+  const myId = user?.id;
   const isManager = role?.code === 'MANAGER' || role?.code === 'CEO' || role?.code === 'ADMIN';
 
   const [qtItems,        setQtItems]        = useState<Quotation[]>([]);
@@ -240,7 +251,7 @@ export default function ApprovalQueuePage() {
     setLoading(true);
     try {
       if (isManager) {
-        // Manager: normal pending + escalated (over-budget) + PO submissions + SO reviews
+        // Fetch all pending statuses + PO + SO
         const [pendingRes, escalatedRes, backupRes, poRes, soRes] = await Promise.all([
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING&limit=100'),
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_ESCALATED&limit=100'),
@@ -248,32 +259,48 @@ export default function ApprovalQueuePage() {
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PO_PENDING&limit=50'),
           api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=PENDING_REVIEW&limit=100'),
         ]);
-        // Escalated = over-budget, shown in its own section
-        setEscalatedItems(escalatedRes.data.data ?? []);
-        // Regular QT panel: PENDING + PENDING_BACKUP + PO_PENDING
-        const regular: Quotation[] = [
+
+        // Deduplicate all pending QTs
+        const allPending: Quotation[] = [
           ...(pendingRes.data.data ?? []),
+          ...(escalatedRes.data.data ?? []),
           ...(backupRes.data.data ?? []),
-          ...(poRes.data.data ?? []),
         ];
         const seen = new Set<string>();
-        setQtItems(regular.filter((q) => { if (seen.has(q.id)) return false; seen.add(q.id); return true; }));
+        const uniquePending = allPending.filter((q) => { if (seen.has(q.id)) return false; seen.add(q.id); return true; });
+
+        const poItems = poRes.data.data ?? [];
+
+        // CEO/ADMIN: no limits — everything goes to "can approve"
+        if (role?.code === 'CEO' || role?.code === 'ADMIN') {
+          setQtItems([...uniquePending, ...poItems]);
+          setEscalatedItems([]);
+        } else {
+          // MANAGER: split based on whether limits are exceeded
+          const canApprove: Quotation[] = [];
+          const exceedsLimit: Quotation[] = [];
+          for (const q of uniquePending) {
+            if (exceedsApproverLimits(q, myId)) {
+              exceedsLimit.push(q);
+            } else {
+              canApprove.push(q);
+            }
+          }
+          setQtItems([...canApprove, ...poItems]);
+          setEscalatedItems(exceedsLimit);
+        }
         setSoItems(soRes.data.data ?? []);
       } else {
-        // Officer: their pending QTs (tracking) + draft/rejected SOs
+        // Officer: their pending QTs (tracking) + draft SOs
         const [pendingRes, escalatedRes, soRes] = await Promise.all([
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING&limit=100'),
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_ESCALATED&limit=100'),
           api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=DRAFT&limit=50'),
         ]);
-        // Officers see their escalated QTs too (they created them)
-        const allQt = [
-          ...(pendingRes.data.data ?? []),
-          ...(escalatedRes.data.data ?? []),
-        ];
+        const allQt = [...(pendingRes.data.data ?? []), ...(escalatedRes.data.data ?? [])];
         const seen = new Set<string>();
         setQtItems(allQt.filter((q) => { if (seen.has(q.id)) return false; seen.add(q.id); return true; }));
-        setEscalatedItems([]); // officer sees escalated mixed into their QT list, not separate section
+        setEscalatedItems([]);
         setSoItems(soRes.data.data ?? []);
       }
     } catch (err) {
@@ -281,7 +308,7 @@ export default function ApprovalQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [permLoading, isManager]);
+  }, [permLoading, isManager, myId, role?.code]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -325,7 +352,7 @@ export default function ApprovalQueuePage() {
             <div className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-1.5">
               <Flame className="h-3.5 w-3.5 text-red-300" />
               <span className="text-white font-bold text-sm">{loading ? '…' : escalatedItems.length}</span>
-              <span className="text-red-200/80 text-[11px]">เกินวงเงิน</span>
+              <span className="text-red-200/80 text-[11px]">เกินอำนาจ</span>
             </div>
           )}
           <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-3 py-1.5">
@@ -394,7 +421,7 @@ export default function ApprovalQueuePage() {
           {isManager && escalatedItems.length > 0 && (
             <span className="flex items-center gap-1.5 text-red-500">
               <Flame className="h-3 w-3" />
-              เกินวงเงิน <span className="font-semibold">{escalatedItems.length}</span>
+              เกินอำนาจ <span className="font-semibold">{escalatedItems.length}</span>
             </span>
           )}
           <span className="text-amber-600">QT <span className="font-semibold">{qtItems.length}</span></span>
