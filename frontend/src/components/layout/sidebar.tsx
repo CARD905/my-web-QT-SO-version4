@@ -25,6 +25,7 @@ interface NavItem {
   children?: NavItem[];
   showBadge?: boolean;              // manager approval-queue count
   officerBadge?: 'qt' | 'checklist' | 'so';  // officer sidebar counts
+  dividerLabel?: string;            // section group label (CEO nav groups)
 }
 
 // ── Manager approval-queue badge ─────────────────────────────────────────────
@@ -297,6 +298,37 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
+// CEO-SPECIFIC NAV — grouped with section labels
+// ════════════════════════════════════════════════════════════════════════════
+const CEO_NAV_ITEMS: NavItem[] = [
+  // ── GROUP 1: EXECUTIVE ──────────────────────────────────────────────────
+  { dividerLabel: 'EXECUTIVE', labelKey: '', icon: LayoutDashboard },
+  { href: '/dashboard',       labelKey: 'nav.dashboard',    icon: LayoutDashboard },
+  { href: '/approval-queue',  labelKey: 'nav.approvalQueue', icon: CheckSquare, showBadge: true },
+  { href: '/special-discount', labelKey: 'nav.specialDiscount', icon: Star },
+  // ── GROUP 2: OPERATIONS ─────────────────────────────────────────────────
+  { dividerLabel: 'OPERATIONS', labelKey: '', icon: FileText },
+  {
+    labelKey: 'nav.quotations', icon: FileText,
+    children: [
+      { href: '/quotations',          labelKey: 'nav.quotationList',      icon: FileText },
+      { href: '/quotations/checklist', labelKey: 'nav.quotationChecklist', icon: CheckSquare },
+    ],
+  },
+  { href: '/sale-orders', labelKey: 'nav.saleOrders', icon: ClipboardList },
+  { href: '/customers',   labelKey: 'nav.customers',  icon: Users },
+  // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
+  { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },
+  { href: '/history',           labelKey: 'nav.history',     icon: History },
+  { href: '/admin/invitations', labelKey: 'nav.invitations', icon: Mail },
+  // ── GROUP 4: SETTINGS ───────────────────────────────────────────────────
+  { dividerLabel: 'SETTINGS', labelKey: '', icon: Settings },
+  { href: '/company',     labelKey: 'nav.company',     icon: Building2 },
+  { href: '/products',    labelKey: 'nav.products',    icon: Package },
+  { href: '/permissions', labelKey: 'nav.permissions', icon: Key },
+];
+
+// ════════════════════════════════════════════════════════════════════════════
 // ROLE THEMES
 // ════════════════════════════════════════════════════════════════════════════
 interface RoleTheme {
@@ -410,6 +442,18 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
     ? pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
     : false;
 
+  // Section divider label (CEO grouped nav)
+  if (item.dividerLabel) {
+    if (collapsed) return null;
+    return (
+      <div className="px-3 pt-4 pb-1 first:pt-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground/40 select-none">
+          {item.dividerLabel}
+        </span>
+      </div>
+    );
+  }
+
   if (item.children && item.children.length > 0) {
     return <NavGroupItem item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} level={level} />;
   }
@@ -471,7 +515,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
       .map((item) => ({ ...item, children: item.children ? filterItems(item.children) : undefined }));
   };
 
-  const items = filterItems(NAV_ITEMS);
+  const items = roleCode === 'CEO' ? CEO_NAV_ITEMS : filterItems(NAV_ITEMS);
 
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
     <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">

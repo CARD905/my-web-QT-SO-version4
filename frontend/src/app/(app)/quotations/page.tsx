@@ -131,7 +131,7 @@ export default function QuotationsPage() {
 
   const statuses = [
     '', 'DRAFT', 'PENDING', 'PENDING_ESCALATED',
-    'APPROVED', 'REJECTED', 'CANCELLED',
+    'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED',
   ];
 
   return (
