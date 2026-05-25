@@ -608,6 +608,18 @@ export const quotationsService = {
       throw new AppError(403, 'FORBIDDEN', 'คุณไม่ใช่ผู้รับผิดชอบใบนี้ในขณะนี้');
     }
 
+    // ถ้าเป็น Special Discount (discount เกินอำนาจ Division Manager) → เฉพาะ CEO เท่านั้นที่อนุมัติได้
+    // ทุก manager ในสาย MUST escalate จนถึง CEO
+    const isSpecialDiscountPending =
+      !!(existing as any).specialDiscountRequested &&
+      (existing as any).specialDiscountStatus === 'PENDING';
+    if (isSpecialDiscountPending && !isCeo) {
+      throw new AppError(
+        403, 'SPECIAL_DISCOUNT_REQUIRES_CEO',
+        `ใบนี้มีคำขอ Special Discount ${(existing as any).specialDiscountPercent ?? ''}% เกินอำนาจ Division Manager — กรุณากด "ส่งต่อ" เพื่อส่งขึ้นสายงานจนถึง CEO`,
+      );
+    }
+
     // เช็ค money limit (CEO ไม่มีขีดจำกัด)
     const approverLimit = Number(approverUser.approvalLimit ?? 0);
     const grandTotal = Number(existing.grandTotal);
@@ -926,29 +938,73 @@ export const quotationsService = {
       throw new AppError(409, 'INVALID_STATUS', 'No pending special discount request');
     }
 
-    const updated = await prisma.quotation.update({
-      where: { id },
-      data: {
-        specialDiscountStatus: 'APPROVED',
-        specialDiscountFinalPct: (q as any).specialDiscountPercent,
-        specialDiscountById: currentUser.id,
-        specialDiscountAt: new Date(),
-      },
+    // CEO ต้องเป็น currentApprover — quotation ต้องถูก escalate ผ่านสายงานมาถึง CEO ก่อน
+    if (q.currentApproverId !== currentUser.id) {
+      throw new AppError(
+        403, 'NOT_IN_CEO_QUEUE',
+        'Quotation ยังไม่ถูกส่งต่อมาถึง CEO — กรุณารอให้ Manager ในสายงาน escalate ขึ้นมาก่อน',
+      );
+    }
+
+    // Approve ทั้ง Special Discount และ Quotation พร้อมกันในขั้นตอนเดียว
+    const ceoUser = await prisma.user.findUnique({
+      where: { id: currentUser.id },
+      include: { role: true },
     });
 
-    await prisma.notification.create({
-      data: {
-        userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
-        title: '✅ Special Discount อนุมัติแล้ว',
-        message: `${q.quotationNo} — สามารถส่งขออนุมัติได้เลย`,
-        link: `/quotations/${q.id}`,
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.quotation.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          approvedById: currentUser.id,
+          currentApproverId: null,
+          specialDiscountStatus: 'APPROVED',
+          specialDiscountFinalPct: (q as any).specialDiscountPercent,
+          specialDiscountById: currentUser.id,
+          specialDiscountAt: new Date(),
+        },
+        include: quotationDetailInclude,
+      });
+
+      // บันทึก approval log
+      await tx.quotationApproval.create({
+        data: {
+          quotationId: id,
+          approverId: currentUser.id,
+          approverName: ceoUser!.name,
+          approverEmail: ceoUser!.email,
+          approverRoleId: ceoUser!.roleId,
+          approverRoleCode: 'CEO',
+          approverRoleName: ceoUser!.role.nameTh,
+          step: q.currentStep + 1,
+          totalSteps: q.totalSteps,
+          status: 'APPROVED',
+          comment: `Special Discount ${(q as any).specialDiscountPercent}% approved`,
+          grandTotalAtAction: q.grandTotal,
+          approverLimitAtAction: null,
+          exceedsLimit: false,
+          quotationVersion: q.version,
+        },
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: q.createdById, type: 'QUOTATION_APPROVED' as any,
+          title: '⭐ Special Discount อนุมัติแล้ว',
+          message: `${q.quotationNo} — CEO อนุมัติส่วนลด ${(q as any).specialDiscountPercent}% และ Quotation เรียบร้อยแล้ว — กรุณาอัปโหลดใบ PO`,
+          link: `/quotations/checklist/${q.id}`,
+        },
+      });
+
+      return result;
     });
 
     await logActivity(prisma, {
       userId: currentUser.id, action: 'quotation.specialDiscount.approve',
       entityType: 'Quotation', entityId: id,
-      description: `Approved special discount ${(q as any).specialDiscountPercent}% for ${q.quotationNo}`, req,
+      description: `CEO approved special discount ${(q as any).specialDiscountPercent}% + quotation ${q.quotationNo}`, req,
     });
 
     return updated;

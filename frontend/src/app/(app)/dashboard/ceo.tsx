@@ -1,7 +1,7 @@
 'use client';
 /* ═══════════════════════════════════════════════════════════════════════════
-   CEO EXECUTIVE COMMAND CENTER — Enterprise Decision Platform v2
-   Inline approvals · Risk intelligence · Revenue analytics · Activity feed
+   CEO EXECUTIVE COMMAND CENTER — Enterprise Decision Platform v3
+   All 8 spec sections · Profitability · Sales Performance · Risk · Pipeline
 ═══════════════════════════════════════════════════════════════════════════ */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -12,12 +12,13 @@ import {
   Target, Zap, Percent, Timer, Bell, ChevronRight, Minus,
   Building2, BarChart3, Eye, Shield, XCircle, Check, X,
   Loader2, FileText, ShoppingCart, ArrowUpRight,
+  Award, Briefcase, BookOpen,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatDate, formatMoney, formatRelativeTime } from '@/lib/utils';
+import { formatDate, formatMoney } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 
@@ -70,7 +71,7 @@ interface CeoDashboardData {
   pipelineDetail?: {
     approvedOnlyValue: number; poPendingValue: number; soConfirmedValue: number;
     stage1AvgHours: number | null; stage2AvgHours: number | null; stage3AvgHours: number | null;
-    stage1Top: any[]; stage2Top: any[]; stage3Top: any[]; stage4Top: any[];
+    stage1Top: unknown[]; stage2Top: unknown[]; stage3Top: unknown[]; stage4Top: unknown[];
   };
   rejectionReasons?: Array<{ reason: string; count: number }>;
 }
@@ -86,6 +87,7 @@ function waitLabel(submittedAt: string): string {
   const d = Math.floor(h / 24); const r = Math.round(h % 24);
   return `${d}d ${r}h`;
 }
+function pct(n: number, digits = 1): string { return `${n.toFixed(digits)}%`; }
 
 // ─── Section Header ───────────────────────────────────────────────────────────
 function SectionHeader({
@@ -121,6 +123,42 @@ function Sparkline({ values, color = '#10b981' }: { values: number[]; color?: st
     <svg width={W} height={H} className="shrink-0 opacity-75">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8"
         strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ─── Win Rate Bar Chart ───────────────────────────────────────────────────────
+function WinRateBarSVG({ data }: { data: Array<{ month: string; approved: number; rejected: number }> }) {
+  const W = 320; const H = 72;
+  const n = Math.max(data.length, 1);
+  const barW = Math.max(8, (W - 4 * (n - 1)) / n);
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 20}`} className="w-full" style={{ height: H + 20 }}>
+      {/* baseline */}
+      <line x1={0} y1={H} x2={W} y2={H} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
+      {data.map((d, i) => {
+        const total = d.approved + d.rejected;
+        const rate = total > 0 ? d.approved / total : 0;
+        const barH = Math.max(rate * H, total > 0 ? 3 : 0);
+        const x = i * (barW + 4);
+        const color = rate >= 0.6 ? '#10b981' : rate >= 0.4 ? '#f59e0b' : '#ef4444';
+        const winPct = Math.round(rate * 100);
+        return (
+          <g key={i}>
+            <rect x={x} y={H - barH} width={barW} height={barH} fill={color} opacity={0.82} rx={2}>
+              <title>{d.month}: {winPct}% win ({d.approved}/{total})</title>
+            </rect>
+            {barH > 16 && (
+              <text x={x + barW / 2} y={H - barH + 11} textAnchor="middle" fontSize={9} fill="white" fontWeight="600">
+                {winPct}
+              </text>
+            )}
+            <text x={x + barW / 2} y={H + 13} textAnchor="middle" fontSize={8.5} fill="currentColor" fillOpacity={0.45}>
+              {d.month}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -284,22 +322,15 @@ export default function CeoExecutiveDashboard() {
     return (
       <div className="space-y-5 max-w-7xl">
         <Skeleton className="h-[88px] rounded-2xl" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
         </div>
         <Skeleton className="h-[240px] rounded-2xl" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[140px] rounded-2xl" />)}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2"><Skeleton className="h-[200px] rounded-2xl" /></div>
-          <Skeleton className="h-[200px] rounded-2xl" />
-        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Skeleton className="h-[260px] rounded-2xl" /><Skeleton className="h-[260px] rounded-2xl" />
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <Skeleton className="h-[240px] rounded-2xl" /><Skeleton className="h-[240px] rounded-2xl" />
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[200px] rounded-2xl" />)}
         </div>
       </div>
     );
@@ -353,15 +384,49 @@ function CeoDashboardContent({
     finally { setActionLoading(false); }
   };
 
-  // ── Derived metrics ──────────────────────────────────────────────────────────
-  const convRate = data.totals.conversionRate ??
-    (data.totals.quotations > 0 ? Math.round((data.totals.approved / data.totals.quotations) * 100) : 0);
+  // ── Revenue derived metrics ──────────────────────────────────────────────────
   const revTrend = data.revenueTrend ?? [];
   const sparkVals = revTrend.map((m) => m.value);
+  const thisMonthRevenue = revTrend.length > 0 ? revTrend[revTrend.length - 1].value : 0;
+  const lastMonthRevenue = revTrend.length > 1 ? revTrend[revTrend.length - 2].value : 0;
+  const monthGrowth = lastMonthRevenue > 0
+    ? Math.round(((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
+  const quarterRevenue = revTrend.slice(-3).reduce((s, m) => s + m.value, 0);
+  const prevQuarterRevenue = revTrend.length >= 6
+    ? revTrend.slice(-6, -3).reduce((s, m) => s + m.value, 0) : 0;
+  const quarterGrowth = prevQuarterRevenue > 0
+    ? Math.round(((quarterRevenue - prevQuarterRevenue) / prevQuarterRevenue) * 100) : null;
   const prevRev = sparkVals[sparkVals.length - 2] ?? 0;
   const currRev = sparkVals[sparkVals.length - 1] ?? 0;
   const revGrowth = prevRev > 0 ? Math.round(((currRev - prevRev) / prevRev) * 100) : null;
+
+  // ── Win rate from trendData ──────────────────────────────────────────────────
+  const trendMonths = data.trendData ?? [];
+  const totalTrendApproved = trendMonths.reduce((s, m) => s + m.approved, 0) || data.totals.approved;
+  const totalTrendRejected = trendMonths.reduce((s, m) => s + m.rejected, 0) || data.totals.rejected;
+  const winRate = (totalTrendApproved + totalTrendRejected) > 0
+    ? Math.round((totalTrendApproved / (totalTrendApproved + totalTrendRejected)) * 100) : 0;
+  const thisMonthWin = trendMonths.length > 0 ? trendMonths[trendMonths.length - 1] : null;
+  const lastMonthWin = trendMonths.length > 1 ? trendMonths[trendMonths.length - 2] : null;
+  const thisWinRate = thisMonthWin && (thisMonthWin.approved + thisMonthWin.rejected) > 0
+    ? Math.round((thisMonthWin.approved / (thisMonthWin.approved + thisMonthWin.rejected)) * 100) : null;
+  const lastWinRate = lastMonthWin && (lastMonthWin.approved + lastMonthWin.rejected) > 0
+    ? Math.round((lastMonthWin.approved / (lastMonthWin.approved + lastMonthWin.rejected)) * 100) : null;
+  const winRateDelta = thisWinRate !== null && lastWinRate !== null ? thisWinRate - lastWinRate : null;
+
+  // ── Conversion & general ─────────────────────────────────────────────────────
+  const convRate = data.totals.conversionRate ??
+    (data.totals.quotations > 0 ? Math.round((data.totals.approved / data.totals.quotations) * 100) : 0);
   const overdueQt = data.agingBuckets?.gt7d.count ?? 0;
+  const avgDealSize = data.totals.approved > 0
+    ? data.totals.totalValue / data.totals.approved : 0;
+
+  // ── Profitability / Margin derived ───────────────────────────────────────────
+  const netRevenue = data.marginAnalysis
+    ? data.marginAnalysis.totalApprovedSubtotal - data.marginAnalysis.totalDiscountGiven
+    : data.totals.totalValue;
+  const priceRetentionRate = data.marginAnalysis
+    ? Math.max(0, 100 - data.marginAnalysis.avgDiscountRate) : null;
 
   // ── Risk panels ──────────────────────────────────────────────────────────────
   const criticals = [
@@ -373,13 +438,19 @@ function CeoDashboardContent({
     ...((data.expiringQuotations?.length ?? 0) > 0 ? [`${data.expiringQuotations!.length} QT ใกล้หมดอายุใน 7 วัน`] : []),
     ...((data.totals.poVerificationPending ?? 0) > 0 ? [`${data.totals.poVerificationPending} PO รอตรวจสอบ`] : []),
     ...((data.marginAnalysis?.avgDiscountRate ?? 0) > 20 ? [`Avg Discount ${data.marginAnalysis!.avgDiscountRate.toFixed(1)}% — สูงเกินนโยบาย`] : []),
+    ...(winRate < 40 && (totalTrendApproved + totalTrendRejected) > 5 ? [`Win Rate ${winRate}% ต่ำกว่าเป้า (50%)`] : []),
   ];
   const attentions = [
     ...(data.totals.pending > 10 ? [`${data.totals.pending} QT รออนุมัติสะสมในระบบ`] : []),
     ...((data.marginAnalysis?.specialDiscountCount ?? 0) > 0 ? [`${data.marginAnalysis!.specialDiscountCount} Special Discount Requests`] : []),
     ...(convRate < 40 && data.totals.quotations > 5 ? [`Conversion Rate ${convRate}% ต่ำกว่าเป้า (50%)`] : []),
+    // Rejection patterns
+    ...((data.rejectionReasons?.length ?? 0) > 0
+      ? [`Rejection Pattern: "${data.rejectionReasons![0].reason}" (${data.rejectionReasons![0].count}×)`]
+      : []),
   ];
   const hasRisks = criticals.length + warnings.length + attentions.length > 0;
+  const highRiskCount = criticals.length + warnings.length;
 
   // ── Executive summary insights ────────────────────────────────────────────────
   const insights: { icon: React.ReactNode; text: string; cls: string }[] = [];
@@ -407,13 +478,18 @@ function CeoDashboardContent({
       cls: 'text-violet-300',
     });
   }
+  if (quarterRevenue > 0) insights.push({
+    icon: <BarChart3 className="h-3.5 w-3.5 text-cyan-400" />,
+    text: `Revenue ไตรมาสนี้ ${formatMoney(quarterRevenue)}${quarterGrowth !== null ? ` (${quarterGrowth >= 0 ? '+' : ''}${quarterGrowth}% QoQ)` : ''}`,
+    cls: 'text-cyan-300',
+  });
   insights.push({
     icon: <Activity className="h-3.5 w-3.5 text-blue-400" />,
-    text: `Conversion Rate ${convRate}% · QT ทั้งหมด ${data.totals.quotations} ใบ · อนุมัติแล้ว ${data.totals.approved} ใบ`,
+    text: `Win Rate ${winRate}% · Conversion ${convRate}% · QT ทั้งหมด ${data.totals.quotations} ใบ`,
     cls: 'text-blue-300',
   });
 
-  // ── Derived activity feed ────────────────────────────────────────────────────
+  // ── Activity feed ────────────────────────────────────────────────────────────
   const activities: Array<{ icon: React.ReactNode; text: string; time: string; color: string }> = [
     ...(data.todayActivity.approved > 0 ? [{
       icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />,
@@ -450,7 +526,7 @@ function CeoDashboardContent({
   return (
     <div className="space-y-5 max-w-7xl pb-12">
 
-      {/* ══ COMMAND HEADER ══════════════════════════════════════════════════════ */}
+      {/* ══ SECTION 1 · COMMAND HEADER ═════════════════════════════════════════ */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-amber-950 shadow-xl px-6 py-5">
         <div className="absolute inset-0 bg-gradient-to-r from-amber-500/8 via-transparent to-purple-500/8 pointer-events-none" />
         <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-amber-400/5 pointer-events-none" />
@@ -478,7 +554,8 @@ function CeoDashboardContent({
                 { dot: 'bg-emerald-400', label: 'QT', val: data.totals.quotations, cls: 'text-white' },
                 { dot: 'bg-amber-400', label: 'รออนุมัติ', val: data.totals.pending, cls: 'text-white' },
                 ...(data.totals.escalated > 0 ? [{ dot: 'bg-red-500', label: 'Escalated', val: data.totals.escalated, cls: 'text-red-400' }] : []),
-                { dot: 'bg-blue-400', label: 'Conv', val: `${convRate}%`, cls: 'text-white' },
+                { dot: 'bg-blue-400', label: 'Win Rate', val: `${winRate}%`, cls: 'text-white' },
+                { dot: 'bg-violet-400', label: 'Conv', val: `${convRate}%`, cls: 'text-white' },
               ].map((s, i) => (
                 <div key={i} className="flex items-center gap-1.5">
                   <span className={`h-1.5 w-1.5 rounded-full ${s.dot} animate-pulse`} />
@@ -504,18 +581,29 @@ function CeoDashboardContent({
         </div>
       </div>
 
-      {/* ══ KPI COMMAND STRIP — 6 cards ═════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* ══ SECTION 2 · EXECUTIVE KPI SUMMARY — 8 cards ════════════════════════ */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {/* 1. Total Revenue */}
         <ExecKpiCard
           icon={<DollarSign className="h-4 w-4 text-emerald-600" />}
           label="Total Revenue"
           value={formatMoney(data.totals.totalValue)}
-          sublabel={`${data.totals.approved} Approved QT`}
+          sublabel={`${data.totals.approved} QT Approved`}
           trend={revGrowth !== null ? `${revGrowth >= 0 ? '+' : ''}${revGrowth}% MoM` : undefined}
           trendUp={revGrowth !== null ? revGrowth >= 0 : null}
           sparkValues={sparkVals.length > 1 ? sparkVals : undefined}
           sparkColor="#10b981"
         />
+        {/* 2. Revenue This Month */}
+        <ExecKpiCard
+          icon={<BarChart3 className="h-4 w-4 text-teal-600" />}
+          label="Revenue / Month"
+          value={formatMoney(thisMonthRevenue)}
+          sublabel={revTrend.length > 0 ? revTrend[revTrend.length - 1].month : 'เดือนนี้'}
+          trend={monthGrowth !== null ? `${monthGrowth >= 0 ? '+' : ''}${monthGrowth}% MoM` : undefined}
+          trendUp={monthGrowth !== null ? monthGrowth >= 0 : null}
+        />
+        {/* 3. CEO Actions */}
         <ExecKpiCard
           icon={<Flame className="h-4 w-4 text-red-600" />}
           label="CEO Actions"
@@ -524,6 +612,16 @@ function CeoDashboardContent({
           alertLevel={data.totals.escalated > 0 ? 'critical' : null}
           href="/approval-queue"
         />
+        {/* 4. Win Rate */}
+        <ExecKpiCard
+          icon={<Award className="h-4 w-4 text-violet-600" />}
+          label="Win Rate"
+          value={`${winRate}%`}
+          sublabel={`${totalTrendApproved} win / ${totalTrendRejected} lose`}
+          trend={winRateDelta !== null ? `${winRateDelta >= 0 ? '+' : ''}${winRateDelta}% this month` : undefined}
+          trendUp={winRateDelta !== null ? winRateDelta >= 0 : null}
+        />
+        {/* 5. Conversion Rate */}
         <ExecKpiCard
           icon={<Activity className="h-4 w-4 text-blue-600" />}
           label="Conversion Rate"
@@ -532,32 +630,34 @@ function CeoDashboardContent({
           trend={convRate >= 50 ? 'On target' : 'Below target'}
           trendUp={convRate >= 50 ? true : convRate >= 30 ? null : false}
         />
+        {/* 6. Price Retention / Avg Margin Proxy */}
         <ExecKpiCard
-          icon={<TrendingUp className="h-4 w-4 text-violet-600" />}
+          icon={<Percent className="h-4 w-4 text-amber-600" />}
+          label="Price Retention"
+          value={priceRetentionRate !== null ? pct(priceRetentionRate) : 'N/A'}
+          sublabel={data.marginAnalysis ? `Avg discount ${data.marginAnalysis.avgDiscountRate.toFixed(1)}%` : 'After discount'}
+          alertLevel={(data.marginAnalysis?.avgDiscountRate ?? 0) > 20 ? 'warning' : null}
+        />
+        {/* 7. Forecast */}
+        <ExecKpiCard
+          icon={<Target className="h-4 w-4 text-violet-600" />}
           label="Forecast"
           value={formatMoney(data.forecast?.nextMonthForecast ?? 0)}
           sublabel="เดือนหน้า"
           trend={data.forecast ? `Avg ${formatMoney(data.forecast.avgMonthlyRevenue)}/mo` : undefined}
           trendUp={null}
         />
+        {/* 8. High-Risk Deals */}
         <ExecKpiCard
-          icon={<Clock className="h-4 w-4 text-amber-600" />}
-          label="Pending Approval"
-          value={data.totals.pending}
-          sublabel={overdueQt > 0 ? `${overdueQt} เกิน 7 วัน` : 'ในระบบ'}
-          alertLevel={overdueQt > 0 ? 'warning' : null}
-        />
-        <ExecKpiCard
-          icon={<Zap className="h-4 w-4 text-cyan-600" />}
-          label="Pipeline Value"
-          value={formatMoney(data.totals.pendingValue)}
-          sublabel="มูลค่า Pending"
-          trend={data.forecast?.pipelineCoverage ? `Coverage ${formatMoney(data.forecast.pipelineCoverage)}` : undefined}
-          trendUp={null}
+          icon={<AlertTriangle className="h-4 w-4 text-rose-600" />}
+          label="High-Risk Items"
+          value={highRiskCount}
+          sublabel={highRiskCount > 0 ? `${criticals.length} critical, ${warnings.length} warning` : 'ทุกอย่างปกติ'}
+          alertLevel={criticals.length > 0 ? 'critical' : warnings.length > 0 ? 'warning' : null}
         />
       </div>
 
-      {/* ══ EXECUTIVE ACTION CENTER ════════════════════════════════════════════ */}
+      {/* ══ SECTION 5 · APPROVAL MONITORING ════════════════════════════════════ */}
       <div className="rounded-2xl border border-red-200 dark:border-red-900/40 bg-gradient-to-br from-red-50/80 to-rose-50/30 dark:from-red-950/20 dark:to-rose-950/10 overflow-hidden shadow-sm">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-red-200/50 dark:border-red-900/30">
@@ -567,7 +667,7 @@ function CeoDashboardContent({
             </div>
             <div>
               <div className="font-bold text-sm text-red-700 dark:text-red-300">Executive Action Required</div>
-              <div className="text-[11px] text-red-600/60 dark:text-red-400/60">CEO ต้องอนุมัติหรือปฏิเสธใบเสนอราคาต่อไปนี้</div>
+              <div className="text-[11px] text-red-600/60 dark:text-red-400/60">Approval Monitoring — CEO ต้องอนุมัติหรือปฏิเสธใบเสนอราคาต่อไปนี้</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -601,12 +701,8 @@ function CeoDashboardContent({
 
               return (
                 <div key={q.id}>
-                  {/* Main Row */}
                   <div className={`flex items-center gap-4 px-5 py-3.5 transition-colors ${isConfirming ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : isRejecting ? 'bg-red-100/40 dark:bg-red-950/20' : 'hover:bg-red-50/30 dark:hover:bg-red-950/10'}`}>
-                    {/* Priority dot */}
                     <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${isUrgent ? 'bg-red-500 animate-pulse' : 'bg-amber-400'}`} />
-
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm">{q.quotationNo}</span>
@@ -621,23 +717,16 @@ function CeoDashboardContent({
                         <span className="text-[11px] opacity-50">{formatDate(q.submittedAt)}</span>
                       </div>
                     </div>
-
-                    {/* Amount + wait */}
                     <div className="text-right shrink-0 hidden sm:block">
                       <div className="font-bold text-red-700 dark:text-red-400 text-sm tabular-nums">{formatMoney(q.grandTotal)}</div>
                       <div className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end mt-0.5">
                         <Timer className="h-3 w-3" />{waitLabel(q.submittedAt)}
                       </div>
                     </div>
-
-                    {/* Actions */}
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Detail link */}
                       <Link href={`/quotations/${q.id}`} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border/60 hover:border-border text-muted-foreground hover:text-foreground transition-colors" title="ดูรายละเอียด">
                         <ChevronRight className="h-3.5 w-3.5" />
                       </Link>
-
-                      {/* Reject button */}
                       <button
                         onClick={() => {
                           if (isRejecting) { setRejectId(null); setRejectReason(''); }
@@ -648,8 +737,6 @@ function CeoDashboardContent({
                       >
                         <span className="flex items-center gap-1"><X className="h-3 w-3" />Reject</span>
                       </button>
-
-                      {/* Approve button */}
                       <button
                         onClick={() => handleApprove(q.id)}
                         className={`h-8 px-3 rounded-lg text-xs font-bold transition-colors ${isConfirming ? 'bg-emerald-600 text-white ring-2 ring-emerald-400/50' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
@@ -657,14 +744,9 @@ function CeoDashboardContent({
                       >
                         {actionLoading && confirmId === q.id
                           ? <Loader2 className="h-3 w-3 animate-spin" />
-                          : <span className="flex items-center gap-1">
-                              <Check className="h-3 w-3" />
-                              {isConfirming ? 'Confirm?' : 'Approve'}
-                            </span>
+                          : <span className="flex items-center gap-1"><Check className="h-3 w-3" />{isConfirming ? 'Confirm?' : 'Approve'}</span>
                         }
                       </button>
-
-                      {/* Cancel confirm */}
                       {isConfirming && (
                         <button onClick={() => setConfirmId(null)} className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors">
                           <X className="h-3.5 w-3.5" />
@@ -672,8 +754,6 @@ function CeoDashboardContent({
                       )}
                     </div>
                   </div>
-
-                  {/* Rejection Form (inline expand) */}
                   {isRejecting && (
                     <div className="px-5 pb-4 bg-red-50/80 dark:bg-red-950/25 border-t border-red-100 dark:border-red-900/30">
                       <div className="pt-3 flex flex-col gap-2">
@@ -712,10 +792,9 @@ function CeoDashboardContent({
         )}
       </div>
 
-      {/* ══ EXPIRING QTs + AGING PANEL ═════════════════════════════════════════ */}
+      {/* ══ EXPIRING QTs + AGING ═══════════════════════════════════════════════ */}
       {((data.expiringQuotations?.length ?? 0) > 0 || overdueQt > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Expiring Soon */}
           {(data.expiringQuotations?.length ?? 0) > 0 && (
             <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
               <SectionHeader
@@ -746,8 +825,6 @@ function CeoDashboardContent({
               </div>
             </div>
           )}
-
-          {/* Aging Buckets */}
           {data.agingBuckets && (
             <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
               <SectionHeader
@@ -796,29 +873,266 @@ function CeoDashboardContent({
         </div>
       )}
 
-      {/* ══ RISK INTELLIGENCE ═════════════════════════════════════════════════ */}
-      {hasRisks && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RiskPanel icon={<AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />} label="Critical"
-            dot="bg-red-500" border={criticals.length > 0 ? 'border-red-200 bg-red-50/60 dark:border-red-900/40 dark:bg-red-950/15' : 'border-border bg-card'}
-            iconBg="bg-red-500/10" textColor="text-red-700 dark:text-red-300" itemColor="text-red-700 dark:text-red-400" items={criticals} />
-          <RiskPanel icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />} label="Warning"
-            dot="bg-amber-400" border={warnings.length > 0 ? 'border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/15' : 'border-border bg-card'}
-            iconBg="bg-amber-500/10" textColor="text-amber-700 dark:text-amber-300" itemColor="text-amber-700 dark:text-amber-400" items={warnings} />
-          <RiskPanel icon={<Eye className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />} label="Attention"
-            dot="bg-yellow-400" border={attentions.length > 0 ? 'border-yellow-200 bg-yellow-50/60 dark:border-yellow-900/40 dark:bg-yellow-950/15' : 'border-border bg-card'}
-            iconBg="bg-yellow-500/10" textColor="text-yellow-700 dark:text-yellow-300" itemColor="text-yellow-700 dark:text-yellow-400" items={attentions} />
+      {/* ══ SECTION 3 · PROFITABILITY ANALYTICS ════════════════════════════════ */}
+      {data.marginAnalysis && (
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <SectionHeader
+            icon={<Percent className="h-4 w-4 text-amber-500" />}
+            title="Profitability Analytics"
+            subtitle="Margin · Discount Impact · Revenue Quality"
+            badge={(data.marginAnalysis.avgDiscountRate > 20)
+              ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">High Discount Alert</Badge>
+              : undefined}
+          />
+
+          {/* Metric Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            {[
+              {
+                label: 'Net Revenue (After Discount)',
+                value: formatMoney(netRevenue),
+                color: 'text-emerald-600 dark:text-emerald-400',
+                bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+                sub: `จาก ${formatMoney(data.marginAnalysis.totalApprovedSubtotal)} list price`,
+              },
+              {
+                label: 'Total Discount Given',
+                value: formatMoney(data.marginAnalysis.totalDiscountGiven),
+                color: 'text-rose-600 dark:text-rose-400',
+                bg: 'bg-rose-50 dark:bg-rose-900/20',
+                sub: `${data.marginAnalysis.approvedCount} QT Approved`,
+              },
+              {
+                label: 'Avg Discount Rate',
+                value: pct(data.marginAnalysis.avgDiscountRate),
+                color: data.marginAnalysis.avgDiscountRate > 20 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400',
+                bg: data.marginAnalysis.avgDiscountRate > 20 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-amber-50 dark:bg-amber-900/20',
+                sub: data.marginAnalysis.avgDiscountRate > 20 ? '⚠ เกินนโยบาย 20%' : 'อยู่ในนโยบาย',
+              },
+              {
+                label: 'Price Retention Rate',
+                value: pct(Math.max(0, 100 - data.marginAnalysis.avgDiscountRate)),
+                color: 'text-violet-600 dark:text-violet-400',
+                bg: 'bg-violet-50 dark:bg-violet-900/20',
+                sub: 'Effective pricing rate',
+              },
+            ].map((item) => (
+              <div key={item.label} className={`rounded-xl p-3.5 ${item.bg}`}>
+                <div className={`text-lg font-bold tabular-nums ${item.color}`}>{item.value}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{item.label}</div>
+                <div className="text-[10px] opacity-60 mt-0.5">{item.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Revenue vs Discount Impact Bar */}
+          {data.marginAnalysis.totalApprovedSubtotal > 0 && (
+            <div className="mb-4">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                <span>Revenue Retained vs Discount Given</span>
+                <span className={`font-semibold ${data.marginAnalysis.avgDiscountRate > 20 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                  {pct(data.marginAnalysis.avgDiscountRate)} discount rate
+                </span>
+              </div>
+              <div className="h-3 rounded-full bg-muted overflow-hidden flex">
+                <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-l-full transition-all duration-700 flex items-center justify-end pr-2"
+                  style={{ width: `${Math.max(100 - data.marginAnalysis.avgDiscountRate, 0)}%` }}>
+                  {(100 - data.marginAnalysis.avgDiscountRate) > 20 && (
+                    <span className="text-[9px] text-white font-bold">{pct(100 - data.marginAnalysis.avgDiscountRate, 0)} retained</span>
+                  )}
+                </div>
+                <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 rounded-r-full transition-all duration-700"
+                  style={{ width: `${Math.min(data.marginAnalysis.avgDiscountRate, 100)}%` }} />
+              </div>
+            </div>
+          )}
+
+          {/* Special Discount + Rejection Reasons */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+            {/* Special Discount */}
+            <div className="rounded-xl p-3.5 bg-muted/30 border border-border/40">
+              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 text-amber-500" />
+                Special Discount Requests
+              </div>
+              {data.marginAnalysis.specialDiscountCount > 0 ? (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{data.marginAnalysis.specialDiscountCount}</div>
+                    <div className="text-[11px] text-muted-foreground">คำขอพิเศษ รออนุมัติ CEO</div>
+                  </div>
+                  <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                    <Link href="/special-discount">ดูรายการ <ArrowUpRight className="h-3 w-3 ml-0.5" /></Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />ไม่มี Special Discount รอพิจารณา
+                </div>
+              )}
+            </div>
+
+            {/* Rejection Reasons */}
+            <div className="rounded-xl p-3.5 bg-muted/30 border border-border/40">
+              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5">
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
+                Rejection Patterns
+              </div>
+              {data.rejectionReasons && data.rejectionReasons.length > 0 ? (
+                <div className="space-y-1.5">
+                  {data.rejectionReasons.slice(0, 3).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground truncate">{r.reason || 'ไม่ระบุเหตุผล'}</span>
+                      <span className="text-xs font-bold text-rose-600 shrink-0">{r.count}×</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">ยังไม่มีข้อมูล Rejection Pattern</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ══ REVENUE ANALYTICS + FORECAST ══════════════════════════════════════ */}
+      {/* ══ SECTION 4 · SALES PERFORMANCE ANALYTICS ════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Win Rate Analysis */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <SectionHeader
+            icon={<Award className="h-4 w-4 text-violet-500" />}
+            title="Win Rate Analysis"
+            subtitle="Monthly win/loss breakdown"
+            badge={<Badge variant="outline" className="text-[10px]">{winRate}% overall</Badge>}
+          />
+          {trendMonths.length > 0 ? (
+            <>
+              {/* Summary row */}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="rounded-xl p-3 bg-emerald-50 dark:bg-emerald-900/20">
+                  <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{winRate}%</div>
+                  <div className="text-[10px] text-muted-foreground">Overall Win Rate</div>
+                </div>
+                <div className="rounded-xl p-3 bg-muted/40">
+                  <div className="text-lg font-bold tabular-nums">{totalTrendApproved}</div>
+                  <div className="text-[10px] text-muted-foreground">Approved</div>
+                </div>
+                <div className="rounded-xl p-3 bg-red-50 dark:bg-red-900/20">
+                  <div className="text-lg font-bold text-red-600 dark:text-red-400 tabular-nums">{totalTrendRejected}</div>
+                  <div className="text-[10px] text-muted-foreground">Rejected</div>
+                </div>
+              </div>
+              <WinRateBarSVG data={trendMonths} />
+              {winRateDelta !== null && (
+                <div className={`mt-2 text-xs font-medium flex items-center gap-1 ${winRateDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                  {winRateDelta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  Win Rate เดือนนี้ {thisWinRate}% ({winRateDelta >= 0 ? '+' : ''}{winRateDelta}% vs เดือนก่อน)
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-36 text-muted-foreground text-xs gap-2">
+              <BarChart3 className="h-8 w-8 opacity-20" />ยังไม่มีข้อมูล Win Rate Trend
+            </div>
+          )}
+        </div>
+
+        {/* Deal Performance */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <SectionHeader
+            icon={<Briefcase className="h-4 w-4 text-blue-500" />}
+            title="Deal Performance"
+            subtitle="Top Officers · Deal Metrics"
+            badge={<Badge variant="outline" className="text-[10px]">Top {Math.min(data.topOfficers.length, 5)}</Badge>}
+          />
+
+          {/* Deal metrics */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="rounded-xl p-3 bg-muted/40">
+              <div className="text-sm font-bold tabular-nums">{formatMoney(avgDealSize)}</div>
+              <div className="text-[10px] text-muted-foreground">Avg Deal Size</div>
+            </div>
+            <div className="rounded-xl p-3 bg-muted/40">
+              <div className="text-sm font-bold tabular-nums">{data.totals.quotations}</div>
+              <div className="text-[10px] text-muted-foreground">Total Deals</div>
+            </div>
+          </div>
+
+          {data.topOfficers.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground"><UsersIcon className="h-8 w-8 mx-auto mb-2 opacity-20" /><p className="text-sm">ยังไม่มีข้อมูล</p></div>
+          ) : (
+            <div className="space-y-0.5">
+              <div className="grid grid-cols-[18px_1fr_36px_80px] text-[10px] text-muted-foreground uppercase px-2 pb-1.5 border-b gap-2">
+                <span>#</span><span>Officer</span><span className="text-right">Win%</span><span className="text-right">Value</span>
+              </div>
+              {data.topOfficers.slice(0, 5).map((o, idx) => {
+                const maxV = Math.max(...data.topOfficers.slice(0, 5).map((x) => x.value), 1);
+                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                const wr = o.winRate ?? 0;
+                return (
+                  <div key={o.userId} className="p-2 rounded-xl hover:bg-accent transition-colors">
+                    <div className="grid grid-cols-[18px_1fr_36px_80px] items-center gap-2 mb-1.5">
+                      <span className="text-[11px] font-bold text-center text-muted-foreground">{medal ?? (idx + 1)}</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium truncate">{o.userName}</div>
+                        <div className="text-[10px] text-muted-foreground">{o.count} QT</div>
+                      </div>
+                      <div className={`text-xs text-right font-semibold ${wr >= 60 ? 'text-emerald-600 dark:text-emerald-400' : wr >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{wr}%</div>
+                      <div className="text-xs font-bold text-right tabular-nums">{formatMoney(o.value)}</div>
+                    </div>
+                    <div className="ml-6 h-1 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-violet-500 to-purple-400"
+                        style={{ width: `${Math.round((o.value / maxV) * 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ══ SECTION 6 · RISK & COMPLIANCE MONITORING ═══════════════════════════ */}
+      {hasRisks && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-bold text-foreground">Risk & Compliance Monitoring</span>
+            <Badge variant="outline" className="text-[10px]">{highRiskCount} รายการสำคัญ</Badge>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <RiskPanel icon={<AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />} label="Critical"
+              dot="bg-red-500" border={criticals.length > 0 ? 'border-red-200 bg-red-50/60 dark:border-red-900/40 dark:bg-red-950/15' : 'border-border bg-card'}
+              iconBg="bg-red-500/10" textColor="text-red-700 dark:text-red-300" itemColor="text-red-700 dark:text-red-400" items={criticals} />
+            <RiskPanel icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />} label="Warning"
+              dot="bg-amber-400" border={warnings.length > 0 ? 'border-amber-200 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/15' : 'border-border bg-card'}
+              iconBg="bg-amber-500/10" textColor="text-amber-700 dark:text-amber-300" itemColor="text-amber-700 dark:text-amber-400" items={warnings} />
+            <RiskPanel icon={<Eye className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />} label="Attention"
+              dot="bg-yellow-400" border={attentions.length > 0 ? 'border-yellow-200 bg-yellow-50/60 dark:border-yellow-900/40 dark:bg-yellow-950/15' : 'border-border bg-card'}
+              iconBg="bg-yellow-500/10" textColor="text-yellow-700 dark:text-yellow-300" itemColor="text-yellow-700 dark:text-yellow-400" items={attentions} />
+          </div>
+        </div>
+      )}
+
+      {/* ══ SECTION 2 · REVENUE ANALYTICS + FORECAST ═══════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-card border border-border/60 rounded-2xl shadow-sm p-5">
           <SectionHeader
             icon={<TrendingUp className="h-4 w-4 text-emerald-500" />}
-            title="Revenue Trend"
-            subtitle="Approved Quotation value · 6 เดือนที่ผ่านมา"
-            action={<div className="text-xs text-muted-foreground">6M</div>}
+            title="Revenue Analytics"
+            subtitle="Approved Quotation value · 6 เดือน"
+            action={
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                {quarterRevenue > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-violet-400 shrink-0" />
+                    Q: {formatMoney(quarterRevenue)}
+                    {quarterGrowth !== null && <span className={`ml-1 font-semibold ${quarterGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>({quarterGrowth >= 0 ? '+' : ''}{quarterGrowth}%)</span>}
+                  </span>
+                )}
+                <span>6M</span>
+              </div>
+            }
           />
           {revTrend.length > 0 ? <RevenueAreaSVG data={revTrend} /> : (
             <div className="flex flex-col items-center justify-center h-36 text-muted-foreground text-xs gap-2">
@@ -830,7 +1144,7 @@ function CeoDashboardContent({
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
           <SectionHeader
             icon={<Target className="h-4 w-4 text-violet-500" />}
-            title="Revenue Forecast"
+            title="Forecast & Pipeline"
           />
           {!data.forecast ? (
             <div className="text-center py-8 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
@@ -851,14 +1165,24 @@ function CeoDashboardContent({
                   <div className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 tabular-nums">{formatMoney(data.forecast.pipelineCoverage)}</div>
                 </div>
               </div>
+              {quarterRevenue > 0 && (
+                <div className="rounded-xl p-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/5 border border-blue-200/40 dark:border-blue-800/30">
+                  <div className="text-[10px] text-muted-foreground">Revenue ไตรมาสนี้</div>
+                  <div className="text-sm font-bold text-blue-700 dark:text-blue-300 mt-0.5 tabular-nums">{formatMoney(quarterRevenue)}</div>
+                  {quarterGrowth !== null && (
+                    <div className={`text-[10px] mt-0.5 ${quarterGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {quarterGrowth >= 0 ? '+' : ''}{quarterGrowth}% vs ไตรมาสก่อน
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* ══ PIPELINE + ORG PERFORMANCE ════════════════════════════════════════ */}
+      {/* ══ SECTION 7 · PIPELINE + STRATEGIC CUSTOMERS ═════════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
         {/* Sales Pipeline */}
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
           <SectionHeader
@@ -906,54 +1230,12 @@ function CeoDashboardContent({
           })()}
         </div>
 
-        {/* Org Performance */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <SectionHeader
-            icon={<UsersIcon className="h-4 w-4 text-violet-500" />}
-            title="Organization Performance"
-            badge={<Badge variant="outline" className="text-[10px]">Top {Math.min(data.topOfficers.length, 5)}</Badge>}
-          />
-          {data.topOfficers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground"><UsersIcon className="h-8 w-8 mx-auto mb-2 opacity-20" /><p className="text-sm">ยังไม่มีข้อมูล</p></div>
-          ) : (
-            <div className="space-y-0.5">
-              <div className="grid grid-cols-[18px_1fr_40px_84px] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-2">
-                <span>#</span><span>พนักงาน</span><span className="text-right">Win%</span><span className="text-right">Value</span>
-              </div>
-              {data.topOfficers.slice(0, 5).map((o, idx) => {
-                const maxV = Math.max(...data.topOfficers.slice(0, 5).map((x) => x.value), 1);
-                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
-                return (
-                  <div key={o.userId} className="p-2 rounded-xl hover:bg-accent transition-colors">
-                    <div className="grid grid-cols-[18px_1fr_40px_84px] items-center gap-2 mb-1.5">
-                      <span className="text-[11px] font-bold text-center text-muted-foreground">{medal ?? (idx + 1)}</span>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{o.userName}</div>
-                        <div className="text-[10px] text-muted-foreground">{o.count} QT</div>
-                      </div>
-                      <div className="text-xs text-right font-semibold text-emerald-600 dark:text-emerald-400">{o.winRate ?? 0}%</div>
-                      <div className="text-sm font-bold text-right tabular-nums">{formatMoney(o.value)}</div>
-                    </div>
-                    <div className="ml-6 h-1 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-violet-500 to-purple-400"
-                        style={{ width: `${Math.round((o.value / maxV) * 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ══ CUSTOMER INTELLIGENCE + EXECUTIVE SUMMARY ═════════════════════════ */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* Top Customers */}
+        {/* Strategic Customers */}
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
           <SectionHeader
             icon={<Building2 className="h-4 w-4 text-indigo-500" />}
-            title="Customer Intelligence"
+            title="Strategic Customers"
+            subtitle="Key accounts · Customer Intelligence"
             badge={<Badge variant="outline" className="text-[10px]">Top {Math.min(data.customerInsights?.length ?? 0, 5)}</Badge>}
           />
           {!data.customerInsights || data.customerInsights.length === 0 ? (
@@ -969,6 +1251,7 @@ function CeoDashboardContent({
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="h-2 w-2 rounded-full shrink-0" style={{ background: colors[i % colors.length] }} />
                         <span className="font-medium truncate">{c.customerCompany}</span>
+                        {i === 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">KEY ACCOUNT</span>}
                       </div>
                       <span className="text-muted-foreground ml-3 shrink-0 tabular-nums">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
                     </div>
@@ -982,76 +1265,48 @@ function CeoDashboardContent({
             </div>
           )}
         </div>
+      </div>
 
-        {/* AI Executive Summary */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 border border-slate-700/40 rounded-2xl shadow-sm p-5">
-          <div className="absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-amber-400/5 pointer-events-none" />
-          <div className="relative">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="p-1.5 rounded-lg bg-amber-400/15 border border-amber-400/20">
-                <Crown className="h-4 w-4 text-amber-400" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-white">Executive Summary</div>
-                <div className="text-[10px] text-slate-500">Derived from live data</div>
-              </div>
-              <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400">
-                <Activity className="h-3 w-3" />Live
-              </div>
+      {/* ══ EXECUTIVE SUMMARY ══════════════════════════════════════════════════ */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 border border-slate-700/40 rounded-2xl shadow-sm p-5">
+        <div className="absolute -bottom-8 -right-8 h-28 w-28 rounded-full bg-amber-400/5 pointer-events-none" />
+        <div className="relative">
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="p-1.5 rounded-lg bg-amber-400/15 border border-amber-400/20">
+              <Crown className="h-4 w-4 text-amber-400" />
             </div>
-            <ul className="space-y-3">
-              {insights.map((ins, i) => (
-                <li key={i} className="flex items-start gap-2.5">
-                  <div className="mt-0.5 shrink-0">{ins.icon}</div>
-                  <span className={`text-sm leading-relaxed ${ins.cls}`}>{ins.text}</span>
-                </li>
-              ))}
-            </ul>
+            <div>
+              <div className="text-sm font-bold text-white">Executive Summary</div>
+              <div className="text-[10px] text-slate-500">Derived from live company data · {insights.length} insights</div>
+            </div>
+            <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-400">
+              <Activity className="h-3 w-3" />Live
+            </div>
+          </div>
+          <ul className="space-y-3">
+            {insights.map((ins, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <div className="mt-0.5 shrink-0">{ins.icon}</div>
+                <span className={`text-sm leading-relaxed ${ins.cls}`}>{ins.text}</span>
+              </li>
+            ))}
+          </ul>
+          {/* Quick Links */}
+          <div className="mt-4 pt-4 border-t border-slate-700/40 flex flex-wrap gap-2">
+            {[
+              { href: '/approval-queue', label: 'Approval Center', icon: <Shield className="h-3 w-3" /> },
+              { href: '/special-discount', label: 'Special Discounts', icon: <Zap className="h-3 w-3" /> },
+              { href: '/history', label: 'Audit Trail', icon: <BookOpen className="h-3 w-3" /> },
+              { href: '/quotations', label: 'All Quotations', icon: <FileText className="h-3 w-3" /> },
+            ].map((l) => (
+              <Link key={l.href} href={l.href}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/6 hover:bg-white/12 text-slate-300 hover:text-white text-xs transition-colors border border-white/8">
+                {l.icon}{l.label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>
-
-      {/* ══ MARGIN INTELLIGENCE ════════════════════════════════════════════════ */}
-      {data.marginAnalysis && (
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <SectionHeader
-            icon={<Percent className="h-4 w-4 text-amber-500" />}
-            title="Margin & Discount Intelligence"
-            badge={data.marginAnalysis.avgDiscountRate > 20
-              ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">High Discount Alert</Badge>
-              : undefined}
-          />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'Avg Discount Rate', value: `${data.marginAnalysis.avgDiscountRate.toFixed(1)}%`, alert: data.marginAnalysis.avgDiscountRate > 20, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-              { label: 'Total Discount Given', value: formatMoney(data.marginAnalysis.totalDiscountGiven), alert: false, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/20' },
-              { label: 'Special Discount Req.', value: data.marginAnalysis.specialDiscountCount, alert: false, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
-              { label: 'QT Approved Total', value: data.marginAnalysis.approvedCount, alert: false, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-            ].map((item) => (
-              <div key={item.label} className={`rounded-xl p-3.5 ${item.bg} ${item.alert ? 'ring-1 ring-amber-400/30' : ''}`}>
-                <div className={`text-xl font-bold tabular-nums ${item.color}`}>{item.value}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">{item.label}</div>
-              </div>
-            ))}
-          </div>
-          {data.marginAnalysis.totalApprovedSubtotal > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                <span>Net Revenue vs Discount Given</span>
-                <span className={`font-semibold ${data.marginAnalysis.avgDiscountRate > 20 ? 'text-red-600' : ''}`}>
-                  {data.marginAnalysis.avgDiscountRate.toFixed(1)}% discount rate
-                </span>
-              </div>
-              <div className="h-2.5 rounded-full bg-muted overflow-hidden flex">
-                <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-l-full transition-all duration-700"
-                  style={{ width: `${Math.max(100 - data.marginAnalysis.avgDiscountRate, 0)}%` }} />
-                <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 rounded-r-full transition-all duration-700"
-                  style={{ width: `${Math.min(data.marginAnalysis.avgDiscountRate, 100)}%` }} />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ══ LIVE ACTIVITY FEED ════════════════════════════════════════════════ */}
       {activities.length > 0 && (

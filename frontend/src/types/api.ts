@@ -252,6 +252,13 @@ export interface Quotation {
   poUploadHistory?: unknown;
   poNumber?: string | null;
   maxDiscountPct?: number;
+  specialDiscountRequested?: boolean;
+  specialDiscountPercent?: number | string | null;
+  specialDiscountReason?: string | null;
+  specialDiscountStatus?: string | null;
+  specialDiscountFinalPct?: number | string | null;
+  specialDiscountById?: string | null;
+  specialDiscountAt?: string | Date | null;
 }
 
 export interface QuotationComment {

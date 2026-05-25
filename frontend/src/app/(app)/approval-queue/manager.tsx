@@ -231,7 +231,11 @@ function exceedsApproverLimits(q: Quotation, myId: string | undefined): boolean 
   const discountLimit = Number((q.currentApprover as any).discountLimit ?? 0);
   const grandTotal = Number(q.grandTotal);
   const maxDiscount = q.maxDiscountPct ?? 0;
-  return (moneyLimit > 0 && grandTotal > moneyLimit) || (discountLimit > 0 && maxDiscount > discountLimit);
+  // Special Discount pending → ต้อง escalate จนถึง CEO เสมอ ไม่ว่าจะมี discountLimit หรือไม่
+  const isSpecialDiscountPending = !!(q as any).specialDiscountRequested && (q as any).specialDiscountStatus === 'PENDING';
+  return isSpecialDiscountPending ||
+    (moneyLimit > 0 && grandTotal > moneyLimit) ||
+    (discountLimit > 0 && maxDiscount > discountLimit);
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────

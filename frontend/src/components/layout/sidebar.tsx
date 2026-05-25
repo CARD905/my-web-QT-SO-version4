@@ -319,9 +319,11 @@ const CEO_NAV_ITEMS: NavItem[] = [
   { href: '/customers',   labelKey: 'nav.customers',  icon: Users },
   // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
   { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },
-  { href: '/history',           labelKey: 'nav.history',     icon: History },
   { href: '/admin/invitations', labelKey: 'nav.invitations', icon: Mail },
-  // ── GROUP 4: SETTINGS ───────────────────────────────────────────────────
+  // ── GROUP 4: REPORTS ────────────────────────────────────────────────────
+  { dividerLabel: 'REPORTS', labelKey: '', icon: BarChart3 },
+  { href: '/history', labelKey: 'nav.history', icon: History },
+  // ── GROUP 5: SETTINGS ───────────────────────────────────────────────────
   { dividerLabel: 'SETTINGS', labelKey: '', icon: Settings },
   { href: '/company',     labelKey: 'nav.company',     icon: Building2 },
   { href: '/products',    labelKey: 'nav.products',    icon: Package },
