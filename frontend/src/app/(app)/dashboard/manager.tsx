@@ -266,7 +266,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-blue-300 shrink-0" />
 
-              {/* ── Custom dropdown for CEO ── */}
+              {/* ── Custom card dropdown for CEO ── */}
               {isCeo ? (
                 <div className="relative" ref={dropdownRef}>
                   <button
@@ -278,89 +278,129 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                   </button>
 
                   {dropdownOpen && (
-                    <div className="absolute right-0 top-full mt-1.5 z-50 w-72 bg-white dark:bg-slate-900 border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[70vh] overflow-y-auto">
-                      {/* All Team */}
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-[380px] bg-white dark:bg-slate-950 border border-border rounded-2xl shadow-2xl max-h-[75vh] overflow-y-auto p-2.5 space-y-2">
+
+                      {/* All Team pill */}
                       <button
                         onClick={() => { setFilterValue('all'); setDropdownOpen(false); }}
-                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2.5 transition-colors border-b border-border
-                          ${filterValue === 'all' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
+                        className={`w-full text-left px-4 py-2.5 rounded-xl text-sm flex items-center gap-2.5 transition-all border-2
+                          ${filterValue === 'all'
+                            ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold'
+                            : 'border-border bg-slate-50 dark:bg-slate-900 hover:border-blue-300 hover:bg-blue-50/50 text-foreground'}`}
                       >
-                        <UsersIcon className="h-4 w-4 text-blue-400 shrink-0" />
+                        <UsersIcon className="h-4 w-4 text-blue-500 shrink-0" />
                         <span>ทั้งระบบ (All Team)</span>
-                        {filterValue === 'all' && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                        {filterValue === 'all' && <span className="ml-auto text-[10px] font-medium text-blue-500 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">เลือกอยู่</span>}
                       </button>
 
-                      {/* Team groups */}
-                      {teamGroups.map(({ teamId, teamName, managers: teamMgrs, officers: teamOfficers }) => (
-                        <div key={teamId} className="border-b border-border last:border-0">
-                          {/* Team header */}
-                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2 sticky top-0">
-                            <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{teamName}</span>
+                      {/* Team cards */}
+                      {teamGroups.map(({ teamId, teamName, managers: teamMgrs, officers: teamOfficers }) => {
+                        const teamIsActive = teamMgrs.some((m) => filterValue === `user:${m.id}`) || teamOfficers.some((o) => filterValue === `user:${o.id}`);
+                        return (
+                          <div key={teamId} className={`rounded-xl border-2 overflow-hidden transition-all ${teamIsActive ? 'border-amber-300 dark:border-amber-700' : 'border-border'}`}>
+
+                            {/* Team header */}
+                            <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 flex items-center gap-2 border-b border-border">
+                              <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
+                              <span className="font-semibold text-sm text-foreground">{teamName}</span>
+                              <span className="ml-1 text-[10px] font-mono text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">{teamId.toUpperCase().slice(0, 10)}</span>
+                              <span className="ml-auto text-[10px] text-slate-400">{teamOfficers.length} officers</span>
+                            </div>
+
+                            {/* Managers section */}
+                            <div className="px-3 py-2 space-y-1">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <Crown className="h-3 w-3 text-amber-400" />
+                                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Managers</span>
+                              </div>
+                              {teamMgrs.map((mgr) => {
+                                const isActive = filterValue === `user:${mgr.id}`;
+                                const roleColor = mgr.role.nameTh.toLowerCase().includes('division') || mgr.role.code === 'DIVISION_MANAGER'
+                                  ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700'
+                                  : mgr.role.nameTh.toLowerCase().includes('department') || mgr.role.code === 'DEPARTMENT_MANAGER'
+                                  ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700'
+                                  : 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-700';
+                                return (
+                                  <button
+                                    key={mgr.id}
+                                    onClick={() => { setFilterValue(`user:${mgr.id}`); setDropdownOpen(false); }}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-all
+                                      ${isActive ? 'bg-amber-50 dark:bg-amber-950/30 ring-1 ring-amber-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                  >
+                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${roleColor}`}>
+                                      {mgr.role.nameTh}
+                                    </span>
+                                    <span className={`truncate text-sm ${isActive ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-foreground'}`}>{mgr.name}</span>
+                                    {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Officers section */}
+                            <div className="border-t border-border px-3 py-2">
+                              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
+                                OFFICERS ในทีม ({teamOfficers.length})
+                              </div>
+                              {teamOfficers.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic py-1">ยังไม่มี Officer ในทีมนี้</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {teamOfficers.map((off) => {
+                                    const isActive = filterValue === `user:${off.id}`;
+                                    const initial = off.name.charAt(0).toUpperCase();
+                                    return (
+                                      <button
+                                        key={off.id}
+                                        onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
+                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-sm flex items-center gap-2.5 transition-all
+                                          ${isActive ? 'bg-blue-50 dark:bg-blue-950/30 ring-1 ring-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                      >
+                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0
+                                          ${isActive ? 'bg-blue-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                          {initial}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div className={`truncate text-sm ${isActive ? 'font-semibold text-blue-700 dark:text-blue-400' : 'text-foreground'}`}>{off.name}</div>
+                                          <div className="text-[10px] text-muted-foreground truncate">{off.email}</div>
+                                        </div>
+                                        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </div>
-
-                          {/* Managers */}
-                          {teamMgrs.map((mgr) => {
-                            const isActive = filterValue === `user:${mgr.id}`;
-                            return (
-                              <button
-                                key={mgr.id}
-                                onClick={() => { setFilterValue(`user:${mgr.id}`); setDropdownOpen(false); }}
-                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors
-                                  ${isActive ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
-                              >
-                                <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate">{mgr.name}</div>
-                                  <div className="text-[10px] text-muted-foreground">{mgr.role.nameTh}</div>
-                                </div>
-                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
-                              </button>
-                            );
-                          })}
-
-                          {/* Officers */}
-                          {teamOfficers.map((off) => {
-                            const isActive = filterValue === `user:${off.id}`;
-                            return (
-                              <button
-                                key={off.id}
-                                onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
-                                className={`w-full text-left pl-7 pr-3 py-2 text-sm flex items-center gap-2.5 transition-colors
-                                  ${isActive ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-muted-foreground hover:text-foreground'}`}
-                              >
-                                <span className="text-slate-300 shrink-0">↳</span>
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate">{off.name}</div>
-                                  <div className="text-[10px] text-muted-foreground">{off.role.nameTh}</div>
-                                </div>
-                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {/* Unassigned officers */}
                       {unassignedOfficers.length > 0 && (
-                        <div>
-                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/60">
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">ไม่ได้สังกัดทีม</span>
+                        <div className="rounded-xl border-2 border-border overflow-hidden">
+                          <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border-b border-border flex items-center gap-2">
+                            <UsersIcon className="h-4 w-4 text-slate-400" />
+                            <span className="font-semibold text-sm text-foreground">ไม่ได้สังกัดทีม</span>
                           </div>
-                          {unassignedOfficers.map((off) => {
-                            const isActive = filterValue === `user:${off.id}`;
-                            return (
-                              <button
-                                key={off.id}
-                                onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
-                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors
-                                  ${isActive ? 'bg-blue-500/10 text-blue-600 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-muted-foreground hover:text-foreground'}`}
-                              >
-                                <span className="text-slate-300">↳</span>
-                                <span className="truncate">{off.name}</span>
-                              </button>
-                            );
-                          })}
+                          <div className="px-3 py-2 space-y-1">
+                            {unassignedOfficers.map((off) => {
+                              const isActive = filterValue === `user:${off.id}`;
+                              return (
+                                <button
+                                  key={off.id}
+                                  onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-sm flex items-center gap-2.5 transition-all
+                                    ${isActive ? 'bg-blue-50 dark:bg-blue-950/30 ring-1 ring-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                >
+                                  <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0
+                                    ${isActive ? 'bg-blue-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                    {off.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className={`truncate ${isActive ? 'font-semibold text-blue-700 dark:text-blue-400' : 'text-foreground'}`}>{off.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
