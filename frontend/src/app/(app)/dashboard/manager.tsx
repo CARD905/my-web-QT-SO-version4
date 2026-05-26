@@ -117,6 +117,7 @@ interface FilterableUser {
   id: string; name: string; email: string;
   role: { code: string; nameTh: string };
   reportsTo?: { id: string; name: string } | null;
+  team?: { id: string; name: string } | null;
 }
 
 const STATUS_CFG: Record<string, { color: string; hex: string; label: string }> = {
@@ -201,6 +202,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const filterLabel = filterValue === 'team' ? 'My Team'
     : filterValue === 'all' ? 'ทั้งระบบ'
     : selectedUser ? `${selectedUser.name} (${selectedUser.role.nameTh})` : 'My Team';
+  const isCeo = role?.code === 'CEO';
   const isTeamView = filterValue === 'team' || filterValue === 'all';
   const isUserView = filterValue.startsWith('user:');
   const isSelfView = false;
@@ -229,17 +231,23 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                 onChange={(e) => setFilterValue(e.target.value)}
                 className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
               >
-                <option value="team" className="text-black bg-white">— My Team</option>
+                {!isCeo && (
+                  <option value="team" className="text-black bg-white">— My Team</option>
+                )}
                 {isExecutive && (
                   <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
                 )}
                 {managers.length > 0 && (
-                  <optgroup label="Managers">
-                    {managers.map((u) => <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>)}
+                  <optgroup label={isCeo ? 'ดูตามทีม' : 'Managers'}>
+                    {managers.map((u) => (
+                      <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
+                        {isCeo ? (u.team?.name ?? u.name) : u.name}
+                      </option>
+                    ))}
                   </optgroup>
                 )}
                 {subordinates.length > 0 && (
-                  <optgroup label="Officers / Sales">
+                  <optgroup label={isCeo ? 'รายบุคคล' : 'Officers / Sales'}>
                     {subordinates.map((u) => (
                       <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
                         {u.reportsTo ? `↳ ${u.name}` : u.name}
@@ -256,7 +264,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
             >
               <RefreshCw className={`h-4 w-4 ${spinning ? 'animate-spin' : ''}`} />
             </button>
-            {isExecutive && (
+            {isExecutive && !isCeo && (
               <Button asChild variant="outline" size="sm" className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white">
                 <Link href="/manager/users"><UsersIcon className="h-4 w-4" />จัดการผู้ใช้</Link>
               </Button>
