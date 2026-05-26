@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   TrendingUp, Clock, CheckCircle2, XCircle, DollarSign,
@@ -10,6 +10,7 @@ import {
   Timer, ChevronRight, Zap,
   RefreshCw, Activity,
   ShoppingCart, Target, TrendingDown, Award, PieChart, Percent,
+  ChevronDown, Building2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -145,6 +146,8 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const [loading, setLoading] = useState(true);
   const [filterValue, setFilterValue] = useState<string>(initialFilter ?? 'team');
   const [spinning, setSpinning] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isCeo = role?.code === 'CEO';
   const isExecutive = role?.code === 'CEO' || role?.code === 'ADMIN';
@@ -184,6 +187,17 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
     setTimeout(() => setSpinning(false), 600);
   };
 
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropdownOpen]);
+
   if (permLoading) {
     return (
       <div className="space-y-4">
@@ -200,15 +214,16 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const managers = users.filter((u) => u.role.code === 'MANAGER');
   const subordinates = users.filter((u) => u.role.code !== 'MANAGER' && (!isCeo || u.role.code !== 'ADMIN'));
 
-  // For CEO: group by unique team (multiple managers per team → one group)
+  // For CEO: one group per unique team, includes ALL managers + officers
   const teamGroups = isCeo
     ? [...new Set(managers.map((m) => m.team?.id ?? m.id))].map((tid) => {
-        const mgr = managers.find((m) => (m.team?.id ?? m.id) === tid)!;
+        const teamManagers = managers.filter((m) => (m.team?.id ?? m.id) === tid);
+        const first = teamManagers[0];
         return {
           teamId: tid,
-          teamName: mgr.team?.name ?? mgr.name,
-          manager: mgr,
-          officers: subordinates.filter((s) => s.team?.id != null && s.team.id === mgr.team?.id),
+          teamName: first.team?.name ?? first.name,
+          managers: teamManagers,
+          officers: subordinates.filter((s) => s.team?.id != null && s.team.id === first.team?.id),
         };
       })
     : [];
@@ -250,61 +265,136 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-blue-300 shrink-0" />
-              <select
-                value={filterValue}
-                onChange={(e) => setFilterValue(e.target.value)}
-                className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
-              >
-                {isCeo ? (
-                  <>
+
+              {/* ── Custom dropdown for CEO ── */}
+              {isCeo ? (
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setDropdownOpen((v) => !v)}
+                    className="h-9 min-w-[220px] max-w-[280px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm flex items-center justify-between gap-2 hover:bg-white/20 transition-colors"
+                  >
+                    <span className="truncate">{filterLabel}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {dropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-72 bg-white dark:bg-slate-900 border border-border rounded-2xl shadow-2xl overflow-hidden max-h-[70vh] overflow-y-auto">
+                      {/* All Team */}
+                      <button
+                        onClick={() => { setFilterValue('all'); setDropdownOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2.5 transition-colors border-b border-border
+                          ${filterValue === 'all' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
+                      >
+                        <UsersIcon className="h-4 w-4 text-blue-400 shrink-0" />
+                        <span>ทั้งระบบ (All Team)</span>
+                        {filterValue === 'all' && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                      </button>
+
+                      {/* Team groups */}
+                      {teamGroups.map(({ teamId, teamName, managers: teamMgrs, officers: teamOfficers }) => (
+                        <div key={teamId} className="border-b border-border last:border-0">
+                          {/* Team header */}
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2 sticky top-0">
+                            <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{teamName}</span>
+                          </div>
+
+                          {/* Managers */}
+                          {teamMgrs.map((mgr) => {
+                            const isActive = filterValue === `user:${mgr.id}`;
+                            return (
+                              <button
+                                key={mgr.id}
+                                onClick={() => { setFilterValue(`user:${mgr.id}`); setDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors
+                                  ${isActive ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
+                              >
+                                <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate">{mgr.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{mgr.role.nameTh}</div>
+                                </div>
+                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                              </button>
+                            );
+                          })}
+
+                          {/* Officers */}
+                          {teamOfficers.map((off) => {
+                            const isActive = filterValue === `user:${off.id}`;
+                            return (
+                              <button
+                                key={off.id}
+                                onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
+                                className={`w-full text-left pl-7 pr-3 py-2 text-sm flex items-center gap-2.5 transition-colors
+                                  ${isActive ? 'bg-blue-500/10 text-blue-700 dark:text-blue-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-muted-foreground hover:text-foreground'}`}
+                              >
+                                <span className="text-slate-300 shrink-0">↳</span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate">{off.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{off.role.nameTh}</div>
+                                </div>
+                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+
+                      {/* Unassigned officers */}
+                      {unassignedOfficers.length > 0 && (
+                        <div>
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/60">
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">ไม่ได้สังกัดทีม</span>
+                          </div>
+                          {unassignedOfficers.map((off) => {
+                            const isActive = filterValue === `user:${off.id}`;
+                            return (
+                              <button
+                                key={off.id}
+                                onClick={() => { setFilterValue(`user:${off.id}`); setDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors
+                                  ${isActive ? 'bg-blue-500/10 text-blue-600 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-muted-foreground hover:text-foreground'}`}
+                              >
+                                <span className="text-slate-300">↳</span>
+                                <span className="truncate">{off.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Native select for Manager / Admin */
+                <select
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
+                >
+                  <option value="team" className="text-black bg-white">— My Team</option>
+                  {isExecutive && (
                     <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
-                    {teamGroups.map(({ teamId, teamName, manager, officers }) => (
-                      <optgroup key={teamId} label={`▸ ${teamName}`}>
-                        <option value={`user:${manager.id}`} className="text-black bg-white">
-                          ภาพรวมทีม {teamName}
+                  )}
+                  {managers.length > 0 && (
+                    <optgroup label="Managers">
+                      {managers.map((u) => (
+                        <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {subordinates.length > 0 && (
+                    <optgroup label="Officers / Sales">
+                      {subordinates.map((u) => (
+                        <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
+                          {u.reportsTo ? `↳ ${u.name}` : u.name}
                         </option>
-                        {officers.map((o) => (
-                          <option key={o.id} value={`user:${o.id}`} className="text-black bg-white">
-                            ↳ {o.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                    {unassignedOfficers.length > 0 && (
-                      <optgroup label="ไม่ได้สังกัดทีม">
-                        {unassignedOfficers.map((o) => (
-                          <option key={o.id} value={`user:${o.id}`} className="text-black bg-white">
-                            ↳ {o.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <option value="team" className="text-black bg-white">— My Team</option>
-                    {isExecutive && (
-                      <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
-                    )}
-                    {managers.length > 0 && (
-                      <optgroup label="Managers">
-                        {managers.map((u) => (
-                          <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {subordinates.length > 0 && (
-                      <optgroup label="Officers / Sales">
-                        {subordinates.map((u) => (
-                          <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
-                            {u.reportsTo ? `↳ ${u.name}` : u.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </>
-                )}
-              </select>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              )}
             </div>
             <button
               onClick={handleRefresh}
