@@ -136,12 +136,12 @@ const STATUS_CFG: Record<string, { color: string; hex: string; label: string }> 
 // ════════════════════════════════════════════════════════════════════════════
 // OUTER PAGE — filter state + data fetching (unchanged logic)
 // ════════════════════════════════════════════════════════════════════════════
-export default function ManagerDashboardPage() {
+export default function ManagerDashboardPage({ initialFilter }: { initialFilter?: string } = {}) {
   const { role, loading: permLoading } = usePermissions();
   const [data, setData] = useState<DashboardData | null>(null);
   const [users, setUsers] = useState<FilterableUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterValue, setFilterValue] = useState<string>('team');
+  const [filterValue, setFilterValue] = useState<string>(initialFilter ?? 'team');
   const [spinning, setSpinning] = useState(false);
 
   const isExecutive = role?.code === 'CEO' || role?.code === 'ADMIN';

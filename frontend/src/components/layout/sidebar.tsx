@@ -182,12 +182,7 @@ const NAV_ITEMS: NavItem[] = [
     excludeRoles: ['ADMIN', 'OFFICER'],
     requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
   },
-  {
-    href: '/manual',
-    labelKey: 'nav.manual',
-    icon: BookOpen,
-    onlyRoles: ['OFFICER', 'SALES', 'MANAGER'],
-  },
+  
 
   // ── MASTER DATA — ADMIN + CEO + MANAGER เห็น ─────────────────────────────
   {
@@ -216,6 +211,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: Users,
     onlyRoles: ['MANAGER'],
     requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
+  },
+  {
+    href: '/manual',
+    labelKey: 'nav.manual',
+    icon: BookOpen,
+    onlyRoles: ['OFFICER', 'SALES', 'MANAGER'],
   },
 
   // ── ADMIN PANEL — เฉพาะ ADMIN เห็น ──────────────────────────────────────
@@ -307,11 +308,8 @@ const CEO_NAV_ITEMS: NavItem[] = [
   { href: '/customers',   labelKey: 'nav.customers',     icon: Users },
 
   // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
-  // Staff directory, org chart, invite members
   { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },
-  { href: '/users',             labelKey: 'nav.staff',       icon: Users },
-  { href: '/admin/teams',       labelKey: 'nav.adminTeams',  icon: Building2 },
-  { href: '/admin/invitations', labelKey: 'nav.invitations', icon: Mail },
+  { href: '/users', labelKey: 'nav.staff', icon: Users },
 
   // ── GROUP 4: REPORTS ────────────────────────────────────────────────────
   // Full approval decision history across the organization

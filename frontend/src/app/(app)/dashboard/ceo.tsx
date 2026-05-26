@@ -21,6 +21,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
+import ManagerDashboardPage from './manager';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CeoDashboardData {
@@ -64,7 +65,9 @@ interface CeoDashboardData {
     approvedCount: number;
     totalApprovedSubtotal: number;
   };
+  avgApprovalHours?: number | null;
   soExecution?: {
+    statusBreakdown?: Array<{ status: string; count: number; value: number }>;
     overdueCount: number; totalSos: number;
     completedCount: number; completedValue: number;
   };
@@ -289,9 +292,10 @@ function RiskPanel({ icon, label, dot, border, iconBg, textColor, itemColor, ite
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MAIN EXPORT — Data Fetching Wrapper
+// MAIN EXPORT — Data Fetching Wrapper + View Switcher
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function CeoExecutiveDashboard() {
+  const [viewMode, setViewMode] = useState<'executive' | 'team'>('executive');
   const [data, setData] = useState<CeoDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
@@ -310,7 +314,9 @@ export default function CeoExecutiveDashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (viewMode === 'executive') fetchData();
+  }, [viewMode, fetchData]);
 
   const handleRefresh = async () => {
     setSpinning(true);
@@ -318,9 +324,46 @@ export default function CeoExecutiveDashboard() {
     setTimeout(() => setSpinning(false), 700);
   };
 
+  const viewSwitcher = (
+    <div className="flex items-center gap-1 p-1 bg-slate-900 rounded-xl w-fit mb-5 shadow-lg border border-white/10">
+      <button
+        onClick={() => setViewMode('executive')}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          viewMode === 'executive'
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm'
+            : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <Crown className="h-3.5 w-3.5" />
+        Executive Dashboard
+      </button>
+      <button
+        onClick={() => setViewMode('team')}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          viewMode === 'team'
+            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 shadow-sm'
+            : 'text-slate-400 hover:text-slate-200'
+        }`}
+      >
+        <UsersIcon className="h-3.5 w-3.5" />
+        ทีม / Sales Dashboard
+      </button>
+    </div>
+  );
+
+  if (viewMode === 'team') {
+    return (
+      <div>
+        {viewSwitcher}
+        <ManagerDashboardPage initialFilter="all" />
+      </div>
+    );
+  }
+
   if (loading && !data) {
     return (
       <div className="space-y-5 max-w-7xl">
+        {viewSwitcher}
         <Skeleton className="h-[88px] rounded-2xl" />
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
@@ -338,12 +381,21 @@ export default function CeoExecutiveDashboard() {
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center h-64 rounded-2xl bg-card border border-border text-muted-foreground text-sm">
-        ไม่สามารถโหลดข้อมูลได้ — กรุณาลองใหม่
+      <div className="space-y-5 max-w-7xl">
+        {viewSwitcher}
+        <div className="flex items-center justify-center h-64 rounded-2xl bg-card border border-border text-muted-foreground text-sm">
+          ไม่สามารถโหลดข้อมูลได้ — กรุณาลองใหม่
+        </div>
       </div>
     );
   }
-  return <CeoDashboardContent data={data} lastUpdate={lastUpdate} onRefresh={handleRefresh} spinning={spinning} />;
+
+  return (
+    <div className="space-y-5 max-w-7xl">
+      {viewSwitcher}
+      <CeoDashboardContent data={data} lastUpdate={lastUpdate} onRefresh={handleRefresh} spinning={spinning} />
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -654,6 +706,94 @@ function CeoDashboardContent({
           sublabel={highRiskCount > 0 ? `${criticals.length} critical, ${warnings.length} warning` : 'ทุกอย่างปกติ'}
           alertLevel={criticals.length > 0 ? 'critical' : warnings.length > 0 ? 'warning' : null}
         />
+      </div>
+
+      {/* ══ MONTHLY PULSE ══════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Revenue this month */}
+        <div className="rounded-2xl p-4 bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-200/50 dark:border-emerald-800/30 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-lg bg-emerald-500/15">
+              <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Revenue เดือนนี้</span>
+          </div>
+          <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">
+            {formatMoney(thisMonthRevenue)}
+          </div>
+          {monthGrowth !== null ? (
+            <div className={`mt-1.5 flex items-center gap-1 text-[11px] font-medium ${monthGrowth >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+              {monthGrowth >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+              {monthGrowth >= 0 ? '+' : ''}{monthGrowth}% vs เดือนก่อน
+            </div>
+          ) : (
+            <div className="mt-1.5 text-[11px] text-muted-foreground">เดือนแรก</div>
+          )}
+        </div>
+
+        {/* QTs approved this month */}
+        <div className="rounded-2xl p-4 bg-gradient-to-br from-blue-500/10 to-indigo-500/5 border border-blue-200/50 dark:border-blue-800/30 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-lg bg-blue-500/15">
+              <CheckCircle2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">อนุมัติเดือนนี้</span>
+          </div>
+          <div className="text-xl font-bold text-blue-700 dark:text-blue-300 tabular-nums leading-tight">
+            {data.monthActivity?.approved ?? 0} QT
+          </div>
+          <div className="mt-1.5 text-[11px] text-muted-foreground">
+            วันนี้: <span className="font-bold text-blue-600 dark:text-blue-400">{data.todayActivity.approved}</span>
+            {' '}· ปฏิเสธ: <span className="font-bold text-red-500">{data.todayActivity.rejected}</span>
+          </div>
+        </div>
+
+        {/* Rejection this month */}
+        <div className="rounded-2xl p-4 bg-gradient-to-br from-rose-500/10 to-red-500/5 border border-rose-200/50 dark:border-rose-800/30 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-lg bg-rose-500/15">
+              <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+            </div>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">ปฏิเสธเดือนนี้</span>
+          </div>
+          <div className="text-xl font-bold text-rose-600 dark:text-rose-400 tabular-nums leading-tight">
+            {data.monthActivity?.rejected ?? 0} QT
+          </div>
+          {(() => {
+            const m = data.monthActivity ?? { approved: 0, rejected: 0 };
+            const total = m.approved + m.rejected;
+            const rate = total > 0 ? Math.round((m.rejected / total) * 100) : 0;
+            return (
+              <div className={`mt-1.5 text-[11px] font-medium ${rate > 30 ? 'text-red-600' : rate > 15 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                Rejection Rate {rate}%
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Approval speed */}
+        <div className="rounded-2xl p-4 bg-gradient-to-br from-violet-500/10 to-purple-500/5 border border-violet-200/50 dark:border-violet-800/30 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="p-1.5 rounded-lg bg-violet-500/15">
+              <Timer className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Approval Speed</span>
+          </div>
+          <div className="text-xl font-bold text-violet-700 dark:text-violet-300 tabular-nums leading-tight">
+            {data.avgApprovalHours != null ? `${data.avgApprovalHours}h` : '—'}
+          </div>
+          <div className={`mt-1.5 text-[11px] font-medium ${
+            data.avgApprovalHours == null ? 'text-muted-foreground'
+            : data.avgApprovalHours < 24 ? 'text-emerald-600 dark:text-emerald-400'
+            : data.avgApprovalHours < 48 ? 'text-amber-600 dark:text-amber-400'
+            : 'text-red-500'
+          }`}>
+            {data.avgApprovalHours == null ? 'ยังไม่มีข้อมูล'
+              : data.avgApprovalHours < 24 ? '✓ เร็ว (< 1 วัน)'
+              : data.avgApprovalHours < 48 ? '~ ปานกลาง (1–2 วัน)'
+              : '⚠ ช้า (> 2 วัน)'}
+          </div>
+        </div>
       </div>
 
       {/* ══ SECTION 5 · APPROVAL MONITORING ════════════════════════════════════ */}
@@ -1239,6 +1379,94 @@ function CeoDashboardContent({
           )}
         </div>
       </div>
+
+      {/* ══ SO EXECUTION DASHBOARD ═════════════════════════════════════════════ */}
+      {data.soExecution && (
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <SectionHeader
+            icon={<ShoppingCart className="h-4 w-4 text-teal-500" />}
+            title="Sale Order Execution"
+            subtitle="ติดตามสถานะ SO ทั้งองค์กร"
+            badge={data.soExecution.overdueCount > 0
+              ? <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800">⚠ {data.soExecution.overdueCount} Overdue</Badge>
+              : undefined}
+            action={<span className="text-xs text-muted-foreground">{data.soExecution.totalSos} SO ทั้งหมด</span>}
+          />
+
+          {data.soExecution.totalSos === 0 ? (
+            <div className="flex items-center gap-3 py-6 text-muted-foreground">
+              <ShoppingCart className="h-8 w-8 opacity-20 mx-auto" />
+              <p className="text-sm text-center w-full">ยังไม่มี Sale Order ในระบบ</p>
+            </div>
+          ) : (
+            <>
+              {/* Status Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {(() => {
+                  const sbMap = Object.fromEntries(
+                    (data.soExecution.statusBreakdown ?? []).map((s) => [s.status, s])
+                  );
+                  return [
+                    { key: 'PENDING_REVIEW', label: 'รออนุมัติ',   colorVal: '#f59e0b', bg: 'bg-amber-50 dark:bg-amber-900/20',   border: 'border-amber-200 dark:border-amber-800/30',   textCls: 'text-amber-700 dark:text-amber-300' },
+                    { key: 'CONFIRMED',      label: 'ยืนยันแล้ว',  colorVal: '#14b8a6', bg: 'bg-teal-50 dark:bg-teal-900/20',     border: 'border-teal-200 dark:border-teal-800/30',     textCls: 'text-teal-700 dark:text-teal-300' },
+                    { key: 'COMPLETED',      label: 'ส่งมอบแล้ว',  colorVal: '#10b981', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800/30', textCls: 'text-emerald-700 dark:text-emerald-300' },
+                    { key: 'REJECTED',       label: 'ถูกยกเลิก',   colorVal: '#ef4444', bg: 'bg-red-50 dark:bg-red-900/20',       border: 'border-red-200 dark:border-red-800/30',       textCls: 'text-red-700 dark:text-red-300' },
+                  ].map(({ key, label, colorVal, bg, border, textCls }) => {
+                    const s = sbMap[key];
+                    const count = s?.count ?? 0;
+                    const value = s?.value ?? 0;
+                    return (
+                      <div key={key} className={`rounded-xl p-3.5 ${bg} border ${border}`}>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: colorVal }} />
+                          <span className={`text-[11px] font-semibold ${textCls}`}>{label}</span>
+                        </div>
+                        <div className={`text-2xl font-bold tabular-nums ${textCls}`}>{count}</div>
+                        {value > 0 && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{formatMoney(value)}</div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Completion progress bar */}
+              <div className="p-3.5 rounded-xl bg-muted/30 border border-border/40">
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="font-medium text-foreground">SO Completion Rate</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    {Math.round((data.soExecution.completedCount / Math.max(data.soExecution.totalSos, 1)) * 100)}%
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                    style={{ width: `${Math.max(Math.round((data.soExecution.completedCount / Math.max(data.soExecution.totalSos, 1)) * 100), data.soExecution.completedCount > 0 ? 4 : 0)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1.5">
+                  <span>ส่งมอบแล้ว: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(data.soExecution.completedValue)}</span></span>
+                  <span>{data.soExecution.completedCount} / {data.soExecution.totalSos} SO</span>
+                </div>
+              </div>
+
+              {/* Overdue alert */}
+              {data.soExecution.overdueCount > 0 && (
+                <div className="mt-3 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/40">
+                  <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                  <span className="text-sm text-red-700 dark:text-red-400 font-medium flex-1">
+                    {data.soExecution.overdueCount} SO เกินกำหนดส่งมอบ — ต้องติดตามด่วน
+                  </span>
+                  <Link href="/sale-orders" className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 flex items-center gap-1 shrink-0">
+                    ดู SO <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ══ EXECUTIVE SUMMARY ══════════════════════════════════════════════════ */}
       <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 border border-slate-700/40 rounded-2xl shadow-sm p-5">

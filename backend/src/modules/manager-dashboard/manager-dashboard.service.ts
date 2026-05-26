@@ -157,7 +157,17 @@ export const managerDashboardService = {
       prisma.quotation.aggregate({ where: { deletedAt: null, approvedById: actingUserId }, _sum: { grandTotal: true } }),
 
       prisma.quotation.groupBy({ by: ['createdById'], where: baseWhere, _count: { id: true }, _sum: { grandTotal: true }, orderBy: { _count: { id: 'desc' } }, take: 10 }),
-      prisma.quotation.findMany({ where: { ...baseWhere, status: 'PENDING_ESCALATED' }, orderBy: { submittedAt: 'desc' }, take: 5, include: { createdBy: { select: { id: true, name: true } } } }),
+      prisma.quotation.findMany({
+        where: {
+          ...baseWhere,
+          status: 'PENDING_ESCALATED',
+          // CEO only sees items routed specifically to them; other managers see their team's scope
+          ...(currentUser.roleCode === 'CEO' ? { currentApproverId: currentUser.id } : {}),
+        },
+        orderBy: { submittedAt: 'desc' },
+        take: 10,
+        include: { createdBy: { select: { id: true, name: true } } },
+      }),
       prisma.quotation.groupBy({ by: ['status'], where: baseWhere, _count: { id: true } }),
 
       // ─── Trend: approved/rejected ของ actingUser ช่วง 6 เดือน ────────────
@@ -602,11 +612,12 @@ export const managerDashboardService = {
     let qtCount = 0;
     let soCount = 0;
     if (isManagerAbove) {
-      // QTs assigned to me (normal + backup) + escalated over-budget + PO submissions + SOs for review
+      // CEO sees only items explicitly routed to them; other managers see all team items
+      const isCeo = currentUser.roleCode === 'CEO';
       const [normalQt, escalatedQt, poQt, pendingSo] = await Promise.all([
         prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
         prisma.quotation.count({ where: { deletedAt: null, status: 'PENDING_ESCALATED', currentApproverId: currentUser.id } }),
-        prisma.quotation.count({ where: { deletedAt: null, status: 'PO_PENDING' } }),
+        prisma.quotation.count({ where: { deletedAt: null, status: 'PO_PENDING', ...(isCeo ? { currentApproverId: currentUser.id } : {}) } }),
         prisma.saleOrder.count({ where: { deletedAt: null, status: 'PENDING_REVIEW' } }),
       ]);
       qtCount = normalQt + escalatedQt + poQt;
