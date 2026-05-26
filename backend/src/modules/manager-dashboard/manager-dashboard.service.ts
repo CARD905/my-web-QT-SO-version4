@@ -573,10 +573,22 @@ export const managerDashboardService = {
     if (['CEO', 'ADMIN'].includes(currentUser.roleCode)) {
       const users = await prisma.user.findMany({
         where: { deletedAt: null, isActive: true, id: { not: currentUser.id } },
-        include: { role: { select: { code: true, nameTh: true, level: true } } },
+        include: {
+          role: { select: { code: true, nameTh: true, level: true } },
+          team: { select: { id: true, name: true, code: true } },
+          reportsTo: { select: { id: true, name: true } },
+        },
         orderBy: [{ role: { level: 'desc' } }, { name: 'asc' }],
       });
-      return users.map((u) => ({ id: u.id, name: u.name, email: u.email, role: { code: u.role.code, nameTh: u.role.nameTh } }));
+      return users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: { code: u.role.code, nameTh: u.role.nameTh },
+        team: u.team ? { id: u.team.id, name: u.team.name, code: u.team.code ?? undefined } : null,
+        reportsTo: u.reportsTo ? { id: u.reportsTo.id, name: u.reportsTo.name } : null,
+        managerLevel: u.managerLevel ?? null,
+      }));
     }
     if (currentUser.roleCode === 'MANAGER') {
       const subIds = await getSubordinateIds(currentUser.id);

@@ -119,7 +119,8 @@ interface FilterableUser {
   id: string; name: string; email: string;
   role: { code: string; nameTh: string };
   reportsTo?: { id: string; name: string } | null;
-  team?: { id: string; name: string } | null;
+  team?: { id: string; name: string; code?: string } | null;
+  managerLevel?: string | null;
 }
 
 const STATUS_CFG: Record<string, { color: string; hex: string; label: string }> = {
@@ -214,21 +215,33 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const managers = users.filter((u) => u.role.code === 'MANAGER');
   const subordinates = users.filter((u) => u.role.code !== 'MANAGER' && (!isCeo || u.role.code !== 'ADMIN'));
 
-  // For CEO: one group per unique team, includes ALL managers + officers
+  // For CEO: group ALL users by team.id, fallback to reportsTo link for officers without team
   const teamGroups = isCeo
-    ? [...new Set(managers.map((m) => m.team?.id ?? m.id))].map((tid) => {
-        const teamManagers = managers.filter((m) => (m.team?.id ?? m.id) === tid);
+    ? [...new Set([
+        ...managers.map((m) => m.team?.id ?? `solo:${m.id}`),
+      ])].map((tid) => {
+        const isSolo = tid.startsWith('solo:');
+        const teamManagers = isSolo
+          ? managers.filter((m) => !m.team?.id && `solo:${m.id}` === tid)
+          : managers.filter((m) => m.team?.id === tid);
         const first = teamManagers[0];
+        const managerIds = new Set(teamManagers.map((m) => m.id));
+        const officers = subordinates.filter((s) =>
+          (s.team?.id != null && s.team.id === (isSolo ? null : tid)) ||
+          (s.reportsTo?.id != null && managerIds.has(s.reportsTo.id))
+        );
         return {
           teamId: tid,
-          teamName: first.team?.name ?? first.name,
+          teamCode: isSolo ? '' : (first.team?.code ?? ''),
+          teamName: isSolo ? first.name : (first.team?.name ?? first.name),
           managers: teamManagers,
-          officers: subordinates.filter((s) => s.team?.id != null && s.team.id === first.team?.id),
+          officers,
         };
       })
     : [];
+  const assignedOfficerIds = new Set(teamGroups.flatMap((g) => g.officers.map((o) => o.id)));
   const unassignedOfficers = isCeo
-    ? subordinates.filter((s) => !managers.some((m) => m.team?.id && m.team.id === s.team?.id))
+    ? subordinates.filter((s) => !assignedOfficerIds.has(s.id))
     : [];
 
   const selectedUser = filterValue.startsWith('user:')
@@ -294,7 +307,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                       </button>
 
                       {/* Team cards */}
-                      {teamGroups.map(({ teamId, teamName, managers: teamMgrs, officers: teamOfficers }) => {
+                      {teamGroups.map(({ teamId, teamCode, teamName, managers: teamMgrs, officers: teamOfficers }) => {
                         const teamIsActive = teamMgrs.some((m) => filterValue === `user:${m.id}`) || teamOfficers.some((o) => filterValue === `user:${o.id}`);
                         return (
                           <div key={teamId} className={`rounded-xl border-2 overflow-hidden transition-all ${teamIsActive ? 'border-amber-300 dark:border-amber-700' : 'border-border'}`}>
@@ -303,7 +316,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                             <div className="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 flex items-center gap-2 border-b border-border">
                               <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
                               <span className="font-semibold text-sm text-foreground">{teamName}</span>
-                              <span className="ml-1 text-[10px] font-mono text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">{teamId.toUpperCase().slice(0, 10)}</span>
+                              {teamCode && <span className="ml-1 text-[10px] font-mono text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded">{teamCode}</span>}
                               <span className="ml-auto text-[10px] text-slate-400">{teamOfficers.length} officers</span>
                             </div>
 
@@ -315,9 +328,10 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                               </div>
                               {teamMgrs.map((mgr) => {
                                 const isActive = filterValue === `user:${mgr.id}`;
-                                const roleColor = mgr.role.nameTh.toLowerCase().includes('division') || mgr.role.code === 'DIVISION_MANAGER'
+                                const lvl = mgr.managerLevel ?? '';
+                                const roleColor = (lvl === 'DIVISION' || mgr.role.nameTh.toLowerCase().includes('division'))
                                   ? 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700'
-                                  : mgr.role.nameTh.toLowerCase().includes('department') || mgr.role.code === 'DEPARTMENT_MANAGER'
+                                  : (lvl === 'DEPARTMENT' || mgr.role.nameTh.toLowerCase().includes('department'))
                                   ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700'
                                   : 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-700';
                                 return (
