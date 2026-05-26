@@ -145,6 +145,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const [filterValue, setFilterValue] = useState<string>(initialFilter ?? 'team');
   const [spinning, setSpinning] = useState(false);
 
+  const isCeo = role?.code === 'CEO';
   const isExecutive = role?.code === 'CEO' || role?.code === 'ADMIN';
   const isManagerLike = role?.code === 'MANAGER' || isExecutive;
 
@@ -196,13 +197,30 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   }
 
   const managers = users.filter((u) => u.role.code === 'MANAGER');
-  const subordinates = users.filter((u) => u.role.code !== 'MANAGER');
+  const subordinates = users.filter((u) => u.role.code !== 'MANAGER' && (!isCeo || u.role.code !== 'ADMIN'));
+
+  // For CEO: group officers by their manager's team
+  const teamGroups = isCeo
+    ? managers.map((mgr) => ({
+        teamId: mgr.team?.id ?? mgr.id,
+        teamName: mgr.team?.name ?? mgr.name,
+        manager: mgr,
+        officers: subordinates.filter((s) => s.team?.id != null && s.team.id === mgr.team?.id),
+      }))
+    : [];
+  const unassignedOfficers = isCeo
+    ? subordinates.filter((s) => !managers.some((m) => m.team?.id && m.team.id === s.team?.id))
+    : [];
+
   const selectedUser = filterValue.startsWith('user:')
     ? users.find((u) => u.id === filterValue.slice(5)) : null;
   const filterLabel = filterValue === 'team' ? 'My Team'
     : filterValue === 'all' ? 'ทั้งระบบ'
-    : selectedUser ? `${selectedUser.name} (${selectedUser.role.nameTh})` : 'My Team';
-  const isCeo = role?.code === 'CEO';
+    : selectedUser
+      ? isCeo && selectedUser.role.code === 'MANAGER'
+        ? `ทีม ${selectedUser.team?.name ?? selectedUser.name}`
+        : `${selectedUser.name} (${selectedUser.role.nameTh})`
+      : 'My Team';
   const isTeamView = filterValue === 'team' || filterValue === 'all';
   const isUserView = filterValue.startsWith('user:');
   const isSelfView = false;
@@ -231,29 +249,54 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                 onChange={(e) => setFilterValue(e.target.value)}
                 className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
               >
-                {!isCeo && (
-                  <option value="team" className="text-black bg-white">— My Team</option>
-                )}
-                {isExecutive && (
-                  <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
-                )}
-                {managers.length > 0 && (
-                  <optgroup label={isCeo ? 'ดูตามทีม' : 'Managers'}>
-                    {managers.map((u) => (
-                      <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
-                        {isCeo ? (u.team?.name ?? u.name) : u.name}
-                      </option>
+                {isCeo ? (
+                  <>
+                    <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
+                    {teamGroups.map(({ teamId, teamName, manager, officers }) => (
+                      <optgroup key={teamId} label={`▸ ${teamName}`}>
+                        <option value={`user:${manager.id}`} className="text-black bg-white">
+                          ภาพรวมทีม {teamName}
+                        </option>
+                        {officers.map((o) => (
+                          <option key={o.id} value={`user:${o.id}`} className="text-black bg-white">
+                            ↳ {o.name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
-                  </optgroup>
-                )}
-                {subordinates.length > 0 && (
-                  <optgroup label={isCeo ? 'รายบุคคล' : 'Officers / Sales'}>
-                    {subordinates.map((u) => (
-                      <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
-                        {u.reportsTo ? `↳ ${u.name}` : u.name}
-                      </option>
-                    ))}
-                  </optgroup>
+                    {unassignedOfficers.length > 0 && (
+                      <optgroup label="ไม่ได้สังกัดทีม">
+                        {unassignedOfficers.map((o) => (
+                          <option key={o.id} value={`user:${o.id}`} className="text-black bg-white">
+                            ↳ {o.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <option value="team" className="text-black bg-white">— My Team</option>
+                    {isExecutive && (
+                      <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
+                    )}
+                    {managers.length > 0 && (
+                      <optgroup label="Managers">
+                        {managers.map((u) => (
+                          <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {subordinates.length > 0 && (
+                      <optgroup label="Officers / Sales">
+                        {subordinates.map((u) => (
+                          <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
+                            {u.reportsTo ? `↳ ${u.name}` : u.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
                 )}
               </select>
             </div>
