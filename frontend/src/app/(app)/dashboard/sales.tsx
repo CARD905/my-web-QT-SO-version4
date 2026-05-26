@@ -9,6 +9,7 @@ import {
   Clock, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
   FileEdit, Bell, ChevronRight, Inbox, Timer, Eye,
   AlertCircle, CircleDot, Hourglass, Ban, Send,
+  Users as UsersIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -565,6 +566,127 @@ function TaskSkeleton({ count = 4 }: { count?: number }) {
           <Skeleton className="h-7 w-20" />
         </div>
       ))}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CEO / ADMIN: read-only view of a specific officer's dashboard
+// ════════════════════════════════════════════════════════════════════════════
+export function OfficerDashboardView({ userId, officerName }: { userId: string; officerName?: string }) {
+  const [stats, setStats] = useState<OfficerDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setStats(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<ApiResponse<OfficerDashboard>>(`/dashboard/officer/${userId}`);
+        if (!cancelled && res.data.data) setStats(res.data.data);
+      } catch (err) {
+        console.error(getApiErrorMessage(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const qtTasks = stats?.tasks ?? [];
+
+  return (
+    <div className="space-y-5">
+      {/* Officer identity banner */}
+      <div className="flex items-center gap-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
+        <UsersIcon className="h-4 w-4 shrink-0" />
+        <span>กำลังดู Dashboard ของ <strong>{officerName ?? userId}</strong></span>
+      </div>
+
+      {/* Summary Cards */}
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[0,1,2,3].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {([
+            { label: 'Draft',        value: stats?.byStatus.draft    ?? 0, color: 'text-slate-500',   bg: 'bg-slate-100 dark:bg-slate-800',      icon: <FileEdit className="h-4 w-4" />,     alert: false },
+            { label: 'รออนุมัติ',     value: stats?.byStatus.pending  ?? 0, color: 'text-amber-600',   bg: 'bg-amber-50 dark:bg-amber-900/30',    icon: <Hourglass className="h-4 w-4" />,    alert: false },
+            { label: 'ต้องแก้ไข',     value: stats?.byStatus.rejected ?? 0, color: 'text-red-600',     bg: 'bg-red-50 dark:bg-red-900/30',        icon: <RefreshCw className="h-4 w-4" />,    alert: true  },
+            { label: 'อนุมัติแล้ว',   value: stats?.byStatus.approved ?? 0, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/30', icon: <CheckCircle2 className="h-4 w-4" />, alert: false },
+          ]).map(({ label, value, color, bg, icon, alert }) => (
+            <Card key={label} className={alert && value > 0 ? 'border-red-400/50' : ''}>
+              <CardContent className="p-3">
+                <div className={`inline-flex p-1.5 rounded-lg ${bg} ${color} mb-2`}>{icon}</div>
+                <div className={`text-2xl font-bold ${alert && value > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{value}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* งานที่ต้องทำ */}
+      {(loading || qtTasks.length > 0) && (
+        <SectionCard title="งานที่ต้องทำ" icon={<CircleDot className="h-4 w-4 text-primary" />} badge={qtTasks.length} badgeVariant="destructive">
+          {loading ? <TaskSkeleton count={3} /> : (
+            <div className="divide-y divide-border">
+              {qtTasks.map((task) => <TaskRow key={task.id} task={task} />)}
+            </div>
+          )}
+        </SectionCard>
+      )}
+
+      {/* รออยู่ที่คนอื่น */}
+      <SectionCard title="รออยู่ที่คนอื่น (Pending)" icon={<Hourglass className="h-4 w-4 text-amber-500" />} badge={stats?.waitingItems?.length}>
+        {loading ? <TaskSkeleton count={2} /> : !stats?.waitingItems?.length ? (
+          <EmptyState icon={<CheckCircle2 className="h-7 w-7 text-emerald-400" />} message="ไม่มีใบรอดำเนินการ" />
+        ) : (
+          <div className="divide-y divide-border">
+            {stats.waitingItems.map((item) => <TaskRow key={item.id} task={item} />)}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* เกินกำหนด */}
+      {(loading || (stats?.overdueItems && stats.overdueItems.length > 0)) && (
+        <SectionCard title="เกินกำหนด / หมดอายุ" icon={<Ban className="h-4 w-4 text-red-500" />} badge={stats?.overdueItems?.length} badgeVariant="destructive" urgent>
+          {loading ? <TaskSkeleton count={2} /> : (
+            <div className="divide-y divide-border">
+              {stats?.overdueItems?.map((item) => <TaskRow key={item.id} task={item} isOverdue />)}
+            </div>
+          )}
+        </SectionCard>
+      )}
+
+      {/* ใบเสนอราคาล่าสุด */}
+      <SectionCard title="ใบเสนอราคาล่าสุด" icon={<FileText className="h-4 w-4 text-primary" />}>
+        {loading ? <TaskSkeleton count={5} /> : !stats?.recent?.length ? (
+          <EmptyState icon={<FileText className="h-8 w-8" />} message="ยังไม่มีใบเสนอราคา" />
+        ) : (
+          <div className="divide-y divide-border">
+            {stats.recent.slice(0, 8).map((q) => (
+              <Link key={q.id} href={`/quotations/${q.id}`}
+                className="flex items-center gap-3 py-2.5 px-1 hover:bg-accent/40 rounded-md transition-colors">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{q.quotationNo}</span>
+                    <Badge className={getStatusClass(q.status)} variant="outline">{q.status}</Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate mt-0.5">{q.customerCompany}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-sm font-semibold">{formatMoney(q.grandTotal)}</div>
+                  {q.expiryDate && <div className="text-[10px] text-muted-foreground">หมด {formatDate(q.expiryDate)}</div>}
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              </Link>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   );
 }

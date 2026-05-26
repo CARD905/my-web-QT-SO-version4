@@ -15,6 +15,12 @@ router.get(
 );
 
 router.get(
+  '/officer/:userId',
+  requireRole('CEO', 'ADMIN'),
+  asyncHandler(dashboardController.officerView),
+);
+
+router.get(
   '/approver',
   requireRole('MANAGER', 'CEO', 'ADMIN'),
   asyncHandler(dashboardController.approver),

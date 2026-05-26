@@ -20,6 +20,7 @@ import { formatDate, formatMoney } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
+import { OfficerDashboardView } from './sales';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DashboardFilter = 'self' | 'team' | 'all' | 'user';
@@ -199,14 +200,17 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const managers = users.filter((u) => u.role.code === 'MANAGER');
   const subordinates = users.filter((u) => u.role.code !== 'MANAGER' && (!isCeo || u.role.code !== 'ADMIN'));
 
-  // For CEO: group officers by their manager's team
+  // For CEO: group by unique team (multiple managers per team → one group)
   const teamGroups = isCeo
-    ? managers.map((mgr) => ({
-        teamId: mgr.team?.id ?? mgr.id,
-        teamName: mgr.team?.name ?? mgr.name,
-        manager: mgr,
-        officers: subordinates.filter((s) => s.team?.id != null && s.team.id === mgr.team?.id),
-      }))
+    ? [...new Set(managers.map((m) => m.team?.id ?? m.id))].map((tid) => {
+        const mgr = managers.find((m) => (m.team?.id ?? m.id) === tid)!;
+        return {
+          teamId: tid,
+          teamName: mgr.team?.name ?? mgr.name,
+          manager: mgr,
+          officers: subordinates.filter((s) => s.team?.id != null && s.team.id === mgr.team?.id),
+        };
+      })
     : [];
   const unassignedOfficers = isCeo
     ? subordinates.filter((s) => !managers.some((m) => m.team?.id && m.team.id === s.team?.id))
@@ -224,6 +228,8 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const isTeamView = filterValue === 'team' || filterValue === 'all';
   const isUserView = filterValue.startsWith('user:');
   const isSelfView = false;
+  // CEO selecting an individual officer → show officer's own dashboard view
+  const isCeoViewingOfficer = isCeo && isUserView && selectedUser != null && selectedUser.role.code !== 'MANAGER';
 
   return (
     <div className="space-y-0 max-w-7xl">
@@ -326,40 +332,50 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
         )}
       </div>
 
-      {/* Loading skeletons */}
-      {loading && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-64 rounded-2xl" />
-            <Skeleton className="h-64 rounded-2xl" />
-          </div>
-          <Skeleton className="h-48 rounded-2xl" />
-          <Skeleton className="h-72 rounded-2xl" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Skeleton className="h-64 rounded-2xl" /><Skeleton className="h-64 rounded-2xl" />
-          </div>
-        </div>
+      {/* CEO viewing individual officer → render officer's own dashboard */}
+      {isCeoViewingOfficer && selectedUser && (
+        <OfficerDashboardView userId={selectedUser.id} officerName={selectedUser.name} />
       )}
 
-      {!loading && !data && (
-        <Card className="rounded-2xl">
-          <CardContent className="py-20 text-center text-muted-foreground">
-            ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง
-          </CardContent>
-        </Card>
-      )}
+      {/* Normal manager/team dashboard */}
+      {!isCeoViewingOfficer && (
+        <>
+          {/* Loading skeletons */}
+          {loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[0,1,2,3,4,5,6,7].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Skeleton className="h-64 rounded-2xl" />
+                <Skeleton className="h-64 rounded-2xl" />
+              </div>
+              <Skeleton className="h-48 rounded-2xl" />
+              <Skeleton className="h-72 rounded-2xl" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Skeleton className="h-64 rounded-2xl" /><Skeleton className="h-64 rounded-2xl" />
+              </div>
+            </div>
+          )}
 
-      {!loading && data && (
-        <DashboardContent
-          data={data}
-          isTeamView={isTeamView}
-          isUserView={isUserView}
-          isSelfView={isSelfView}
-          selectedUserName={selectedUser?.name}
-        />
+          {!loading && !data && (
+            <Card className="rounded-2xl">
+              <CardContent className="py-20 text-center text-muted-foreground">
+                ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง
+              </CardContent>
+            </Card>
+          )}
+
+          {!loading && data && (
+            <DashboardContent
+              data={data}
+              isTeamView={isTeamView}
+              isUserView={isUserView}
+              isSelfView={isSelfView}
+              selectedUserName={selectedUser?.name}
+            />
+          )}
+        </>
       )}
     </div>
   );
