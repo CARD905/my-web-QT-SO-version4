@@ -3,17 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { Eye, EyeOff, Loader2, FileText, ArrowRight, Shield, Zap, BarChart3 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, FileText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { ShootingStars } from '@/components/ui/shooting-stars';
+
+/* ─── tiny deterministic "random" so SSR & client match ─── */
+function seededVal(i: number, offset = 0) {
+  return ((Math.sin(i * 9301 + offset * 49297) * 49297) % 1 + 1) / 2;
+}
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]               = useState('');
+  const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [mounted, setMounted]           = useState(false);
+  const [focused, setFocused]           = useState<'email'|'password'|null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -33,246 +39,249 @@ export default function LoginPage() {
     }
   };
 
-  const features = [
-    { icon: FileText,  label: 'จัดการใบเสนอราคา',   desc: 'สร้าง ติดตาม และอนุมัติ QT' },
-    { icon: BarChart3, label: 'รายงานและวิเคราะห์',   desc: 'Dashboard แบบ Real-time' },
-    { icon: Shield,    label: 'ระบบอนุมัติหลายชั้น', desc: 'Workflow อัตโนมัติ' },
-    { icon: Zap,       label: 'Sale Order',           desc: 'ติดตาม SO ครบวงจร' },
-  ];
-
   return (
     <>
       <style>{`
-        @keyframes orb-float {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33%       { transform: translate(30px, -40px) scale(1.05); }
-          66%       { transform: translate(-20px, 20px) scale(0.95); }
+        @keyframes blob-drift {
+          0%,100% { transform: translate(0,0)   scale(1);    }
+          33%      { transform: translate(40px,-50px) scale(1.08); }
+          66%      { transform: translate(-30px,30px) scale(0.94); }
         }
-        @keyframes orb-float-2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33%       { transform: translate(-40px, 30px) scale(1.08); }
-          66%       { transform: translate(25px, -20px) scale(0.92); }
-        }
-        @keyframes slide-up {
-          from { opacity: 0; transform: translateY(40px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes ring-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        @keyframes shimmer {
-          0%   { background-position: -200% center; }
-          100% { background-position:  200% center; }
+        @keyframes blob-drift2 {
+          0%,100% { transform: translate(0,0)   scale(1);    }
+          33%      { transform: translate(-50px,40px) scale(1.1);  }
+          66%      { transform: translate(35px,-25px) scale(0.9);  }
         }
         @keyframes float-logo {
-          0%, 100% { transform: translateY(0px); }
-          50%       { transform: translateY(-8px); }
+          0%,100% { transform: translateY(0);  }
+          50%      { transform: translateY(-7px); }
         }
-        @keyframes glow-pulse {
-          0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.4), 0 0 40px rgba(99,102,241,0.2); }
-          50%       { box-shadow: 0 0 40px rgba(139,92,246,0.7), 0 0 80px rgba(99,102,241,0.4); }
+        @keyframes ring-spin {
+          to { transform: rotate(360deg); }
         }
-        @keyframes grid-fade {
-          from { opacity: 0; }
-          to   { opacity: 0.04; }
+        @keyframes ring-spin-rev {
+          to { transform: rotate(-360deg); }
         }
-        @keyframes stagger-in {
-          from { opacity: 0; transform: translateX(-16px); }
-          to   { opacity: 1; transform: translateX(0); }
+        @keyframes card-in {
+          from { opacity:0; transform: translateY(32px) scale(.97); }
+          to   { opacity:1; transform: translateY(0)    scale(1);   }
         }
-        .animate-orb-1  { animation: orb-float   14s ease-in-out infinite; }
-        .animate-orb-2  { animation: orb-float-2 18s ease-in-out infinite; }
-        .animate-orb-3  { animation: orb-float   22s ease-in-out infinite reverse; }
-        .animate-slide-up { animation: slide-up 0.7s cubic-bezier(0.22,1,0.36,1) both; }
-        .animate-fade-in  { animation: fade-in  0.5s ease both; }
-        .animate-ring     { animation: ring-spin 8s linear infinite; }
-        .animate-logo     { animation: float-logo 4s ease-in-out infinite; }
-        .animate-glow     { animation: glow-pulse 3s ease-in-out infinite; }
-        .animate-grid     { animation: grid-fade 1s ease both; }
-        .btn-shimmer {
-          background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 25%, #a78bfa 50%, #8b5cf6 75%, #6366f1 100%);
-          background-size: 200% auto;
-          animation: shimmer 3s linear infinite;
+        @keyframes field-in {
+          from { opacity:0; transform: translateX(-12px); }
+          to   { opacity:1; transform: translateX(0);     }
         }
-        .btn-shimmer:hover { animation: shimmer 1.5s linear infinite; }
-        .input-glow:focus-within { box-shadow: 0 0 0 2px rgba(139,92,246,0.5), 0 4px 20px rgba(139,92,246,0.15); }
+        @keyframes shimmer-btn {
+          0%   { background-position: -300% center; }
+          100% { background-position:  300% center; }
+        }
+        @keyframes dot-float {
+          0%,100% { transform: translateY(0);    opacity:.5; }
+          50%      { transform: translateY(-12px); opacity:1;  }
+        }
+        @keyframes sparkle-pop {
+          0%,100% { opacity:.2; transform: scale(.8) rotate(0deg);   }
+          50%      { opacity:.8; transform: scale(1.3) rotate(20deg); }
+        }
+        @keyframes glow-ring {
+          0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,.0),  0 0 30px rgba(99,102,241,.3); }
+          50%      { box-shadow: 0 0 0 8px rgba(139,92,246,.15), 0 0 60px rgba(99,102,241,.5); }
+        }
+        @keyframes border-glow {
+          0%,100% { border-color: rgba(139,92,246,.4); box-shadow: 0 0 12px rgba(139,92,246,.2); }
+          50%      { border-color: rgba(167,139,250,.7); box-shadow: 0 0 24px rgba(139,92,246,.4); }
+        }
+
+        .blob1 { animation: blob-drift  16s ease-in-out infinite; }
+        .blob2 { animation: blob-drift2 20s ease-in-out infinite; }
+        .blob3 { animation: blob-drift  24s ease-in-out infinite reverse; }
+        .logo-float { animation: float-logo 3.5s ease-in-out infinite; }
+        .ring1      { animation: ring-spin     12s linear infinite; }
+        .ring2      { animation: ring-spin-rev  8s linear infinite; }
+        .card-enter { animation: card-in .75s cubic-bezier(.22,1,.36,1) both; }
+        .field-enter{ animation: field-in .5s  cubic-bezier(.22,1,.36,1) both; }
+        .btn-shimmer{
+          background: linear-gradient(90deg,#6366f1 0%,#8b5cf6 20%,#c4b5fd 50%,#8b5cf6 80%,#6366f1 100%);
+          background-size: 300% auto;
+          animation: shimmer-btn 3s linear infinite;
+        }
+        .btn-shimmer:hover { animation-duration: 1.4s; }
+        .logo-glow  { animation: glow-ring 2.8s ease-in-out infinite; }
+        .focus-glow { animation: border-glow 2s ease-in-out infinite; }
       `}</style>
 
-      <div className="min-h-screen flex overflow-hidden bg-[#070711]">
+      <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4 bg-[#05050f]">
 
-        {/* ── LEFT PANEL (desktop) ── */}
-        <div className="hidden lg:flex lg:w-[52%] relative flex-col items-center justify-center px-16 overflow-hidden">
+        {/* ── Shooting Stars ── */}
+        <ShootingStars />
 
-          {/* Animated background orbs */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="animate-orb-1 absolute top-[10%] left-[10%]  w-[500px] h-[500px] rounded-full bg-indigo-600/20  blur-[100px]" />
-            <div className="animate-orb-2 absolute bottom-[5%]  right-[5%]  w-[400px] h-[400px] rounded-full bg-violet-600/25  blur-[100px]" />
-            <div className="animate-orb-3 absolute top-[50%]  left-[40%]  w-[300px] h-[300px] rounded-full bg-purple-500/15  blur-[80px]" />
-            {/* Grid overlay */}
-            <div className="animate-grid absolute inset-0"
-              style={{
-                backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
-                backgroundSize: '60px 60px',
-              }} />
-          </div>
-
-          {/* Content */}
-          <div className={`relative z-10 max-w-md transition-all ${mounted ? 'animate-fade-in' : 'opacity-0'}`}>
-            {/* Logo */}
-            <div className="animate-logo animate-glow w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 flex items-center justify-center mb-8 shadow-2xl">
-              <FileText className="h-10 w-10 text-white" />
-            </div>
-
-            <h1 className="text-5xl font-black text-white leading-tight mb-3">
-              Quotation
-              <span className="block bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent">
-                Management
-              </span>
-            </h1>
-            <p className="text-slate-400 text-lg mb-12 leading-relaxed">
-              ระบบจัดการใบเสนอราคาและ Sale Order<br />สำหรับองค์กรครบวงจร
-            </p>
-
-            {/* Feature cards */}
-            <div className="space-y-3">
-              {features.map(({ icon: Icon, label, desc }, i) => (
-                <div
-                  key={label}
-                  className={`flex items-center gap-4 p-4 rounded-2xl border border-white/8 bg-white/[0.04] backdrop-blur-sm transition-all hover:bg-white/[0.07] hover:border-violet-500/30 ${mounted ? 'animate-stagger' : 'opacity-0'}`}
-                  style={{ animationDelay: `${0.2 + i * 0.1}s`, animation: mounted ? `stagger-in 0.5s ${0.3 + i * 0.1}s cubic-bezier(0.22,1,0.36,1) both` : 'none' }}
-                >
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-violet-500/20 flex items-center justify-center shrink-0">
-                    <Icon className="h-5 w-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-white">{label}</div>
-                    <div className="text-xs text-slate-500">{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* ── Background blobs ── */}
+        <div className="absolute inset-0 pointer-events-none -z-10">
+          <div className="blob1 absolute top-[15%]  left-[10%]  w-[520px] h-[520px] rounded-full bg-blue-600/20   blur-[120px]" />
+          <div className="blob2 absolute bottom-[10%] right-[8%] w-[480px] h-[480px] rounded-full bg-violet-600/25 blur-[110px]" />
+          <div className="blob3 absolute top-[55%]  left-[45%]  w-[380px] h-[380px] rounded-full bg-pink-500/15   blur-[100px]" />
+          {/* Subtle grid */}
+          <div className="absolute inset-0 opacity-[.035]"
+            style={{
+              backgroundImage:'linear-gradient(rgba(255,255,255,1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,1) 1px,transparent 1px)',
+              backgroundSize:'72px 72px',
+            }} />
         </div>
 
-        {/* ── RIGHT PANEL (form) ── */}
-        <div className="flex-1 flex items-center justify-center p-6 relative">
+        {/* ── Floating sparkle dots ── */}
+        <div className="absolute inset-0 pointer-events-none -z-10">
+          {Array.from({length:12}).map((_,i)=>(
+            <Sparkles key={i}
+              className="absolute text-violet-400/30"
+              style={{
+                width: `${10+seededVal(i)*10}px`,
+                height:`${10+seededVal(i)*10}px`,
+                top:   `${seededVal(i,1)*90+3}%`,
+                left:  `${seededVal(i,2)*90+3}%`,
+                animation:`sparkle-pop ${2.5+seededVal(i,3)*3}s ${seededVal(i,4)*2}s ease-in-out infinite`,
+              }}
+            />
+          ))}
+        </div>
 
-          {/* Mobile background orbs */}
-          <div className="lg:hidden absolute inset-0 pointer-events-none">
-            <div className="animate-orb-1 absolute top-[-10%] right-[-10%] w-72 h-72 rounded-full bg-violet-600/20 blur-[80px]" />
-            <div className="animate-orb-2 absolute bottom-[-5%] left-[-5%]  w-60 h-60 rounded-full bg-indigo-600/20 blur-[70px]" />
-          </div>
+        {/* ── Floating dots ── */}
+        <div className="absolute inset-0 pointer-events-none -z-10">
+          {Array.from({length:18}).map((_,i)=>{
+            const size  = 2+seededVal(i,5)*4;
+            const color = i%3===0 ? 'rgba(139,92,246,' : i%3===1 ? 'rgba(99,102,241,' : 'rgba(236,72,153,';
+            return (
+              <div key={i}
+                className="absolute rounded-full"
+                style={{
+                  width:size, height:size,
+                  background:`${color}${0.3+seededVal(i,6)*0.5})`,
+                  top:  `${seededVal(i,7)*92+2}%`,
+                  left: `${seededVal(i,8)*92+2}%`,
+                  animation:`dot-float ${3+seededVal(i,9)*4}s ${seededVal(i,10)*3}s ease-in-out infinite`,
+                }}
+              />
+            );
+          })}
+        </div>
 
-          {/* Vertical divider (desktop) */}
-          <div className="hidden lg:block absolute left-0 top-[10%] bottom-[10%] w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" />
+        {/* ── Card wrapper ── */}
+        <div className={`relative w-full max-w-[400px] ${mounted?'card-enter':'opacity-0'}`}>
+
+          {/* Outer glow halo */}
+          <div className="absolute -inset-3 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/20 via-violet-500/20 to-pink-500/20 blur-2xl -z-10" />
 
           {/* Glass card */}
-          <div className={`relative w-full max-w-sm ${mounted ? 'animate-slide-up' : 'opacity-0'}`}>
+          <div className="relative rounded-3xl border border-white/10 bg-white/[0.05] backdrop-blur-2xl shadow-2xl overflow-hidden px-8 py-9">
 
-            {/* Glow ring behind card */}
-            <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-indigo-500/20 via-violet-500/20 to-purple-500/20 blur-xl" />
+            {/* Top shimmer line */}
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-400/60 to-transparent" />
+            {/* Bottom shimmer line */}
+            <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-pink-400/30 to-transparent" />
 
-            <div className="relative rounded-3xl border border-white/10 bg-white/[0.06] backdrop-blur-2xl shadow-2xl overflow-hidden p-8">
+            {/* ── Logo section ── */}
+            <div className="flex flex-col items-center mb-8">
+              {/* Ring decorations around logo */}
+              <div className="relative w-24 h-24 flex items-center justify-center mb-5">
+                {/* Outer dashed ring */}
+                <div className="ring1 absolute inset-0 rounded-full border-2 border-dashed border-violet-500/25" />
+                {/* Inner dotted ring */}
+                <div className="ring2 absolute inset-[8px] rounded-full border border-dotted border-indigo-400/30" />
+                {/* Glow spots on rings */}
+                <div className="absolute top-0   left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-violet-400/60 blur-[2px]" />
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-pink-400/50   blur-[2px]" />
+                <div className="absolute left-0   top-1/2  -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-indigo-400/50 blur-[2px]" />
 
-              {/* Subtle top shimmer line */}
-              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-400/50 to-transparent" />
-
-              {/* Logo (mobile + form top) */}
-              <div className="flex flex-col items-center mb-8">
-                <div className="animate-logo animate-glow w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 flex items-center justify-center mb-4 shadow-xl">
-                  <FileText className="h-7 w-7 text-white" />
+                {/* Logo icon */}
+                <div className="logo-float logo-glow relative z-10 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-violet-500/40">
+                  <FileText className="h-7 w-7 text-white drop-shadow" />
                 </div>
-                <h2 className="text-2xl font-bold text-white">ยินดีต้อนรับ</h2>
-                <p className="text-sm text-slate-400 mt-1">เข้าสู่ระบบเพื่อดำเนินการต่อ</p>
               </div>
 
-              {/* Form */}
-              <form onSubmit={onSubmit} className="space-y-5">
+              <h1 className="text-[1.75rem] font-black tracking-tight bg-gradient-to-r from-blue-400 via-violet-400 to-pink-400 bg-clip-text text-transparent leading-none mb-2">
+                Quotation System
+              </h1>
+              <p className="text-sm text-slate-400">เข้าสู่ระบบเพื่อดำเนินการต่อ</p>
+            </div>
 
-                {/* Email field */}
-                <div className={`transition-all duration-300 ${mounted ? 'animate-slide-up' : ''}`} style={{ animationDelay: '0.15s' }}>
-                  <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
-                    Email Address
-                  </label>
-                  <div className={`input-glow rounded-xl transition-all duration-300 ${focusedField === 'email' ? 'ring-2 ring-violet-500/50' : ''}`}>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      onFocus={() => setFocusedField('email')}
-                      onBlur={() => setFocusedField(null)}
-                      placeholder="you@company.com"
-                      disabled={loading}
-                      autoFocus
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.06] text-white placeholder-slate-500 px-4 py-3 text-sm outline-none transition-all focus:border-violet-500/50 focus:bg-white/[0.10]"
-                    />
-                  </div>
-                </div>
+            {/* ── Form ── */}
+            <form onSubmit={onSubmit} className="space-y-4">
 
-                {/* Password field */}
-                <div className={`transition-all duration-300 ${mounted ? 'animate-slide-up' : ''}`} style={{ animationDelay: '0.22s' }}>
-                  <label className="block text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">
-                    Password
-                  </label>
-                  <div className={`relative rounded-xl transition-all duration-300 ${focusedField === 'password' ? 'ring-2 ring-violet-500/50' : ''}`}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onFocus={() => setFocusedField('password')}
-                      onBlur={() => setFocusedField(null)}
-                      placeholder="••••••••"
-                      disabled={loading}
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.06] text-white placeholder-slate-500 px-4 py-3 pr-11 text-sm outline-none transition-all focus:border-violet-500/50 focus:bg-white/[0.10]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      tabIndex={-1}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Submit button */}
-                <div style={{ animationDelay: '0.3s' }}>
-                  <button
-                    type="submit"
+              {/* Email */}
+              <div className="field-enter" style={{animationDelay:'.12s'}}>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                  Email Address
+                </label>
+                <div className={`relative rounded-xl transition-all duration-300 ${focused==='email' ? 'focus-glow' : ''}`}>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e=>setEmail(e.target.value)}
+                    onFocus={()=>setFocused('email')}
+                    onBlur={()=>setFocused(null)}
+                    placeholder="you@company.com"
                     disabled={loading}
-                    className="btn-shimmer relative w-full h-12 rounded-xl text-white font-semibold text-sm overflow-hidden shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 hover:scale-[1.02] active:scale-[0.98] transition-transform disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2"
-                  >
-                    {/* Shimmer overlay */}
-                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full hover:translate-x-full transition-transform duration-700" />
-
-                    <span className="relative flex items-center justify-center gap-2">
-                      {loading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>กำลังเข้าสู่ระบบ...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>เข้าสู่ระบบ</span>
-                          <ArrowRight className="h-4 w-4" />
-                        </>
-                      )}
-                    </span>
-                  </button>
+                    autoFocus
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.06] text-white placeholder-slate-600 px-4 py-3 text-sm outline-none transition-all duration-200 focus:bg-white/[0.10] focus:border-violet-500/60"
+                  />
+                  {focused==='email' && (
+                    <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-r from-violet-500/5 via-transparent to-indigo-500/5" />
+                  )}
                 </div>
-              </form>
-
-              {/* Footer */}
-              <div className="mt-6 pt-5 border-t border-white/[0.06] flex items-center justify-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <p className="text-[11px] text-slate-500">ระบบพร้อมใช้งาน · v1.0.0</p>
               </div>
+
+              {/* Password */}
+              <div className="field-enter" style={{animationDelay:'.2s'}}>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                  Password
+                </label>
+                <div className={`relative rounded-xl transition-all duration-300 ${focused==='password' ? 'focus-glow' : ''}`}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={e=>setPassword(e.target.value)}
+                    onFocus={()=>setFocused('password')}
+                    onBlur={()=>setFocused(null)}
+                    placeholder="••••••••"
+                    disabled={loading}
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.06] text-white placeholder-slate-600 px-4 py-3 pr-11 text-sm outline-none transition-all duration-200 focus:bg-white/[0.10] focus:border-violet-500/60"
+                  />
+                  <button type="button" tabIndex={-1}
+                    onClick={()=>setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  {focused==='password' && (
+                    <div className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-r from-violet-500/5 via-transparent to-indigo-500/5" />
+                  )}
+                </div>
+              </div>
+
+              {/* Submit */}
+              <div className="field-enter pt-1" style={{animationDelay:'.28s'}}>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-shimmer relative w-full h-12 rounded-xl text-white font-semibold text-sm shadow-lg shadow-violet-500/30 hover:shadow-xl hover:shadow-violet-500/50 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-150 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 overflow-hidden"
+                >
+                  {/* White sweep on hover */}
+                  <span className="absolute inset-0 translate-x-[-110%] hover:translate-x-[110%] bg-gradient-to-r from-transparent via-white/15 to-transparent skew-x-12 transition-transform duration-700 pointer-events-none" />
+                  <span className="relative flex items-center justify-center gap-2">
+                    {loading ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" />กำลังเข้าสู่ระบบ...</>
+                    ) : (
+                      <><Sparkles className="h-4 w-4" />Sign In</>
+                    )}
+                  </span>
+                </button>
+              </div>
+            </form>
+
+            {/* Footer */}
+            <div className="mt-7 pt-5 border-t border-white/[0.07] flex items-center justify-center gap-2">
+              <span className="inline-flex gap-0.5">
+                <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping  opacity-75 [animation-duration:1.4s]" />
+                <span className="w-1 h-1 rounded-full bg-emerald-400 -ml-1" />
+              </span>
+              <p className="text-[10px] text-slate-600">v1.0.0 · QT/SO Management System</p>
             </div>
           </div>
         </div>
