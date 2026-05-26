@@ -31,6 +31,7 @@ interface NavItem {
 // ── Manager approval-queue badge ─────────────────────────────────────────────
 function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
   const [count, setCount] = useState<number | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +39,7 @@ function ApprovalBadge({ collapsed }: { collapsed: boolean }) {
       .then((res) => { if (!cancelled) setCount(res.data.data?.total ?? 0); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [pathname]);
 
   if (!count || count <= 0) return null;
   if (collapsed) {

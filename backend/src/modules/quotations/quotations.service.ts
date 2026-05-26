@@ -180,14 +180,15 @@ export const quotationsService = {
     });
     if (!quotation) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    const canView = await canActOnEntity(currentUser, 'quotation', 'view', quotation.createdById);
+    // currentApprover can always view, even after officer changes teams
+    const isCurrentApprover = quotation.currentApproverId === currentUser.id;
+    const canView = isCurrentApprover || await canActOnEntity(currentUser, 'quotation', 'view', quotation.createdById);
     if (!canView) throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
 
-    // Additional gate: PENDING/PENDING_ESCALATED are only visible to creator,
+    // Additional gate: PENDING/PENDING_ESCALATED/PENDING_BACKUP are only visible to creator,
     // the designated currentApprover, or CEO/ADMIN.
-    if (['PENDING', 'PENDING_ESCALATED'].includes(quotation.status)) {
+    if (['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(quotation.status)) {
       const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
-      const isCurrentApprover = quotation.currentApproverId === currentUser.id;
       const isCreator = quotation.createdById === currentUser.id;
       if (!isCeoOrAdmin && !isCurrentApprover && !isCreator) {
         throw new AppError(403, 'FORBIDDEN', 'คุณไม่มีสิทธิ์ดู Quotation นี้ในขณะนี้');
