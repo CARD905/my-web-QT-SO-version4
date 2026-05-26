@@ -78,6 +78,15 @@ export const usersAdminService = {
       }
     }
 
+    if (input.email !== undefined && input.email !== existing.email) {
+      const emailTaken = await prisma.user.findFirst({
+        where: { email: input.email, deletedAt: null, id: { not: id } },
+      });
+      if (emailTaken) {
+        throw new AppError(409, 'EMAIL_EXISTS', `อีเมล ${input.email} ถูกใช้งานโดย account อื่นอยู่แล้ว`);
+      }
+    }
+
     if (input.teamId !== undefined && input.teamId !== null) {
       const team = await prisma.team.findUnique({ where: { id: input.teamId } });
       if (!team) throw new AppError(404, 'TEAM_NOT_FOUND', 'Team not found');
@@ -111,6 +120,7 @@ export const usersAdminService = {
 
     const updateData: Prisma.UserUpdateInput = {};
     if (input.name !== undefined) updateData.name = input.name;
+    if (input.email !== undefined) updateData.email = input.email;
     if (input.phone !== undefined) updateData.phone = input.phone;
     if (input.isActive !== undefined) updateData.isActive = input.isActive;
     if (input.roleId !== undefined) {

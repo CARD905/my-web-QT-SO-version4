@@ -296,30 +296,33 @@ const NAV_ITEMS: NavItem[] = [
 const CEO_NAV_ITEMS: NavItem[] = [
   // ── GROUP 1: EXECUTIVE ──────────────────────────────────────────────────
   { dividerLabel: 'EXECUTIVE', labelKey: '', icon: LayoutDashboard },
-  { href: '/dashboard',       labelKey: 'nav.dashboard',    icon: LayoutDashboard },
-  { href: '/approval-queue',  labelKey: 'nav.approvalQueue', icon: CheckSquare, showBadge: true },
-  // ── GROUP 2: OPERATIONS ─────────────────────────────────────────────────
-  { dividerLabel: 'OPERATIONS', labelKey: '', icon: FileText },
-  {
-    labelKey: 'nav.quotations', icon: FileText,
-    children: [
-      { href: '/quotations',          labelKey: 'nav.quotationList',      icon: FileText },
-      { href: '/quotations/checklist', labelKey: 'nav.quotationChecklist', icon: CheckSquare },
-    ],
-  },
-  { href: '/sale-orders', labelKey: 'nav.saleOrders', icon: ClipboardList },
-  { href: '/customers',   labelKey: 'nav.customers',  icon: Users },
+  { href: '/dashboard',      labelKey: 'nav.dashboard',    icon: LayoutDashboard },
+  { href: '/approval-queue', labelKey: 'nav.approvalQueue', icon: CheckSquare, showBadge: true },
+
+  // ── GROUP 2: PIPELINE ───────────────────────────────────────────────────
+  // Quotation list (no checklist — officer task), sale orders, customers
+  { dividerLabel: 'PIPELINE', labelKey: '', icon: FileText },
+  { href: '/quotations',  labelKey: 'nav.quotationList', icon: FileText },
+  { href: '/sale-orders', labelKey: 'nav.saleOrders',    icon: ClipboardList },
+  { href: '/customers',   labelKey: 'nav.customers',     icon: Users },
+
   // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
+  // Staff directory, org chart, invite members
   { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },
+  { href: '/users',             labelKey: 'nav.staff',       icon: Users },
+  { href: '/admin/teams',       labelKey: 'nav.adminTeams',  icon: Building2 },
   { href: '/admin/invitations', labelKey: 'nav.invitations', icon: Mail },
+
   // ── GROUP 4: REPORTS ────────────────────────────────────────────────────
+  // Full approval decision history across the organization
   { dividerLabel: 'REPORTS', labelKey: '', icon: BarChart3 },
-  { href: '/history', labelKey: 'nav.history', icon: History },
+  { href: '/history', labelKey: 'nav.auditTrail', icon: History },
+
   // ── GROUP 5: SETTINGS ───────────────────────────────────────────────────
+  // Company profile, product master data
   { dividerLabel: 'SETTINGS', labelKey: '', icon: Settings },
-  { href: '/company',     labelKey: 'nav.company',     icon: Building2 },
-  { href: '/products',    labelKey: 'nav.products',    icon: Package },
-  { href: '/permissions', labelKey: 'nav.permissions', icon: Key },
+  { href: '/company',  labelKey: 'nav.company',  icon: Building2 },
+  { href: '/products', labelKey: 'nav.products', icon: Package },
 ];
 
 // ════════════════════════════════════════════════════════════════════════════

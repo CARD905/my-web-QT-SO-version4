@@ -235,6 +235,7 @@ function CreateInvitationDialog({
   onCreated: (url: string, email: string) => void;
 }) {
   const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [name, setName] = useState('');
   const [roleId, setRoleId] = useState('');
   const [teamId, setTeamId] = useState('');
@@ -258,18 +259,18 @@ function CreateInvitationDialog({
   const submit = async () => {
     if (!email.trim()) { toast.error('กรุณากรอก Email'); return; }
     if (!roleId) { toast.error('กรุณาเลือก Role'); return; }
+    setEmailError('');
     setSubmitting(true);
     try {
       const body: any = {
         email,
         name: name || undefined,
-        roleId,                              // ✅ ส่ง roleId
+        roleId,
         teamId: teamId || undefined,
         channel: 'MANUAL',
         expiresInDays,
       };
 
-      // ✅ เพิ่ม managerLevel และ approvalLimit เฉพาะ MANAGER
       if (isManager) {
         body.managerLevel = managerLevel;
         body.approvalLimit = approvalLimit ? Number(approvalLimit) : undefined;
@@ -279,8 +280,13 @@ function CreateInvitationDialog({
       const url = res.data.data?.invitationUrl || `${window.location.origin}/invite/${res.data.data?.token}`;
       toast.success('Invitation created');
       onCreated(url, email);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
+    } catch (err: any) {
+      const code = err?.response?.data?.code;
+      if (code === 'EMAIL_EXISTS') {
+        setEmailError(`Email นี้มีบัญชีอยู่ในระบบแล้ว`);
+      } else {
+        toast.error(getApiErrorMessage(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -298,8 +304,20 @@ function CreateInvitationDialog({
           {/* Email */}
           <div>
             <Label className="text-xs">Email <span className="text-destructive">*</span></Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="user@example.com" className="mt-1.5" autoFocus />
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(''); }}
+              placeholder="user@example.com"
+              className={`mt-1.5 ${emailError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
+              autoFocus
+            />
+            {emailError && (
+              <p className="mt-1.5 text-[12px] text-destructive flex items-center gap-1">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {emailError}
+              </p>
+            )}
           </div>
 
           {/* ชื่อ */}

@@ -112,9 +112,14 @@ export function ManagerDetailPage() {
   const [showResetPw,      setShowResetPw]      = useState(false);
   const [showAssignRole,   setShowAssignRole]   = useState(false);
   const [showEditLimits,   setShowEditLimits]   = useState(false);
+  const [showEditEmail,    setShowEditEmail]    = useState(false);
   const [showConfirmLock,  setShowConfirmLock]  = useState(false);
   const [showConfirmSuspend, setShowConfirmSuspend] = useState(false);
   const [showForceLogout,  setShowForceLogout]  = useState(false);
+
+  // Edit email
+  const [newEmail,    setNewEmail]    = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
 
   const [newPassword,   setNewPassword]   = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
@@ -219,6 +224,20 @@ export function ManagerDetailPage() {
       await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setAssigning(false); }
+  };
+
+  // ✅ Save Email
+  const handleSaveEmail = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) { toast.error('รูปแบบ Email ไม่ถูกต้อง'); return; }
+    setSavingEmail(true);
+    try {
+      await api.patch(`/admin/users/${userId}`, { email: newEmail.trim().toLowerCase() });
+      toast.success('เปลี่ยน Email เรียบร้อย');
+      setShowEditEmail(false);
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingEmail(false); }
   };
 
   // ✅ Save Approval Limit — ใช้ endpoint ที่มีจริง
@@ -355,6 +374,9 @@ export function ManagerDetailPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => { setNewEmail(user.email); setShowEditEmail(true); }} className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" />Edit Email
+                </button>
                 <button onClick={() => setShowEditLimits(true)} className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5">
                   <Sliders className="h-3.5 w-3.5" />Edit Limit
                 </button>
@@ -439,7 +461,8 @@ export function ManagerDetailPage() {
               <div className="space-y-0.5">
                 {[
                   { icon: Edit,          label: 'Edit Manager',        action: () => setActiveSection('approval') },
-                  { icon: Shield,        label: 'Change Role',        action: () => !isProtected && setShowAssignRole(true), disabled: isProtected },
+                  { icon: Mail,          label: 'Edit Email',          action: () => { setNewEmail(user.email); setShowEditEmail(true); } },
+                  { icon: Shield,        label: 'Change Role',         action: () => !isProtected && setShowAssignRole(true), disabled: isProtected },
                   { icon: Sliders,       label: 'Edit Approval Limit', action: () => setShowEditLimits(true) },
                   { icon: UserPlus,      label: 'Assign Team Members', action: () => { window.location.href = '/admin/teams'; } },
                   { icon: Key,           label: 'Reset Password',      action: () => setShowResetPw(true) },
@@ -714,6 +737,42 @@ export function ManagerDetailPage() {
       </div>
 
       {/* ════ DIALOGS ════ */}
+
+      {/* Edit Email */}
+      <Dialog open={showEditEmail} onOpenChange={o => { if (!o) { setShowEditEmail(false); setNewEmail(''); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Mail className="h-4 w-4 text-blue-500" />แก้ไข Email</DialogTitle>
+            <DialogDescription>{user.name} — ปัจจุบัน: {user.email}</DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label className="text-xs">Email ใหม่</Label>
+            <Input
+              type="email"
+              value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              placeholder="example@company.com"
+              className="mt-1.5"
+              autoFocus
+            />
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Email ต้องไม่ซ้ำกับ account อื่นในระบบ
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowEditEmail(false); setNewEmail(''); }} disabled={savingEmail}>
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={handleSaveEmail}
+              disabled={savingEmail || !newEmail.trim() || newEmail.trim() === user.email}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingEmail && <Loader2 className="h-4 w-4 animate-spin" />}บันทึก
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password */}
       <Dialog open={showResetPw} onOpenChange={o => { if (!o) { setShowResetPw(false); setNewPassword(''); } }}>

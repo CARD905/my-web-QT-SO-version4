@@ -7,7 +7,7 @@ import {
   ArrowLeft, Shield, Key, UserX, UserCheck, Loader2, Crown,
   LogOut, Edit, Lock, ShieldCheck, ShieldOff, RefreshCw,
   Monitor, Smartphone, Globe, Clock, CheckCircle2, XCircle,
-  AlertTriangle, ChevronRight, Activity,
+  AlertTriangle, ChevronRight, Activity, Mail,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -161,6 +161,9 @@ export function OfficerDetailPage() {
   const [toggling,       setToggling]      = useState(false);
   const [showSuspend,    setShowSuspend]   = useState(false);
   const [showLogout,     setShowLogout]    = useState(false);
+  const [showEditEmail,  setShowEditEmail] = useState(false);
+  const [newEmail,       setNewEmail]      = useState('');
+  const [savingEmail,    setSavingEmail]   = useState(false);
 
   /* ── Data loading ── */
   const load = async () => {
@@ -226,6 +229,20 @@ export function OfficerDetailPage() {
       await api.post(`/admin/users/${userId}/force-logout`);
       toast.success('Force logout เรียบร้อย');
     } catch (err) { toast.error(getApiErrorMessage(err)); }
+  };
+
+  const handleSaveEmail = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail.trim())) { toast.error('รูปแบบ Email ไม่ถูกต้อง'); return; }
+    setSavingEmail(true);
+    try {
+      await api.patch(`/admin/users/${userId}`, { email: newEmail.trim().toLowerCase() });
+      toast.success('เปลี่ยน Email เรียบร้อย');
+      setShowEditEmail(false);
+      setNewEmail('');
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setSavingEmail(false); }
   };
 
   /* ── Loading skeleton ── */
@@ -380,6 +397,13 @@ export function OfficerDetailPage() {
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-foreground hover:bg-slate-100 transition-colors text-left"
               >
                 <Edit className="h-3.5 w-3.5 text-muted-foreground" /> Edit user
+              </button>
+
+              <button
+                onClick={() => { setNewEmail(user.email); setShowEditEmail(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-foreground hover:bg-slate-100 transition-colors text-left"
+              >
+                <Mail className="h-3.5 w-3.5 text-muted-foreground" /> Edit email
               </button>
 
               {!isProtected && (
@@ -808,6 +832,46 @@ export function OfficerDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setShowLogout(false)}>ยกเลิก</Button>
             <Button size="sm" variant="destructive" onClick={handleForceLogout}>
               <LogOut className="h-3.5 w-3.5 mr-1" /> Force logout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Email */}
+      <Dialog open={showEditEmail} onOpenChange={o => { if (!o) { setShowEditEmail(false); setNewEmail(''); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[15px]">
+              <Mail className="h-4 w-4 text-blue-500" /> แก้ไข Email
+            </DialogTitle>
+            <DialogDescription className="text-[13px]">
+              {user.name} — ปัจจุบัน: {user.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label className="text-xs">Email ใหม่</Label>
+            <Input
+              type="email"
+              value={newEmail}
+              onChange={e => setNewEmail(e.target.value)}
+              placeholder="example@company.com"
+              className="mt-1.5 h-9 text-[13px]"
+              autoFocus
+            />
+            <p className="text-[11px] text-muted-foreground mt-1.5">Email ต้องไม่ซ้ำกับ account อื่นในระบบ</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setShowEditEmail(false); setNewEmail(''); }} disabled={savingEmail}>
+              ยกเลิก
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveEmail}
+              disabled={savingEmail || !newEmail.trim() || newEmail.trim() === user.email}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {savingEmail && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+              บันทึก
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -68,8 +68,10 @@
     "runningNumbers": "Running Numbers",
     "activityLogs": "Activity Logs",
     "loginHistory": "Login History",
-    "approvalQueueAdmin": "Approval Queue"
-  
+    "approvalQueueAdmin": "Approval Queue",
+    "staff": "Staff",
+    "auditTrail": "Audit Trail",
+    "pipeline": "Pipeline"
   },
   "login": {
     "title": "Sign In",

@@ -3,6 +3,7 @@ import { paginationSchema } from '../../../utils/pagination';
 
 export const updateUserSchema = z.object({
   name: z.string().min(2).max(100).optional(),
+  email: z.string().email('รูปแบบ Email ไม่ถูกต้อง').toLowerCase().optional(),
   phone: z.string().max(20).nullable().optional(),
   roleId: z.string().cuid().optional(),
   reportsToId: z.string().cuid().nullable().optional(),
