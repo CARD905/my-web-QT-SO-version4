@@ -306,6 +306,7 @@ const CEO_NAV_ITEMS: NavItem[] = [
   { href: '/quotations',  labelKey: 'nav.quotationList', icon: FileText },
   { href: '/sale-orders', labelKey: 'nav.saleOrders',    icon: ClipboardList },
   { href: '/customers',   labelKey: 'nav.customers',     icon: Users },
+  { href: '/products', labelKey: 'nav.products', icon: Package },
 
   // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
   { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },
@@ -320,7 +321,7 @@ const CEO_NAV_ITEMS: NavItem[] = [
   // Company profile, product master data
   { dividerLabel: 'SETTINGS', labelKey: '', icon: Settings },
   { href: '/company',  labelKey: 'nav.company',  icon: Building2 },
-  { href: '/products', labelKey: 'nav.products', icon: Package },
+  
 ];
 
 // ════════════════════════════════════════════════════════════════════════════

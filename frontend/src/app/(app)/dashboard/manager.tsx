@@ -421,33 +421,99 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
                   )}
                 </div>
               ) : (
-                /* Native select for Manager / Admin */
-                <select
-                  value={filterValue}
-                  onChange={(e) => setFilterValue(e.target.value)}
-                  className="h-9 min-w-[200px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 backdrop-blur"
-                >
-                  <option value="team" className="text-black bg-white">— My Team</option>
-                  {isExecutive && (
-                    <option value="all" className="text-black bg-white">— All Team (ทั้งระบบ)</option>
+                /* ── Custom dropdown for Manager / Admin ── */
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setDropdownOpen((v) => !v)}
+                    className="h-9 min-w-[200px] max-w-[260px] rounded-lg border border-white/20 bg-white/10 text-white px-3 text-sm flex items-center justify-between gap-2 hover:bg-white/20 transition-colors"
+                  >
+                    <span className="truncate">{filterLabel}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 opacity-70 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {dropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 z-50 w-[260px] rounded-xl border border-border bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+                      {/* My Team */}
+                      {['team', 'all'].map((val) => {
+                        if (val === 'all' && !isExecutive) return null;
+                        const label = val === 'team' ? '— My Team' : '— All Team (ทั้งระบบ)';
+                        const isActive = filterValue === val;
+                        return (
+                          <button key={val}
+                            onClick={() => { setFilterValue(val); setDropdownOpen(false); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-sm flex items-center gap-2.5 transition-colors border-b border-border
+                              ${isActive ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
+                          >
+                            <UsersIcon className={`h-4 w-4 shrink-0 ${isActive ? 'text-blue-500' : 'text-slate-400'}`} />
+                            <span>{label}</span>
+                            {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                          </button>
+                        );
+                      })}
+
+                      {/* Managers group */}
+                      {managers.length > 0 && (
+                        <div>
+                          <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+                            <Crown className="h-3 w-3 text-amber-400" />
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Managers</span>
+                          </div>
+                          {managers.map((u) => {
+                            const isActive = filterValue === `user:${u.id}`;
+                            return (
+                              <button key={u.id}
+                                onClick={() => { setFilterValue(`user:${u.id}`); setDropdownOpen(false); }}
+                                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 transition-colors
+                                  ${isActive ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-foreground'}`}
+                              >
+                                <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0
+                                  ${isActive ? 'bg-amber-400 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                                  {u.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate">{u.name}</div>
+                                  <div className="text-[10px] text-muted-foreground">{u.role.nameTh}</div>
+                                </div>
+                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Officers group */}
+                      {subordinates.length > 0 && (
+                        <div className="border-t border-border">
+                          <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+                            <UsersIcon className="h-3 w-3 text-blue-400" />
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Officers / Sales</span>
+                          </div>
+                          {subordinates.map((u) => {
+                            const isActive = filterValue === `user:${u.id}`;
+                            return (
+                              <button key={u.id}
+                                onClick={() => { setFilterValue(`user:${u.id}`); setDropdownOpen(false); }}
+                                className={`w-full text-left pl-5 pr-3 py-2 text-sm flex items-center gap-2.5 transition-colors
+                                  ${isActive ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 font-semibold' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-muted-foreground hover:text-foreground'}`}
+                              >
+                                <span className="text-slate-300 dark:text-slate-600 shrink-0 text-xs">↳</span>
+                                <div className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0
+                                  ${isActive ? 'bg-blue-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                                  {u.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate">{u.name}</div>
+                                  <div className="text-[10px] text-muted-foreground truncate">{u.email}</div>
+                                </div>
+                                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {managers.length > 0 && (
-                    <optgroup label="Managers">
-                      {managers.map((u) => (
-                        <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">{u.name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {subordinates.length > 0 && (
-                    <optgroup label="Officers / Sales">
-                      {subordinates.map((u) => (
-                        <option key={u.id} value={`user:${u.id}`} className="text-black bg-white">
-                          {u.reportsTo ? `↳ ${u.name}` : u.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                </div>
               )}
             </div>
             <button
