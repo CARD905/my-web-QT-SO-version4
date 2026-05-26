@@ -20,7 +20,6 @@ const QT_STATUS: Record<string, { label: string; color: string; bg: string }> = 
   PENDING:           { label: 'Pending',        color: '#f59e0b', bg: '#fef3c7' },
   PENDING_BACKUP:    { label: 'Pending Backup',  color: '#f97316', bg: '#ffedd5' },
   PENDING_ESCALATED: { label: 'ส่งต่อแล้ว',      color: '#ef4444', bg: '#fee2e2' },
-  PO_PENDING:        { label: 'PO รอตรวจ',      color: '#06b6d4', bg: '#cffafe' },
 };
 
 const SO_STATUS: Record<string, { label: string; color: string; bg: string }> = {
@@ -251,12 +250,11 @@ export default function ApprovalQueuePage() {
     setLoading(true);
     try {
       if (isManager) {
-        // Fetch all pending statuses + PO + SO
-        const [pendingRes, escalatedRes, backupRes, poRes, soRes] = await Promise.all([
+        // Fetch pending QTs + SO review (PO_PENDING is handled via Sale Order flow, not here)
+        const [pendingRes, escalatedRes, backupRes, soRes] = await Promise.all([
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING&limit=100'),
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_ESCALATED&limit=100'),
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_BACKUP&limit=100'),
-          api.get<ApiResponse<Quotation[]>>('/quotations?status=PO_PENDING&limit=50'),
           api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=PENDING_REVIEW&limit=100'),
         ]);
 
@@ -269,16 +267,13 @@ export default function ApprovalQueuePage() {
         const seen = new Set<string>();
         const uniquePending = allPending.filter((q) => { if (seen.has(q.id)) return false; seen.add(q.id); return true; });
 
-        const poItems = poRes.data.data ?? [];
-
         if (role?.code === 'CEO') {
-          // CEO: only quotations explicitly routed to this user (Division Manager escalated up)
+          // CEO: only quotations explicitly routed to this user
           const ceoQt = uniquePending.filter((q) => q.currentApprover?.id === myId);
-          const ceoPo = poItems.filter((q) => q.currentApprover?.id === myId);
-          setQtItems([...ceoQt, ...ceoPo]);
+          setQtItems(ceoQt);
           setEscalatedItems([]);
         } else if (role?.code === 'ADMIN') {
-          setQtItems([...uniquePending, ...poItems]);
+          setQtItems(uniquePending);
           setEscalatedItems([]);
         } else {
           // MANAGER: split based on whether limits are exceeded
@@ -291,7 +286,7 @@ export default function ApprovalQueuePage() {
               canApprove.push(q);
             }
           }
-          setQtItems([...canApprove, ...poItems]);
+          setQtItems(canApprove);
           setEscalatedItems(exceedsLimit);
         }
         setSoItems(soRes.data.data ?? []);

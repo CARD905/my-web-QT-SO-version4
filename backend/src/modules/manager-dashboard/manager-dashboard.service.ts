@@ -624,15 +624,14 @@ export const managerDashboardService = {
     let qtCount = 0;
     let soCount = 0;
     if (isManagerAbove) {
-      // CEO sees only items explicitly routed to them; other managers see all team items
-      const isCeo = currentUser.roleCode === 'CEO';
-      const [normalQt, escalatedQt, poQt, pendingSo] = await Promise.all([
+      // QT approval: only items explicitly routed to this user
+      // PO_PENDING is handled via Sale Order flow, not counted here
+      const [normalQt, escalatedQt, pendingSo] = await Promise.all([
         prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
         prisma.quotation.count({ where: { deletedAt: null, status: 'PENDING_ESCALATED', currentApproverId: currentUser.id } }),
-        prisma.quotation.count({ where: { deletedAt: null, status: 'PO_PENDING', ...(isCeo ? { currentApproverId: currentUser.id } : {}) } }),
         prisma.saleOrder.count({ where: { deletedAt: null, status: 'PENDING_REVIEW' } }),
       ]);
-      qtCount = normalQt + escalatedQt + poQt;
+      qtCount = normalQt + escalatedQt;
       soCount = pendingSo;
     } else {
       // Officer: their QTs in pending states + their draft/rejected SOs
