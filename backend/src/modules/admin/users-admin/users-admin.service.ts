@@ -87,17 +87,28 @@ export const usersAdminService = {
       }
     }
 
-    if (input.teamId !== undefined && input.teamId !== null) {
-      const team = await prisma.team.findUnique({ where: { id: input.teamId } });
-      if (!team) throw new AppError(404, 'TEAM_NOT_FOUND', 'Team not found');
+    // When teamId changes and reportsToId is not explicitly given, auto-derive from team's manager
+    let resolvedReportsToId: string | null | undefined = input.reportsToId;
+    if (input.teamId !== undefined) {
+      if (!input.teamId) {
+        // Disconnecting from team → also clear reportsTo if not explicitly overridden
+        if (resolvedReportsToId === undefined) resolvedReportsToId = null;
+      } else {
+        const team = await prisma.team.findUnique({ where: { id: input.teamId } });
+        if (!team) throw new AppError(404, 'TEAM_NOT_FOUND', 'Team not found');
+        // Auto-set reportsTo to the new team's manager (unless admin explicitly set it)
+        if (resolvedReportsToId === undefined && team.managerId && team.managerId !== id) {
+          resolvedReportsToId = team.managerId;
+        }
+      }
     }
 
-    if (input.reportsToId !== undefined && input.reportsToId !== null) {
-      if (input.reportsToId === id) {
+    if (resolvedReportsToId != null) {
+      if (resolvedReportsToId === id) {
         throw new AppError(400, 'CANNOT_REPORT_TO_SELF', 'A user cannot report to themselves');
       }
       const supervisor = await prisma.user.findFirst({
-        where: { id: input.reportsToId, deletedAt: null },
+        where: { id: resolvedReportsToId, deletedAt: null },
       });
       if (!supervisor) {
         throw new AppError(404, 'SUPERVISOR_NOT_FOUND', 'Reports-to user not found');
@@ -131,9 +142,9 @@ export const usersAdminService = {
         ? { connect: { id: input.teamId } }
         : { disconnect: true };
     }
-    if (input.reportsToId !== undefined) {
-      updateData.reportsTo = input.reportsToId
-        ? { connect: { id: input.reportsToId } }
+    if (resolvedReportsToId !== undefined) {
+      updateData.reportsTo = resolvedReportsToId
+        ? { connect: { id: resolvedReportsToId } }
         : { disconnect: true };
     }
 
