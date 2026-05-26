@@ -86,7 +86,25 @@ export const quotationsService = {
 
     const scopeFilter = await buildScopeFilter(currentUser, 'quotation', 'view', 'createdById');
     if (!scopeFilter) return { data: [], meta: buildPaginationMeta(0, page, limit) };
-    Object.assign(where, scopeFilter);
+
+    const isCeoOrAdminScope = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
+    const isOfficerScope = isOfficer(currentUser.roleCode);
+
+    if (!isCeoOrAdminScope && !isOfficerScope && Object.keys(scopeFilter).length > 0) {
+      // For managers: also expose quotations explicitly routed to them as approver.
+      // This covers the cross-team case where an officer changed teams — their
+      // already-submitted quotation keeps the old currentApproverId but the officer
+      // is no longer in that manager's scope.
+      if (!where.AND) where.AND = [];
+      (where.AND as Prisma.QuotationWhereInput[]).push({
+        OR: [
+          scopeFilter as Prisma.QuotationWhereInput,
+          { currentApproverId: currentUser.id },
+        ],
+      });
+    } else {
+      Object.assign(where, scopeFilter);
+    }
 
     if (query.createdById) where.createdById = query.createdById;
     if (query.status) where.status = query.status;
