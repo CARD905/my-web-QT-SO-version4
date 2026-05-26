@@ -32,6 +32,7 @@ export default function AcceptInvitationPage() {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [phoneActive, setPhoneActive] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -187,7 +188,9 @@ export default function AcceptInvitationPage() {
                 <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="tel"
-                  autoComplete="tel"
+                  autoComplete="off"
+                  readOnly={!phoneActive}
+                  onFocus={() => setPhoneActive(true)}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="Phone number (optional)"
