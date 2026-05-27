@@ -21,8 +21,6 @@ import { formatDate, formatMoney } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
-import { OfficerDashboardView } from './sales';
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DashboardFilter = 'self' | 'team' | 'all' | 'user';
 
@@ -543,9 +541,9 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
         )}
       </div>
 
-      {/* CEO viewing individual officer → render officer's own dashboard */}
+      {/* Manager/CEO viewing individual officer → analytics view */}
       {isCeoViewingOfficer && selectedUser && (
-        <OfficerDashboardView userId={selectedUser.id} officerName={selectedUser.name} />
+        <OfficerAnalyticsView userId={selectedUser.id} selectedUser={selectedUser} />
       )}
 
       {/* Normal manager/team dashboard */}
@@ -588,6 +586,270 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OFFICER ANALYTICS VIEW — shown when manager drills into an officer
+// ════════════════════════════════════════════════════════════════════════════
+interface OfficerAnalyticsData {
+  user: {
+    id: string; name: string; email: string; phone?: string | null;
+    role: { code: string; nameTh: string };
+    team?: { id: string; name: string; size?: number } | null;
+    isActive: boolean; lastLoginAt?: string | null;
+    position?: string; isTeamLead?: boolean;
+  };
+  totals: {
+    quotations: number; approvedValue: number; thisMonth: number;
+    approvedCount: number; rejectedCount: number; soCount: number; soValue: number;
+  };
+  byStatus: Array<{ status: string; count: number }>;
+  recent: Array<{ id: string; quotationNo: string; status: string; grandTotal: number; createdAt: string; customerCompany: string }>;
+  recentSos: Array<{ id: string; saleOrderNo: string; status: string; grandTotal: number; createdAt: string; customerCompany: string }>;
+  monthlyTrend: Array<{ month: string; count: number; value: number }>;
+}
+
+function OfficerAnalyticsView({ userId, selectedUser }: { userId: string; selectedUser: { name: string; email: string; role: { code: string; nameTh: string } } }) {
+  const [data, setData] = useState<OfficerAnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [trendTab, setTrendTab] = useState<'count' | 'value'>('value');
+
+  useEffect(() => {
+    setLoading(true);
+    setData(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<ApiResponse<OfficerAnalyticsData>>(`/manager-dashboard/users/${userId}`);
+        if (!cancelled && res.data?.data) setData(res.data.data);
+      } catch (err) { console.error(getApiErrorMessage(err)); }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (loading) return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{[0,1,2,3].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4"><Skeleton className="h-64 rounded-2xl" /><Skeleton className="h-64 rounded-2xl" /></div>
+      <Skeleton className="h-48 rounded-2xl" />
+    </div>
+  );
+
+  if (!data) return (
+    <div className="bg-card border rounded-2xl p-10 text-center text-muted-foreground text-sm">ไม่สามารถโหลดข้อมูลได้</div>
+  );
+
+  const { totals, byStatus, recent, recentSos, monthlyTrend } = data;
+  const winRate = totals.quotations > 0 ? Math.round((totals.approvedCount / totals.quotations) * 100) : 0;
+  const maxTrend = Math.max(...monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value), 1);
+
+  const STATUS_COLORS: Record<string, string> = {
+    DRAFT: '#94a3b8', PENDING: '#f59e0b', PENDING_ESCALATED: '#ef4444',
+    APPROVED: '#10b981', REJECTED: '#ef4444', CANCELLED: '#6b7280',
+    EXPIRED: '#9ca3af', PO_PENDING: '#8b5cf6', PO_APPROVED: '#06b6d4',
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    DRAFT: 'Draft', PENDING: 'รออนุมัติ', PENDING_ESCALATED: 'Escalated',
+    APPROVED: 'อนุมัติแล้ว', REJECTED: 'ปฏิเสธ', CANCELLED: 'ยกเลิก',
+    EXPIRED: 'หมดอายุ', PO_PENDING: 'รอ PO', PO_APPROVED: 'PO อนุมัติ',
+  };
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── KPI Row 1 ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { icon: <BarChart2 className="h-5 w-5" />, label: 'Total QT', value: totals.quotations, sub: `เดือนนี้ ${totals.thisMonth} ใบ`, gradient: 'from-slate-600 to-slate-800', isText: false },
+          { icon: <CheckCircle2 className="h-5 w-5" />, label: 'Approved Value', value: formatMoney(totals.approvedValue), sub: `${totals.approvedCount} ใบอนุมัติแล้ว`, gradient: 'from-emerald-500 to-teal-700', isText: true },
+          { icon: <Activity className="h-5 w-5" />, label: 'Win Rate', value: `${winRate}%`, sub: `ปฏิเสธ ${totals.rejectedCount} ใบ`, gradient: winRate >= 50 ? 'from-green-500 to-emerald-700' : 'from-orange-500 to-red-600', isText: true },
+          { icon: <ShoppingCart className="h-5 w-5" />, label: 'SO Confirmed', value: formatMoney(totals.soValue), sub: `${totals.soCount} SO ยืนยันแล้ว`, gradient: 'from-blue-500 to-indigo-700', isText: true },
+        ].map((k) => (
+          <div key={k.label} className={`bg-gradient-to-br ${k.gradient} rounded-2xl p-4 text-white shadow`}>
+            <div className="flex items-center gap-2 mb-2 opacity-80">{k.icon}<span className="text-xs font-medium uppercase tracking-wide">{k.label}</span></div>
+            <div className="text-2xl font-bold">{k.value}</div>
+            <div className="text-xs text-white/60 mt-1">{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* ── Monthly Trend ── */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <span className="text-sm font-semibold">Monthly Trend — 6 เดือน</span>
+            <div className="ml-auto flex bg-muted rounded-lg p-0.5 gap-0.5">
+              {(['value', 'count'] as const).map((t) => (
+                <button key={t} onClick={() => setTrendTab(t)}
+                  className={`px-3 py-1 text-xs rounded-md transition-all ${trendTab === t ? 'bg-background shadow text-foreground font-medium' : 'text-muted-foreground'}`}>
+                  {t === 'value' ? 'มูลค่า' : 'จำนวน'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {monthlyTrend.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
+          ) : (
+            <>
+              <svg viewBox="0 0 500 140" className="w-full" style={{ height: 140 }}>
+                <defs>
+                  <linearGradient id="officerTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+                  </linearGradient>
+                </defs>
+                {(() => {
+                  const PL = 48; const PR = 16; const PT = 10; const PB = 28;
+                  const cW = 500 - PL - PR; const cH = 140 - PT - PB;
+                  const vals = monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value);
+                  const xi = (i: number) => PL + (i / Math.max(vals.length - 1, 1)) * cW;
+                  const yv = (v: number) => PT + cH - (v / maxTrend) * cH;
+                  const pts = vals.map((v, i) => ({ x: xi(i), y: yv(v) }));
+                  let path = `M ${pts[0].x} ${pts[0].y}`;
+                  for (let i = 1; i < pts.length; i++) {
+                    const cp = (pts[i-1].x + pts[i].x) / 2;
+                    path += ` C ${cp} ${pts[i-1].y} ${cp} ${pts[i].y} ${pts[i].x} ${pts[i].y}`;
+                  }
+                  const area = `${path} L ${pts[pts.length-1].x} ${PT+cH} L ${pts[0].x} ${PT+cH} Z`;
+                  const yTicks = [0, 0.5, 1];
+                  return (
+                    <>
+                      {yTicks.map((t) => {
+                        const gy = PT + cH * (1 - t); const tv = maxTrend * t;
+                        return (
+                          <g key={t}>
+                            <line x1={PL} y1={gy} x2={500-PR} y2={gy} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
+                            <text x={PL-6} y={gy+4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.45}>
+                              {trendTab === 'value' ? (tv >= 1000000 ? `${(tv/1000000).toFixed(1)}M` : tv >= 1000 ? `${(tv/1000).toFixed(0)}K` : tv.toFixed(0)) : tv.toFixed(0)}
+                            </text>
+                          </g>
+                        );
+                      })}
+                      <path d={area} fill="url(#officerTrendGrad)" />
+                      <path d={path} fill="none" stroke="#10b981" strokeWidth={2.5} />
+                      {pts.map((p, i) => (
+                        <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#10b981" stroke="white" strokeWidth={1.5}>
+                          <title>{monthlyTrend[i].month}: {trendTab === 'value' ? formatMoney(vals[i]) : vals[i]}</title>
+                        </circle>
+                      ))}
+                      {monthlyTrend.map((m, i) => (
+                        <text key={i} x={xi(i)} y={140-8} textAnchor="middle" fontSize={10} fill="currentColor" fillOpacity={0.5}>{m.month}</text>
+                      ))}
+                    </>
+                  );
+                })()}
+              </svg>
+              <div className="mt-2 pt-2 border-t border-border/50 grid grid-cols-2 gap-2 text-center">
+                <div>
+                  <div className="text-sm font-bold text-emerald-500">{formatMoney(monthlyTrend.reduce((s,m) => s+m.value, 0))}</div>
+                  <div className="text-[10px] text-muted-foreground">มูลค่ารวม 6 เดือน</div>
+                </div>
+                <div>
+                  <div className="text-sm font-bold tabular-nums">{monthlyTrend.reduce((s,m) => s+m.count, 0)} ใบ</div>
+                  <div className="text-[10px] text-muted-foreground">จำนวนรวม 6 เดือน</div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Status Breakdown ── */}
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <PieChart className="h-4 w-4 text-violet-500" />
+            <span className="text-sm font-semibold">Status Breakdown</span>
+            <span className="ml-auto text-xs text-muted-foreground">{totals.quotations} ใบทั้งหมด</span>
+          </div>
+          {byStatus.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
+          ) : (
+            <div className="space-y-2">
+              {byStatus.sort((a, b) => b.count - a.count).map(({ status, count }) => {
+                const pct = totals.quotations > 0 ? Math.round((count / totals.quotations) * 100) : 0;
+                const color = STATUS_COLORS[status] ?? '#94a3b8';
+                return (
+                  <div key={status}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="font-medium">{STATUS_LABELS[status] ?? status}</span>
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">{count} ใบ · {pct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Recent Quotations ── */}
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <FileText className="h-4 w-4 text-blue-500" />
+          <span className="text-sm font-semibold">ใบเสนอราคาล่าสุด</span>
+          <Badge variant="outline" className="ml-auto text-[10px]">{recent.length} รายการ</Badge>
+        </div>
+        {recent.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">ยังไม่มีใบเสนอราคา</div>
+        ) : (
+          <div className="space-y-1">
+            {recent.map((q) => {
+              const color = STATUS_COLORS[q.status] ?? '#94a3b8';
+              return (
+                <Link key={q.id} href={`/quotations/${q.id}`}
+                  className="group flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-muted/60 transition-colors"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                  <span className="text-[12px] font-semibold tabular-nums w-28 shrink-0">{q.quotationNo}</span>
+                  <span className="text-[11px] text-muted-foreground truncate flex-1">{q.customerCompany}</span>
+                  <span className="text-[11px] font-medium tabular-nums shrink-0">{formatMoney(q.grandTotal)}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{STATUS_LABELS[q.status] ?? q.status}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0" />
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Recent Sale Orders ── */}
+      {recentSos.length > 0 && (
+        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShoppingCart className="h-4 w-4 text-emerald-500" />
+            <span className="text-sm font-semibold">Sale Orders ล่าสุด</span>
+            <Badge variant="outline" className="ml-auto text-[10px]">{recentSos.length} รายการ</Badge>
+          </div>
+          <div className="space-y-1">
+            {recentSos.map((so) => {
+              const color = so.status === 'CONFIRMED' || so.status === 'COMPLETED' ? '#10b981' : so.status === 'REJECTED' ? '#ef4444' : '#f59e0b';
+              return (
+                <Link key={so.id} href={`/sale-orders/${so.id}`}
+                  className="group flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-muted/60 transition-colors"
+                >
+                  <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                  <span className="text-[12px] font-semibold tabular-nums w-28 shrink-0">{so.saleOrderNo}</span>
+                  <span className="text-[11px] text-muted-foreground truncate flex-1">{so.customerCompany}</span>
+                  <span className="text-[11px] font-medium tabular-nums shrink-0">{formatMoney(so.grandTotal)}</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{so.status}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

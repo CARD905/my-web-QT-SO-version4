@@ -385,7 +385,9 @@ interface PricingResult {
   baseCost: number;
   minPrice: number;
   suggestedPrice: number;
-  actualMarginPct: number;
+  actualMarginPct: number;        // margin at last price (if available), else at standard price
+  lastPriceMarginPct: number | null;
+  marketPriceMarginPct: number | null;
   barSugPct: number;
   marketBarPct: number | null;
   lastBarPct: number | null;
@@ -443,13 +445,36 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาเพิ่ม target margin` });
   }
 
-  const actualMarginPct = costPrice > 0 && sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
+  // Margin at last price (real historical margin — most useful metric)
+  const lastPriceMarginPct  = costPrice > 0 && lastPrice > 0   ? ((lastPrice   - costPrice) / lastPrice)   * 100 : null;
+  const marketPriceMarginPct = costPrice > 0 && marketPrice > 0 ? ((marketPrice - costPrice) / marketPrice) * 100 : null;
+
   if (costPrice > 0) {
-    if (actualMarginPct >= targetMarginPct)
-      insights.push({ type: 'ok',   text: `margin จริง ${actualMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
-    else
-      insights.push({ type: 'warn', text: `margin จริง ${actualMarginPct.toFixed(1)}% < target ${targetMarginPct}% — ราคาต่ำกว่าเป้าหมาย` });
+    if (lastPriceMarginPct !== null) {
+      const gap = (targetMarginPct - lastPriceMarginPct).toFixed(1);
+      if (lastPriceMarginPct >= targetMarginPct)
+        insights.push({ type: 'ok',   text: `margin ที่ last price ${lastPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓ — ราคาเดิมทำกำไรได้ตามเป้า` });
+      else if (lastPriceMarginPct > 0)
+        insights.push({ type: 'warn', text: `margin ที่ last price ${lastPriceMarginPct.toFixed(1)}% ต่ำกว่า target ${gap}% — ควรปรับราคาขึ้น หรือลดต้นทุน` });
+      else
+        insights.push({ type: 'warn', text: `last price ต่ำกว่าต้นทุน (margin ${lastPriceMarginPct.toFixed(1)}%) — ขายแล้วขาดทุน` });
+    }
+    if (marketPriceMarginPct !== null) {
+      if (marketPriceMarginPct >= targetMarginPct)
+        insights.push({ type: 'ok',   text: `margin ถ้าขาย market price ${marketPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+      else if (marketPriceMarginPct > 0)
+        insights.push({ type: 'info', text: `margin ถ้าขาย market price ${marketPriceMarginPct.toFixed(1)}% — ราคาตลาดยังต่ำกว่า target ${(targetMarginPct - marketPriceMarginPct).toFixed(1)}%` });
+      else
+        insights.push({ type: 'warn', text: `market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดแล้วขาดทุน` });
+    }
+    // Summary: confirm standard price achieves the target
+    const stdMargin = sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
+    insights.push({ type: 'ok', text: `standard price ${formatMoney(sug)} ให้ margin ${stdMargin.toFixed(1)}% = target ${targetMarginPct}% ✓` });
   }
+
+  // actualMarginPct = last price margin if available (meaningful), else standard price margin
+  const actualMarginPct = lastPriceMarginPct !== null ? lastPriceMarginPct
+    : costPrice > 0 && sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
 
   const hi = Math.max(sug, marketPrice || 0, lastPrice || 0, minP) * 1.1 || 1;
   const lo = Math.max(minP * 0.85, 0);
@@ -459,7 +484,7 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
   const marketBarPct = marketPrice > 0 ? pct(marketPrice) : null;
   const lastBarPct   = lastPrice > 0   ? pct(lastPrice)   : null;
 
-  return { baseCost: costPrice || lastPrice, minPrice: minP, suggestedPrice: sug, actualMarginPct, barSugPct, marketBarPct, lastBarPct, insights };
+  return { baseCost: costPrice || lastPrice, minPrice: minP, suggestedPrice: sug, actualMarginPct, lastPriceMarginPct, marketPriceMarginPct, barSugPct, marketBarPct, lastBarPct, insights };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -601,29 +626,33 @@ function PricingAnalyzer({
 
       {result && (
         <div ref={resultRef} className="space-y-3">
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { label: 'ต้นทุน',          value: result.baseCost,      color: 'text-foreground' },
-              { label: 'min price',        value: result.minPrice,       color: 'text-red-500' },
-              { label: 'standard price',   value: result.suggestedPrice, color: 'text-primary', highlight: true },
-              { label: 'margin จริง',      value: null, pct: result.actualMarginPct, color: marginColor },
-            ].map((m, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'rounded-xl p-2.5 text-center transition-all duration-300',
-                  m.highlight ? 'bg-primary/10 ring-1 ring-primary/30 dark:bg-primary/20' : 'bg-muted/60',
-                )}
-              >
-                <div className="text-[10px] text-muted-foreground mb-1">{m.label}</div>
-                <div className={cn('text-sm font-bold tabular-nums', m.color)}>
-                  {m.value !== null && m.value !== undefined
-                    ? <AnimatedPrice value={m.value} />
-                    : `${m.pct?.toFixed(1)}%`}
-                </div>
+          {(() => {
+            const lastM  = result.lastPriceMarginPct;
+            const mktM   = result.marketPriceMarginPct;
+            const col4Label = lastM !== null ? 'margin @ last' : mktM !== null ? 'margin @ ตลาด' : 'margin @ standard';
+            const col4Pct   = lastM !== null ? lastM : mktM !== null ? mktM : result.actualMarginPct;
+            const col4Color = col4Pct >= inputs.targetMarginPct
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : col4Pct > 0 ? 'text-amber-500 dark:text-amber-400' : 'text-red-500';
+            return (
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: 'ต้นทุน',        value: result.baseCost,       pct: null, color: 'text-foreground',  highlight: false },
+                  { label: 'target price',   value: result.minPrice,       pct: null, color: 'text-violet-600 dark:text-violet-400', highlight: false },
+                  { label: 'standard price', value: result.suggestedPrice, pct: null, color: 'text-primary',     highlight: true  },
+                  { label: col4Label,        value: null,                  pct: col4Pct, color: col4Color,       highlight: false },
+                ].map((m, i) => (
+                  <div key={i} className={cn('rounded-xl p-2.5 text-center transition-all duration-300',
+                    m.highlight ? 'bg-primary/10 ring-1 ring-primary/30 dark:bg-primary/20' : 'bg-muted/60')}>
+                    <div className="text-[10px] text-muted-foreground mb-1">{m.label}</div>
+                    <div className={cn('text-sm font-bold tabular-nums', m.color)}>
+                      {m.value !== null ? <AnimatedPrice value={m.value} /> : `${m.pct?.toFixed(1)}%`}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
           <div className="space-y-1.5">
             <div className="relative h-2 bg-muted rounded-full overflow-visible">
