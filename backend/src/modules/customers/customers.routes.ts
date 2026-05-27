@@ -54,6 +54,26 @@ router.post(
   asyncHandler(customersController.editRequest),
 );
 
+// ─── LIST EDIT REQUESTS per customer — Admin only ─────────────────────────
+router.get(
+  '/:id/edit-requests',
+  requireRole('ADMIN', 'CEO'),
+  asyncHandler(customersController.listEditRequests),
+);
+
+// ─── APPROVE / REJECT — Admin only ─────────────────────────────────────────
+router.post(
+  '/edit-requests/:requestId/approve',
+  requireRole('ADMIN', 'CEO'),
+  asyncHandler(customersController.approveEditRequest),
+);
+
+router.post(
+  '/edit-requests/:requestId/reject',
+  requireRole('ADMIN', 'CEO'),
+  asyncHandler(customersController.rejectEditRequest),
+);
+
 // ─── DELETE — Admin, CEO เท่านั้น ───────────────────────────────────────────
 router.delete(
   '/:id',

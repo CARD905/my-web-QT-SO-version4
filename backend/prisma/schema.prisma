@@ -161,9 +161,11 @@ model User {
   poApprovedQuotations  Quotation[]  @relation("QuotationPoApprovedBy")
   poRejectedQuotations  Quotation[]  @relation("QuotationPoRejectedBy")
   pendingApprovalQuotations  Quotation[]  @relation("CurrentApprover")
-  changeRequestsAsTarget    UserChangeRequest[] @relation("ChangeRequestTarget")
-  changeRequestsAsRequester UserChangeRequest[] @relation("ChangeRequestSubmitter")
-  changeRequestsReviewed    UserChangeRequest[] @relation("ChangeRequestReviewer")
+  changeRequestsAsTarget           UserChangeRequest[]         @relation("ChangeRequestTarget")
+  changeRequestsAsRequester        UserChangeRequest[]         @relation("ChangeRequestSubmitter")
+  changeRequestsReviewed           UserChangeRequest[]         @relation("ChangeRequestReviewer")
+  customerChangeRequestsAsRequester CustomerChangeRequest[]    @relation("CustomerChangeRequestSubmitter")
+  customerChangeRequestsReviewed    CustomerChangeRequest[]    @relation("CustomerChangeRequestReviewer")
   @@unique([email, deletedAt])
   @@index([email])
   @@index([roleId])
@@ -263,6 +265,7 @@ model Customer {
   updatedAt       DateTime    @updatedAt @map("updated_at")
   quotations      Quotation[]
   saleOrders      SaleOrder[]
+  changeRequests  CustomerChangeRequest[]
 
   @@index([company])
   @@index([deletedAt])
@@ -810,4 +813,27 @@ model UserChangeRequest {
   @@index([requesterId])
   @@index([status])
   @@map("user_change_requests")
+}
+
+model CustomerChangeRequest {
+  id           String    @id @default(uuid())
+  customerId   String    @map("customer_id")
+  requesterId  String    @map("requester_id")
+  reason       String    @db.Text
+  changes      Json
+  status       String    @default("PENDING")
+  adminNote    String?   @map("admin_note") @db.Text
+  reviewedById String?   @map("reviewed_by_id")
+  reviewedAt   DateTime? @map("reviewed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  customer   Customer @relation(fields: [customerId], references: [id])
+  requester  User     @relation("CustomerChangeRequestSubmitter", fields: [requesterId], references: [id])
+  reviewedBy User?    @relation("CustomerChangeRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([customerId])
+  @@index([requesterId])
+  @@index([status])
+  @@map("customer_change_requests")
 }

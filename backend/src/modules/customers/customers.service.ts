@@ -126,11 +126,22 @@ export const customersService = {
       .map(([k, v]) => `${FIELD_LABELS[k] ?? k}: "${v ?? '(ลบออก)'}"`)
       .join(', ');
 
+    // Persist the request in DB
+    const cr = await prisma.customerChangeRequest.create({
+      data: {
+        customerId: id,
+        requesterId,
+        reason: input.reason,
+        changes: input.changes as Prisma.InputJsonValue,
+        status: 'PENDING',
+      },
+    });
+
+    // Notify all admins
     const admins = await prisma.user.findMany({
       where: { deletedAt: null, isActive: true, role: { code: 'ADMIN' } },
       select: { id: true },
     });
-
     if (admins.length > 0) {
       await prisma.notification.createMany({
         data: admins.map((admin) => ({
@@ -139,14 +150,6 @@ export const customersService = {
           title: 'ขอแก้ไขข้อมูลลูกค้า',
           message: `${requesterName} ขอแก้ไขข้อมูลลูกค้า "${customer.company}" — ${changesText}`,
           link: `/customers`,
-          metadata: {
-            customerId: id,
-            customerCompany: customer.company,
-            requesterId,
-            requesterName,
-            reason: input.reason,
-            changes: input.changes,
-          },
         })),
       });
     }
@@ -160,7 +163,105 @@ export const customersService = {
       req,
     });
 
-    return { success: true };
+    return cr;
+  },
+
+  async listEditRequests(customerId?: string, status?: string) {
+    const where: Prisma.CustomerChangeRequestWhereInput = {};
+    if (customerId) where.customerId = customerId;
+    if (status) where.status = status;
+
+    return prisma.customerChangeRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        requester:  { select: { id: true, name: true, email: true } },
+        reviewedBy: { select: { id: true, name: true } },
+        customer:   { select: { id: true, company: true } },
+      },
+    });
+  },
+
+  async approveEditRequest(requestId: string, adminId: string, note?: string, req?: Request) {
+    const cr = await prisma.customerChangeRequest.findUnique({
+      where: { id: requestId },
+      include: { customer: true },
+    });
+    if (!cr) throw new AppError(404, 'NOT_FOUND', 'ไม่พบคำขอ');
+    if (cr.status !== 'PENDING') throw new AppError(400, 'BAD_REQUEST', 'คำขอนี้ไม่ได้อยู่ในสถานะ PENDING');
+
+    const changes = cr.changes as Record<string, unknown>;
+    const updateData: Prisma.CustomerUpdateInput = {};
+    if (changes.contactName !== undefined) updateData.contactName = changes.contactName as string;
+    if (changes.company     !== undefined) updateData.company     = changes.company as string;
+    if (changes.taxId       !== undefined) updateData.taxId       = (changes.taxId as string) || null;
+    if (changes.email       !== undefined) updateData.email       = (changes.email as string) || null;
+    if (changes.phone       !== undefined) updateData.phone       = (changes.phone as string) || null;
+    if (changes.billingAddress  !== undefined) updateData.billingAddress  = (changes.billingAddress as string) || null;
+    if (changes.shippingAddress !== undefined) updateData.shippingAddress = (changes.shippingAddress as string) || null;
+
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(updateData).length > 0) {
+        await tx.customer.update({ where: { id: cr.customerId }, data: updateData });
+      }
+      await tx.customerChangeRequest.update({
+        where: { id: requestId },
+        data: { status: 'APPROVED', adminNote: note ?? null, reviewedById: adminId, reviewedAt: new Date() },
+      });
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: cr.requesterId,
+        type: 'CUSTOMER_EDIT_REQUEST' as any,
+        title: 'คำขอแก้ไขลูกค้าได้รับการอนุมัติ',
+        message: `คำขอแก้ไขข้อมูลลูกค้า "${cr.customer.company}" ได้รับการอนุมัติแล้ว`,
+        link: `/customers`,
+      },
+    });
+
+    await logActivity(prisma, {
+      userId: adminId,
+      action: 'APPROVE_EDIT_REQUEST',
+      entityType: 'Customer',
+      entityId: cr.customerId,
+      description: `Approved edit request for customer "${cr.customer.company}"`,
+      req,
+    });
+  },
+
+  async rejectEditRequest(requestId: string, adminId: string, note: string, req?: Request) {
+    if (!note?.trim()) throw new AppError(400, 'VALIDATION', 'กรุณาระบุเหตุผลที่ปฏิเสธ');
+    const cr = await prisma.customerChangeRequest.findUnique({
+      where: { id: requestId },
+      include: { customer: true },
+    });
+    if (!cr) throw new AppError(404, 'NOT_FOUND', 'ไม่พบคำขอ');
+    if (cr.status !== 'PENDING') throw new AppError(400, 'BAD_REQUEST', 'คำขอนี้ไม่ได้อยู่ในสถานะ PENDING');
+
+    await prisma.customerChangeRequest.update({
+      where: { id: requestId },
+      data: { status: 'REJECTED', adminNote: note.trim(), reviewedById: adminId, reviewedAt: new Date() },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: cr.requesterId,
+        type: 'CUSTOMER_EDIT_REQUEST' as any,
+        title: 'คำขอแก้ไขลูกค้าถูกปฏิเสธ',
+        message: `คำขอแก้ไขข้อมูลลูกค้า "${cr.customer.company}" ถูกปฏิเสธ: ${note}`,
+        link: `/customers`,
+      },
+    });
+
+    await logActivity(prisma, {
+      userId: adminId,
+      action: 'REJECT_EDIT_REQUEST',
+      entityType: 'Customer',
+      entityId: cr.customerId,
+      description: `Rejected edit request for customer "${cr.customer.company}": ${note}`,
+      req,
+    });
   },
 
   async softDelete(id: string, userId: string, req?: Request) {

@@ -38,6 +38,25 @@ export const customersController = {
     return success(res, result, 'Edit request sent to admin');
   },
 
+  async listEditRequests(req: Request, res: Response) {
+    const customerId = req.params.id as string | undefined;
+    const status = req.query.status as string | undefined;
+    const data = await customersService.listEditRequests(customerId, status);
+    return success(res, data);
+  },
+
+  async approveEditRequest(req: Request, res: Response) {
+    if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
+    await customersService.approveEditRequest(req.params.requestId, req.user.id, req.body.note, req);
+    return success(res, null, 'อนุมัติคำขอเรียบร้อย');
+  },
+
+  async rejectEditRequest(req: Request, res: Response) {
+    if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
+    await customersService.rejectEditRequest(req.params.requestId, req.user.id, req.body.note, req);
+    return success(res, null, 'ปฏิเสธคำขอเรียบร้อย');
+  },
+
   async remove(req: Request, res: Response) {
     if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
     await customersService.softDelete(req.params.id, req.user.id, req);
