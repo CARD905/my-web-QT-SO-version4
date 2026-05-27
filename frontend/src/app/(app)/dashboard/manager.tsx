@@ -924,8 +924,10 @@ function DashboardContent({
         const poCount      = data.totals.poVerificationPending ?? 0;
         const escalatedVal = data.recentEscalated.reduce((s, q) => s + (q.grandTotal ?? 0), 0);
 
-        const groupCount = (hasEscalated ? 1 : 0) + (pendingCount > 0 ? 1 : 0) + (poCount > 0 ? 1 : 0);
-        if (groupCount === 0) return null;
+        // badge = actual actionable items (QT pending + PO pending); escalated = monitoring only
+        const actionableCount = pendingCount + poCount;
+        const hasAny = actionableCount > 0 || hasEscalated;
+        if (!hasAny) return null;
 
         return (
           <div className="rounded-2xl border border-border/60 shadow-sm overflow-hidden bg-card">
@@ -935,92 +937,61 @@ function DashboardContent({
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
               </div>
               <span className="text-sm font-semibold">ต้องดำเนินการ</span>
-              <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                {groupCount}
-              </span>
-              <span className="ml-auto text-[11px] text-muted-foreground">กลุ่มที่ต้องดูแล</span>
+              {actionableCount > 0 && (
+                <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {actionableCount}
+                </span>
+              )}
+              <span className="ml-auto text-[11px] text-muted-foreground">รายการที่ต้องดำเนินการ</span>
             </div>
 
             <div className="divide-y divide-border/50">
 
-              {/* ── GROUP 1: Escalated (most urgent) ── */}
-              {hasEscalated && (
+              {/* ── ROW 1: QT Pending Approval (manager can act directly) ── */}
+              {pendingCount > 0 && (
                 <div>
-                  {/* Group header */}
-                  <div className="flex items-center gap-3 px-5 py-3 bg-rose-500/5">
-                    <div className="w-[3px] h-8 rounded-full bg-rose-500 shrink-0" />
-                    <Flame className="h-4 w-4 text-rose-500 shrink-0" />
+                  <div className="flex items-center gap-3 px-5 py-3.5 bg-red-500/[0.03]">
+                    <div className="w-[3px] h-8 rounded-full bg-red-500 shrink-0" />
+                    <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                      <Clock className="h-4 w-4 text-red-500" />
+                    </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold text-rose-700 dark:text-rose-400">
-                        Escalated — รอ CEO อนุมัติ
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">เกินวงเงิน/สิทธิ์ส่วนลด ต้องส่งต่อผู้มีอำนาจ</div>
+                      <div className="text-[13px] font-semibold">QT รออนุมัติ</div>
+                      <div className="text-[11px] text-muted-foreground">ใบเสนอราคาที่รอให้คุณอนุมัติ</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-[13px] font-bold text-rose-700 tabular-nums">{formatMoney(escalatedVal)}</div>
-                      <div className="text-[10px] text-muted-foreground tabular-nums">{data.recentEscalated.length} รายการ</div>
+                      <div className="text-xl font-bold tabular-nums text-red-600">{pendingCount}</div>
+                      {pendingVal > 0 && (
+                        <div className="text-[11px] text-muted-foreground tabular-nums">{formatMoney(pendingVal)}</div>
+                      )}
                     </div>
-                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
                       HIGH
                     </span>
+                    <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-red-300 hover:text-red-600">
+                      <Link href="/quotations">อนุมัติ <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
+                    </Button>
                   </div>
-                  {/* Escalated items */}
-                  <div className="divide-y divide-border/30">
-                    {data.recentEscalated.map((q) => (
-                      <Link key={q.id} href={`/quotations/${q.id}`}
-                        className="group flex items-center gap-4 px-5 py-2.5 hover:bg-rose-50/60 dark:hover:bg-rose-900/10 transition-colors"
-                      >
-                        <div className="w-[3px] h-6 rounded-full bg-rose-200 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
-                            <span className="text-[9px] font-bold px-1.5 py-px rounded bg-rose-100 text-rose-600 border border-rose-200">
-                              ESCALATED
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate mt-px">
-                            {q.customerCompany} · {q.createdByName} · {formatDate(q.submittedAt)}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-[13px] font-bold text-rose-700 dark:text-rose-400 tabular-nums">
-                            {formatMoney(q.grandTotal)}
-                          </div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-rose-400 transition-colors shrink-0" />
-                      </Link>
-                    ))}
-                  </div>
+                  {/* Show top pending QTs from pipeline */}
+                  {(data.pipelineDetail?.stage1Top ?? []).filter((q) =>
+                    !data.recentEscalated.some((e) => e.id === q.id)
+                  ).slice(0, 3).map((q) => (
+                    <Link key={q.id} href={`/quotations/${q.id}`}
+                      className="group flex items-center gap-4 px-5 py-2.5 hover:bg-red-50/60 dark:hover:bg-red-900/10 transition-colors border-t border-border/30"
+                    >
+                      <div className="w-[3px] h-6 rounded-full bg-red-200 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
+                        <div className="text-[11px] text-muted-foreground truncate mt-px">{q.customerCompany}</div>
+                      </div>
+                      <div className="text-[13px] font-bold text-red-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-red-400 transition-colors shrink-0" />
+                    </Link>
+                  ))}
                 </div>
               )}
 
-              {/* ── GROUP 2: QT Pending Approval ── */}
-              {pendingCount > 0 && (
-                <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-red-500/[0.03] transition-colors">
-                  <div className="w-[3px] h-8 rounded-full bg-red-500 shrink-0" />
-                  <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
-                    <Clock className="h-4 w-4 text-red-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold">QT Pending Approval</div>
-                    <div className="text-[11px] text-muted-foreground">รอ Manager อนุมัติ</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold tabular-nums">{pendingCount}</div>
-                    {pendingVal > 0 && (
-                      <div className="text-[11px] text-muted-foreground tabular-nums">{formatMoney(pendingVal)}</div>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
-                    HIGH
-                  </span>
-                  <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-red-300 hover:text-red-600">
-                    <Link href="/quotations">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
-                  </Button>
-                </div>
-              )}
-
-              {/* ── GROUP 3: PO Validation Pending ── */}
+              {/* ── ROW 2: PO Validation Pending ── */}
               {poCount > 0 && (
                 <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-amber-500/[0.03] transition-colors">
                   <div className="w-[3px] h-8 rounded-full bg-amber-500 shrink-0" />
@@ -1028,11 +999,11 @@ function DashboardContent({
                     <FileText className="h-4 w-4 text-amber-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold">PO Validation Pending</div>
-                    <div className="text-[11px] text-muted-foreground">PO รอตรวจสอบความถูกต้อง</div>
+                    <div className="text-[13px] font-semibold">PO รอตรวจสอบ</div>
+                    <div className="text-[11px] text-muted-foreground">PO ที่รออนุมัติความถูกต้อง</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-xl font-bold tabular-nums">{poCount}</div>
+                    <div className="text-xl font-bold tabular-nums text-amber-600">{poCount}</div>
                   </div>
                   <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                     MED
@@ -1040,6 +1011,53 @@ function DashboardContent({
                   <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-amber-300 hover:text-amber-600">
                     <Link href="/sale-orders">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
                   </Button>
+                </div>
+              )}
+
+              {/* ── ROW 3: Escalated — monitoring only (manager already forwarded to CEO) ── */}
+              {hasEscalated && (
+                <div>
+                  <div className="flex items-center gap-3 px-5 py-3 bg-orange-500/[0.04]">
+                    <div className="w-[3px] h-8 rounded-full bg-orange-400 shrink-0" />
+                    <Flame className="h-4 w-4 text-orange-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold text-orange-700 dark:text-orange-400">
+                        ส่งต่อ CEO แล้ว — รอผลอนุมัติ
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">เกินวงเงิน/สิทธิ์ส่วนลด · ติดตามสถานะ</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[13px] font-bold text-orange-600 tabular-nums">{formatMoney(escalatedVal)}</div>
+                      <div className="text-[10px] text-muted-foreground tabular-nums">{data.recentEscalated.length} รายการ</div>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
+                      ติดตาม
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border/30">
+                    {data.recentEscalated.map((q) => (
+                      <Link key={q.id} href={`/quotations/${q.id}`}
+                        className="group flex items-center gap-4 px-5 py-2.5 hover:bg-orange-50/50 dark:hover:bg-orange-900/10 transition-colors"
+                      >
+                        <div className="w-[3px] h-6 rounded-full bg-orange-200 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-px rounded bg-orange-100 text-orange-700 border border-orange-200">
+                              ESCALATED
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate mt-px">
+                            {q.customerCompany} · {q.createdByName} · {formatDate(q.submittedAt)}
+                          </div>
+                        </div>
+                        <div className="text-[13px] font-bold text-orange-700 dark:text-orange-400 tabular-nums shrink-0">
+                          {formatMoney(q.grandTotal)}
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-orange-400 transition-colors shrink-0" />
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               )}
 
