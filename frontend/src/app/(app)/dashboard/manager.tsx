@@ -7,7 +7,7 @@ import {
   TrendingUp, Clock, CheckCircle2, XCircle, DollarSign,
   Users as UsersIcon, Inbox, Crown, Filter, Calendar,
   BarChart2, Flame, ArrowRight, Info, AlertTriangle,
-  Timer, ChevronRight, Zap,
+  Timer, ChevronRight, Zap, FileText,
   RefreshCw, Activity,
   ShoppingCart, Target, TrendingDown, Award, PieChart, Percent,
   ChevronDown, Building2,
@@ -928,117 +928,137 @@ function DashboardContent({
         </div>
       </div>
 
-      {/* ══ SECTION 6: Bottlenecks + Alerts ══ */}
-      {bottlenecks.length > 0 && (
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            Bottleneck — จุดติดขัดที่ต้องจัดการ
-            <Badge variant="outline" className="ml-auto text-[10px] bg-amber-50 text-amber-700 border-amber-300">
-              {bottlenecks.length} รายการ
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            {bottlenecks.map((b, i) => (
-              <div key={i} className={`flex items-center gap-4 p-3 rounded-xl border ${
-                b.priority === 'high' ? 'bg-red-500/5 border-red-500/30'
-                : b.priority === 'medium' ? 'bg-amber-500/5 border-amber-500/30'
-                : 'bg-blue-500/5 border-blue-500/30'
-              }`}>
-                <div className={`w-1 h-10 rounded-full shrink-0 ${
-                  b.priority === 'high' ? 'bg-red-500'
-                  : b.priority === 'medium' ? 'bg-amber-500'
-                  : 'bg-blue-500'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{b.type}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{b.reason}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-bold text-xl">{b.count}</div>
-                  {b.value > 0 && <div className="text-xs text-muted-foreground">{formatMoney(b.value)}</div>}
-                </div>
-                <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                  b.priority === 'high' ? 'bg-red-50 text-red-700 border-red-300'
-                  : b.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-300'
-                  : 'bg-blue-50 text-blue-700 border-blue-300'
-                }`}>
-                  {b.priority.toUpperCase()}
-                </Badge>
-                <Button asChild size="sm" variant="outline" className="h-7 text-xs shrink-0">
-                  <Link href="/quotations">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ══ SECTION 6-7: Action Required (unified — no duplication) ══ */}
+      {(() => {
+        const hasEscalated = data.recentEscalated.length > 0;
+        const pendingCount = data.totals.pending ?? 0;
+        const pendingVal   = data.totals.pendingValue ?? 0;
+        const poCount      = data.totals.poVerificationPending ?? 0;
+        const escalatedVal = data.recentEscalated.reduce((s, q) => s + (q.grandTotal ?? 0), 0);
 
-      {alerts.length > 0 && (
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            Action Required — ต้องดูแลเป็นพิเศษ
-            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 ml-auto">
-              {alerts.length}
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            {alerts.map((a, i) => (
-              <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl border text-sm ${
-                a.type === 'danger' ? 'bg-red-500/5 border-red-500/30'
-                : a.type === 'warning' ? 'bg-amber-500/5 border-amber-500/30'
-                : 'bg-blue-500/5 border-blue-500/30'
-              }`}>
-                <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${
-                  a.type === 'danger' ? 'text-red-500'
-                  : a.type === 'warning' ? 'text-amber-500'
-                  : 'text-blue-500'
-                }`} />
+        const groupCount = (hasEscalated ? 1 : 0) + (pendingCount > 0 ? 1 : 0) + (poCount > 0 ? 1 : 0);
+        if (groupCount === 0) return null;
+
+        return (
+          <div className="rounded-2xl border border-border/60 shadow-sm overflow-hidden bg-card">
+            {/* ── Card header ── */}
+            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b bg-muted/30">
+              <div className="h-6 w-6 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+              </div>
+              <span className="text-sm font-semibold">ต้องดำเนินการ</span>
+              <span className="ml-1 h-5 min-w-[20px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {groupCount}
+              </span>
+              <span className="ml-auto text-[11px] text-muted-foreground">กลุ่มที่ต้องดูแล</span>
+            </div>
+
+            <div className="divide-y divide-border/50">
+
+              {/* ── GROUP 1: Escalated (most urgent) ── */}
+              {hasEscalated && (
                 <div>
-                  <div className="font-medium text-foreground">{a.title}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{a.desc}</div>
+                  {/* Group header */}
+                  <div className="flex items-center gap-3 px-5 py-3 bg-rose-500/5">
+                    <div className="w-[3px] h-8 rounded-full bg-rose-500 shrink-0" />
+                    <Flame className="h-4 w-4 text-rose-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold text-rose-700 dark:text-rose-400">
+                        Escalated — รอ CEO อนุมัติ
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">เกินวงเงิน/สิทธิ์ส่วนลด ต้องส่งต่อผู้มีอำนาจ</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[13px] font-bold text-rose-700 tabular-nums">{formatMoney(escalatedVal)}</div>
+                      <div className="text-[10px] text-muted-foreground tabular-nums">{data.recentEscalated.length} รายการ</div>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                      HIGH
+                    </span>
+                  </div>
+                  {/* Escalated items */}
+                  <div className="divide-y divide-border/30">
+                    {data.recentEscalated.map((q) => (
+                      <Link key={q.id} href={`/quotations/${q.id}`}
+                        className="group flex items-center gap-4 px-5 py-2.5 hover:bg-rose-50/60 dark:hover:bg-rose-900/10 transition-colors"
+                      >
+                        <div className="w-[3px] h-6 rounded-full bg-rose-200 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-px rounded bg-rose-100 text-rose-600 border border-rose-200">
+                              ESCALATED
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate mt-px">
+                            {q.customerCompany} · {q.createdByName} · {formatDate(q.submittedAt)}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[13px] font-bold text-rose-700 dark:text-rose-400 tabular-nums">
+                            {formatMoney(q.grandTotal)}
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-rose-400 transition-colors shrink-0" />
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              )}
 
-      {/* ══ SECTION 7: Escalated Cases ══ */}
-      {data.recentEscalated.length > 0 && (
-        <div className="bg-gradient-to-br from-rose-500/10 to-red-600/5 border border-rose-500/40 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
-            <Flame className="h-4 w-4 text-rose-500" />
-            <span className="text-rose-700 dark:text-rose-400">Escalated — รอ CEO อนุมัติ</span>
-            <Badge variant="outline" className="text-xs bg-rose-100 text-rose-800 border-rose-300 ml-auto">
-              {data.recentEscalated.length} รายการ
-            </Badge>
-          </div>
-          <div className="space-y-2">
-            {data.recentEscalated.map((q) => (
-              <Link key={q.id} href={`/quotations/${q.id}`}
-                className="flex items-center justify-between p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 hover:border-rose-400 transition-colors gap-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{q.quotationNo}</span>
-                    <Badge variant="outline" className="text-[10px] bg-rose-100 text-rose-700 border-rose-300">ESCALATED</Badge>
+              {/* ── GROUP 2: QT Pending Approval ── */}
+              {pendingCount > 0 && (
+                <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-red-500/[0.03] transition-colors">
+                  <div className="w-[3px] h-8 rounded-full bg-red-500 shrink-0" />
+                  <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                    <Clock className="h-4 w-4 text-red-500" />
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {q.customerCompany} · โดย {q.createdByName}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold">QT Pending Approval</div>
+                    <div className="text-[11px] text-muted-foreground">รอ Manager อนุมัติ</div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">ส่งเมื่อ {formatDate(q.submittedAt)}</div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xl font-bold tabular-nums">{pendingCount}</div>
+                    {pendingVal > 0 && (
+                      <div className="text-[11px] text-muted-foreground tabular-nums">{formatMoney(pendingVal)}</div>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                    HIGH
+                  </span>
+                  <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-red-300 hover:text-red-600">
+                    <Link href="/quotations">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
+                  </Button>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="font-bold text-rose-700 dark:text-rose-400">{formatMoney(q.grandTotal)}</div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground ml-auto mt-1" />
+              )}
+
+              {/* ── GROUP 3: PO Validation Pending ── */}
+              {poCount > 0 && (
+                <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-amber-500/[0.03] transition-colors">
+                  <div className="w-[3px] h-8 rounded-full bg-amber-500 shrink-0" />
+                  <div className="h-8 w-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                    <FileText className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold">PO Validation Pending</div>
+                    <div className="text-[11px] text-muted-foreground">PO รอตรวจสอบความถูกต้อง</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xl font-bold tabular-nums">{poCount}</div>
+                  </div>
+                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    MED
+                  </span>
+                  <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-amber-300 hover:text-amber-600">
+                    <Link href="/sale-orders">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
+                  </Button>
                 </div>
-              </Link>
-            ))}
+              )}
+
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ══ SECTION 8: Sales Team Performance + Rejection Reasons ══ */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1059,7 +1079,8 @@ function DashboardContent({
               </p>
             </div>
           ) : (() => {
-            const COL = 'grid-cols-[26px_1fr_36px_96px_80px_48px]';
+            // COL: # | ชื่อ | QT | Value (total QT) | SO Value (confirmed SO) | Win%
+            const COL = 'grid-cols-[26px_1fr_36px_96px_96px_44px]';
             const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
             return (
               <div>
@@ -1068,8 +1089,8 @@ function DashboardContent({
                   <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">#</span>
                   <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">ชื่อ</span>
                   <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-center">QT</span>
-                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Value</span>
-                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Avg Deal</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">มูลค่า QT</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">SO อนุมัติ</span>
                   <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Win%</span>
                 </div>
 
@@ -1077,8 +1098,9 @@ function DashboardContent({
                 <div className="divide-y divide-border/40">
                   {data.topOfficers.map((o, idx) => {
                     const barPct   = Math.round((o.value / maxVal) * 100);
-                    const winRate  = o.winRate ?? (o.conversionRate ?? 0);
-                    const avgDeal  = o.avgDealSize ?? (o.count > 0 ? Math.round(o.value / o.count) : 0);
+                    const winRate  = o.winRate ?? 0;
+                    // avgDealSize = total SO confirmed value (from backend)
+                    const soValue  = o.avgDealSize ?? 0;
                     const medal    = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                     const numColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground/50';
                     const barColor = idx === 0 ? 'from-amber-400 to-yellow-300' : idx === 1 ? 'from-slate-400 to-slate-300' : idx === 2 ? 'from-orange-400 to-amber-300' : 'from-blue-500 to-cyan-400';
@@ -1107,9 +1129,9 @@ function DashboardContent({
                           <div className="text-right">
                             <span className="text-[13px] font-bold tabular-nums">{formatMoney(o.value)}</span>
                           </div>
-                          {/* Avg Deal */}
+                          {/* SO อนุมัติ */}
                           <div className="text-right">
-                            <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(avgDeal)}</span>
+                            <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(soValue)}</span>
                           </div>
                           {/* Win% */}
                           <div className="text-right">

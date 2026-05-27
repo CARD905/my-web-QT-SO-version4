@@ -129,6 +129,7 @@ export const managerDashboardService = {
       soConfirmedCount,
       soPendingCount,
       customerTopRaw, agingRaw, soStatusBreakdownRaw, soOverdueCount, marginAgg, salesApprovedRaw,
+      soConfirmedByOfficerRaw,
       // ─── Pipeline detail ──────────────────────────────────────────────────────
       pipelineApprovedAgg, pipelinePoPendingAgg, pipelineSoConfirmedAgg,
       pipelineStage1Raw, pipelineStage2Raw, pipelineStage3Raw, pipelineStage4Raw,
@@ -281,6 +282,17 @@ export const managerDashboardService = {
         where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } },
         _count: { id: true },
         _sum: { grandTotal: true },
+      }),
+
+      // SO confirmed/completed value per salesperson (Avg Deal column)
+      prisma.quotation.groupBy({
+        by: ['createdById'],
+        where: {
+          ...baseWhere,
+          saleOrders: { some: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] } } },
+        },
+        _sum: { grandTotal: true },
+        _count: { id: true },
       }),
 
       // ─── Pipeline detail: value aggregates per stage ──────────────────────────
@@ -491,12 +503,17 @@ export const managerDashboardService = {
     };
 
     // --- Salesperson win rate (enhance topOfficers) ---
-    const salesApprovedMap = new Map(salesApprovedRaw.map((s) => [s.createdById, { count: s._count.id, value: Number(s._sum.grandTotal ?? 0) }]));
+    // Value       = sum of ALL QT grandTotal for this officer (o.value)
+    // avgDealSize = total QT grandTotal that converted to CONFIRMED/COMPLETED SOs
+    // winRate     = avgDealSize / value * 100
+    const soConfirmedOfficerMap = new Map(
+      soConfirmedByOfficerRaw.map((s) => [s.createdById, { count: s._count.id, value: Number(s._sum.grandTotal ?? 0) }]),
+    );
     const topOfficersEnhanced = topOfficers.map((o) => {
-      const approved = salesApprovedMap.get(o.userId);
-      const winRate = o.count > 0 ? Math.round(((approved?.count ?? 0) / o.count) * 100) : 0;
-      const avgDealSize = o.count > 0 ? Math.round(o.value / o.count) : 0;
-      return { ...o, winRate, avgDealSize, approvedCount: approved?.count ?? 0, approvedValue: approved?.value ?? 0 };
+      const soData  = soConfirmedOfficerMap.get(o.userId);
+      const soValue = soData?.value ?? 0;
+      const winRate = o.value > 0 ? Math.round((soValue / o.value) * 100) : 0;
+      return { ...o, winRate, avgDealSize: soValue, approvedCount: soData?.count ?? 0, approvedValue: soValue };
     });
 
     // ─── Pipeline detail ─────────────────────────────────────────────────────────
