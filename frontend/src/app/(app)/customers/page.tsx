@@ -447,11 +447,13 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
     contactName: '', company: '', taxId: '',
     email: '', phone: '', billingAddress: '', shippingAddress: '',
   });
-  const [loading,          setLoading]          = useState(mode === 'edit');
-  const [submitting,       setSubmitting]       = useState(false);
-  const [showEditRequest,  setShowEditRequest]  = useState(false);
+  const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
+  const [loading,         setLoading]        = useState(mode === 'edit');
+  const [submitting,      setSubmitting]     = useState(false);
+  const [showEditRequest, setShowEditRequest] = useState(false);
 
-  const readOnly = isManager && mode === 'edit';
+  const readOnly    = isManager && mode === 'edit';
+  const isReview    = !!resolveRequestId;
 
   useEffect(() => {
     if (mode !== 'edit' || !id) return;
@@ -467,13 +469,10 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
             email: c.email || '', phone: c.phone || '',
             billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '',
           };
-          // Overlay manager's proposed changes if opening from review mode
+          setOriginalValues({ ...base });
           if (prefilledChanges) {
-            Object.keys(base).forEach((k) => {
-              const key = k as keyof typeof base;
-              if (prefilledChanges[key] !== undefined) {
-                base[key] = prefilledChanges[key] ?? '';
-              }
+            (Object.keys(base) as Array<keyof typeof base>).forEach((k) => {
+              if (prefilledChanges[k] !== undefined) base[k] = prefilledChanges[k] ?? '';
             });
           }
           setForm(base);
@@ -497,7 +496,6 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
         toast.success('สร้างลูกค้าสำเร็จ');
       } else if (id) {
         await api.patch(`/customers/${id}`, form);
-        // If opened from a review request, mark it as resolved (admin already applied own version)
         if (resolveRequestId) {
           await api.post(`/customers/edit-requests/${resolveRequestId}/approve`, { skipApply: true });
         }
@@ -521,8 +519,10 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-        <Card className="w-full max-w-2xl shadow-2xl animate-slide-up max-h-[90vh] flex flex-col">
-          <div className="flex items-center justify-between p-6 border-b shrink-0">
+        <Card className={`w-full shadow-2xl animate-slide-up max-h-[90vh] flex flex-col ${isReview ? 'max-w-4xl' : 'max-w-2xl'}`}>
+
+          {/* ── Header ── */}
+          <div className="flex items-center justify-between p-5 border-b shrink-0">
             <div className="flex items-center gap-2">
               {readOnly && <Lock className="h-4 w-4 text-muted-foreground" />}
               <h2 className="text-xl font-bold">
@@ -534,81 +534,142 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
             </button>
           </div>
 
-          {/* Review mode banner */}
-          {resolveRequestId && requesterName && (
-            <div className="mx-6 mt-4 flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-[12px] text-blue-800">
-              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500" />
-              <div>
-                <span className="font-semibold">{requesterName}</span> ขอแก้ไขข้อมูลลูกค้า
-                {requesterReason && <span className="text-blue-600"> — เหตุผล: {requesterReason}</span>}
-                <p className="text-blue-500 mt-0.5">ค่าที่เสนอถูก pre-filled ไว้แล้ว — ตรวจสอบและแก้ไขได้ก่อนกด บันทึก</p>
-              </div>
-            </div>
-          )}
+          {/* ── Body: flex-row splits into form + side panel in review mode ── */}
+          <div className={`flex-1 overflow-hidden flex ${isReview ? 'flex-row' : 'flex-col'}`}>
 
-          <div className="overflow-y-auto flex-1">
-            {loading ? (
-              <div className="p-6 space-y-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : readOnly ? (
-              /* ── Read-only view for manager ── */
-              <div className="p-6 space-y-4">
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-700">
-                  <Lock className="h-3.5 w-3.5 shrink-0" />
-                  ข้อมูลลูกค้าแก้ไขได้เฉพาะ Admin — กรุณายื่นคำขอแก้ไขผ่านปุ่มด้านล่าง
+            {/* Left / main: form area */}
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="p-6 space-y-4">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {FIELD_ROWS.map(({ key, label, wide }) => (
-                    <div key={key} className={wide ? 'md:col-span-2' : ''}>
-                      <Label className="text-xs text-muted-foreground">{label}</Label>
-                      <div className="mt-1 px-3 py-2 rounded-md border bg-muted/30 text-sm min-h-[38px]">
-                        {form[key] || <span className="text-muted-foreground">—</span>}
+              ) : readOnly ? (
+                /* ── Read-only for manager ── */
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-700">
+                    <Lock className="h-3.5 w-3.5 shrink-0" />
+                    ข้อมูลลูกค้าแก้ไขได้เฉพาะ Admin — กรุณายื่นคำขอแก้ไขผ่านปุ่มด้านล่าง
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {FIELD_ROWS.map(({ key, label, wide }) => (
+                      <div key={key} className={wide ? 'md:col-span-2' : ''}>
+                        <Label className="text-xs text-muted-foreground">{label}</Label>
+                        <div className="mt-1 px-3 py-2 rounded-md border bg-muted/30 text-sm min-h-[38px]">
+                          {form[key] || <span className="text-muted-foreground">—</span>}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* ── Editable form (admin/CEO) ── */
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
+                      <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
                     </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* ── Editable form (admin/CEO) ── */
-              <div className="p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
-                    <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
+                    <div>
+                      <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
+                      <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">{t('customer.taxId')}</Label>
+                      <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">{t('customer.email')}</Label>
+                      <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">{t('customer.phone')}</Label>
+                      <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
+                    </div>
                   </div>
                   <div>
-                    <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
-                    <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
+                    <Label className="text-xs">{t('customer.billingAddress')}</Label>
+                    <Input value={form.billingAddress} onChange={(e) => update('billingAddress', e.target.value)} className="mt-1.5" />
                   </div>
                   <div>
-                    <Label className="text-xs">{t('customer.taxId')}</Label>
-                    <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t('customer.email')}</Label>
-                    <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" />
-                  </div>
-                  <div>
-                    <Label className="text-xs">{t('customer.phone')}</Label>
-                    <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
+                    <Label className="text-xs">{t('customer.shippingAddress')}</Label>
+                    <Input value={form.shippingAddress} onChange={(e) => update('shippingAddress', e.target.value)} className="mt-1.5" />
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">{t('customer.billingAddress')}</Label>
-                  <Input value={form.billingAddress} onChange={(e) => update('billingAddress', e.target.value)} className="mt-1.5" />
+              )}
+            </div>
+
+            {/* Right: side panel — only in review mode */}
+            {isReview && !loading && (
+              <div className="w-64 shrink-0 border-l bg-slate-50 dark:bg-slate-900/30 overflow-y-auto flex flex-col">
+                {/* Panel header */}
+                <div className="px-4 py-3 border-b bg-white dark:bg-card sticky top-0">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700">
+                    <SendHorizonal className="h-3.5 w-3.5 text-blue-500" />
+                    คำขอแก้ไข
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs">{t('customer.shippingAddress')}</Label>
-                  <Input value={form.shippingAddress} onChange={(e) => update('shippingAddress', e.target.value)} className="mt-1.5" />
+
+                <div className="p-4 space-y-3">
+                  {/* Requester */}
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0">
+                      {requesterName?.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-[12px] font-semibold leading-tight">{requesterName}</div>
+                      <div className="text-[10px] text-muted-foreground">ผู้ขอแก้ไข</div>
+                    </div>
+                  </div>
+
+                  {/* Reason */}
+                  {requesterReason && (
+                    <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-100 text-[11px] text-amber-800 leading-relaxed">
+                      <span className="font-semibold block mb-0.5">เหตุผล</span>
+                      {requesterReason}
+                    </div>
+                  )}
+
+                  {/* Changed fields */}
+                  <div>
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                      รายการที่ขอแก้ไข
+                    </div>
+                    <div className="space-y-2">
+                      {prefilledChanges && Object.entries(prefilledChanges).map(([key, newVal]) => {
+                        const meta = CHANGE_FIELD_META[key];
+                        const oldVal = originalValues[key];
+                        return (
+                          <div key={key} className="rounded-lg border border-orange-100 bg-white dark:bg-card p-2.5 shadow-sm">
+                            <div className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 mb-2">
+                              <span className="text-orange-400">{meta?.icon}</span>
+                              {meta?.label ?? key}
+                            </div>
+                            <div className="space-y-1 pl-0.5">
+                              <div className="flex items-start gap-1 text-[11px]">
+                                <span className="text-slate-400 shrink-0 mt-px">เดิม</span>
+                                <span className="text-slate-400 line-through break-all">{oldVal || '—'}</span>
+                              </div>
+                              <div className="flex items-start gap-1 text-[11px]">
+                                <span className="text-orange-500 font-bold shrink-0 mt-px">→</span>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200 break-all">
+                                  {newVal || <span className="italic text-muted-foreground font-normal">ลบออก</span>}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="flex justify-end gap-2 p-6 border-t shrink-0">
+          {/* ── Footer ── */}
+          <div className="flex justify-end gap-2 p-5 border-t shrink-0">
             <Button variant="outline" onClick={onClose} disabled={submitting}>
               {readOnly ? 'ปิด' : t('common.cancel')}
             </Button>

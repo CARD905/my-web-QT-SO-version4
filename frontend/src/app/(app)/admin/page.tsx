@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Settings, Users, Shield, Activity, History,
-  Building2, ChevronRight, FileText, Key, BarChart3, AlertTriangle, Inbox,
+  Building2, ChevronRight, FileText, Key, BarChart3, AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,7 +33,6 @@ const QUICK_LINKS = [
   { href: '/admin/login-history',   icon: History,   label: 'Login History',      color: 'text-slate-600',   bg: 'bg-slate-50 dark:bg-slate-800' },
   { href: '/admin/invitations',     icon: Key,       label: 'Invitations',        color: 'text-pink-600',    bg: 'bg-pink-50 dark:bg-pink-900/20' },
   { href: '/admin/running-numbers', icon: FileText,  label: 'Running Numbers',    color: 'text-cyan-600',    bg: 'bg-cyan-50 dark:bg-cyan-900/20' },
-  { href: '/admin/change-requests', icon: Inbox,     label: 'คำขอแก้ไขข้อมูล',   color: 'text-orange-600',  bg: 'bg-orange-50 dark:bg-orange-900/20' },
 ];
 
 export default function AdminDashboardPage() {
