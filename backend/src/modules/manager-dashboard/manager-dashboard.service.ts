@@ -289,7 +289,7 @@ export const managerDashboardService = {
         by: ['createdById'],
         where: {
           ...baseWhere,
-          saleOrders: { some: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] } } },
+          saleOrder: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] } },
         },
         _sum: { grandTotal: true },
         _count: { id: true },
