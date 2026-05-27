@@ -467,9 +467,6 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       else
         insights.push({ type: 'warn', text: `market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดแล้วขาดทุน` });
     }
-    // Summary: confirm standard price achieves the target
-    const stdMargin = sug > 0 ? ((sug - costPrice) / sug) * 100 : 0;
-    insights.push({ type: 'ok', text: `standard price ${formatMoney(sug)} ให้ margin ${stdMargin.toFixed(1)}% = target ${targetMarginPct}% ✓` });
   }
 
   // actualMarginPct = last price margin if available (meaningful), else standard price margin

@@ -27,9 +27,12 @@ const PERMISSIONS_DATA: Array<{
   { code: 'quotation:reject:team',     resource: 'quotation', action: 'reject',           scope: 'TEAM', nameTh: 'ปฏิเสธของทีม',                nameEn: 'Reject team quotations',      groupKey: 'quotation' },
   { code: 'quotation:reject:all',      resource: 'quotation', action: 'reject',           scope: 'ALL',  nameTh: 'ปฏิเสธทั้งหมด',               nameEn: 'Reject any quotation',        groupKey: 'quotation' },
   // Sale Order
+  { code: 'quotation:exportPdf:own',   resource: 'quotation', action: 'exportPdf',        scope: 'OWN',  nameTh: 'ส่งออก PDF ใบเสนอราคา',        nameEn: 'Export quotation PDF',        groupKey: 'quotation' },
+  // Sale Order
   { code: 'saleOrder:view:own',        resource: 'saleOrder', action: 'view',             scope: 'OWN',  nameTh: 'ดูใบสั่งขายของตัวเอง',        nameEn: 'View own sale orders',        groupKey: 'saleOrder' },
   { code: 'saleOrder:view:team',       resource: 'saleOrder', action: 'view',             scope: 'TEAM', nameTh: 'ดูใบสั่งขายของทีม',            nameEn: 'View team sale orders',       groupKey: 'saleOrder' },
   { code: 'saleOrder:view:all',        resource: 'saleOrder', action: 'view',             scope: 'ALL',  nameTh: 'ดูใบสั่งขายทั้งหมด',           nameEn: 'View all sale orders',        groupKey: 'saleOrder' },
+  { code: 'saleOrder:create:own',      resource: 'saleOrder', action: 'create',           scope: 'OWN',  nameTh: 'แปลงเป็นใบสั่งขาย',            nameEn: 'Create sale order',           groupKey: 'saleOrder' },
   { code: 'saleOrder:exportPdf:all',   resource: 'saleOrder', action: 'exportPdf',        scope: 'ALL',  nameTh: 'ดาวน์โหลด PDF',                nameEn: 'Export PDF',                  groupKey: 'saleOrder' },
   // Customer
   { code: 'customer:view:all',         resource: 'customer',  action: 'view',             scope: 'ALL',  nameTh: 'ดูลูกค้าทั้งหมด',              nameEn: 'View all customers',          groupKey: 'customer' },
@@ -38,6 +41,7 @@ const PERMISSIONS_DATA: Array<{
   { code: 'customer:delete:all',       resource: 'customer',  action: 'delete',           scope: 'ALL',  nameTh: 'ลบลูกค้า',                      nameEn: 'Delete customer',             groupKey: 'customer' },
   // Product
   { code: 'product:view:all',          resource: 'product',   action: 'view',             scope: 'ALL',  nameTh: 'ดูสินค้าทั้งหมด',              nameEn: 'View products',               groupKey: 'product' },
+  { code: 'product:viewCost:all',      resource: 'product',   action: 'viewCost',         scope: 'ALL',  nameTh: 'ดูต้นทุนสินค้า',               nameEn: 'View product cost',           groupKey: 'product' },
   { code: 'product:create:all',        resource: 'product',   action: 'create',           scope: 'ALL',  nameTh: 'เพิ่มสินค้า',                  nameEn: 'Create product',              groupKey: 'product' },
   { code: 'product:update:all',        resource: 'product',   action: 'update',           scope: 'ALL',  nameTh: 'แก้ไขสินค้า',                  nameEn: 'Edit product',                groupKey: 'product' },
   { code: 'product:delete:all',        resource: 'product',   action: 'delete',           scope: 'ALL',  nameTh: 'ลบสินค้า',                      nameEn: 'Delete product',              groupKey: 'product' },
@@ -90,8 +94,8 @@ const ROLES_DATA = [
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   OFFICER: [
     'quotation:view:own', 'quotation:create:own', 'quotation:update:own',
-    'quotation:cancel:own', 'quotation:submit:own',
-    'saleOrder:view:own', 'saleOrder:exportPdf:all',
+    'quotation:cancel:own', 'quotation:submit:own', 'quotation:exportPdf:own',
+    'saleOrder:view:own', 'saleOrder:create:own', 'saleOrder:exportPdf:all',
     'customer:view:all', 'customer:create:all', 'customer:update:all',
     'product:view:all',
     'company:view:all',
@@ -108,10 +112,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dashboard:view:team',
   ],
   ADMIN: [
-    'quotation:view:all',
-    'saleOrder:view:all', 'saleOrder:exportPdf:all',
+    'quotation:view:all', 'quotation:exportPdf:own',
+    'saleOrder:view:all', 'saleOrder:create:own', 'saleOrder:exportPdf:all',
     'customer:view:all', 'customer:create:all', 'customer:update:all', 'customer:delete:all',
-    'product:view:all', 'product:create:all', 'product:update:all', 'product:delete:all',
+    'product:view:all', 'product:viewCost:all', 'product:create:all', 'product:update:all', 'product:delete:all',
     'company:view:all', 'company:update:all',
     'user:view:all', 'user:invite:all', 'user:update:all',
     'user:changeRole:all', 'user:delete:all', 'user:manage:all',
@@ -121,10 +125,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dashboard:view:all',
   ],
   CEO: [
-    'quotation:view:all', 'quotation:approve:all', 'quotation:reject:all',
-    'saleOrder:view:all', 'saleOrder:exportPdf:all',
+    'quotation:view:all', 'quotation:approve:all', 'quotation:reject:all', 'quotation:exportPdf:own',
+    'saleOrder:view:all', 'saleOrder:create:own', 'saleOrder:exportPdf:all',
     'customer:view:all', 'customer:create:all', 'customer:update:all', 'customer:delete:all',
-    'product:view:all', 'product:create:all', 'product:update:all', 'product:delete:all',
+    'product:view:all', 'product:viewCost:all', 'product:create:all', 'product:update:all', 'product:delete:all',
     'company:view:all', 'company:update:all',
     'user:view:all', 'user:update:all', 'user:invite:all', 'user:changeRole:all',
     'team:view:all', 'team:create:all', 'team:update:all', 'team:assignMember:all',

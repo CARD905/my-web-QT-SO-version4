@@ -33,22 +33,41 @@ model Role {
 }
 
 model Permission {
-  id          String           @id @default(uuid())
-  code        String           @unique
+  id          String             @id @default(uuid())
+  code        String             @unique
   resource    String
   action      String
   scope       PermissionScope
   nameTh      String
   nameEn      String
-  groupKey    String           @map("group_key")
+  groupKey    String             @map("group_key")
   description String?
-  isSystem    Boolean          @default(true)
-  createdAt   DateTime         @default(now()) @map("created_at")
+  isSystem    Boolean            @default(true)
+  createdAt   DateTime           @default(now()) @map("created_at")
   roles       RolePermission[]
+  userOverrides UserPermission[]
 
   @@unique([resource, action, scope])
   @@index([groupKey])
   @@map("permissions")
+}
+
+model UserPermission {
+  id           String     @id @default(uuid())
+  userId       String     @map("user_id")
+  permissionId String     @map("permission_id")
+  granted      Boolean
+  grantedById  String?    @map("granted_by_id")
+  grantedAt    DateTime   @default(now()) @map("granted_at")
+  note         String?
+
+  user         User       @relation("UserPermissionOwner", fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedBy    User?      @relation("UserPermissionGranter", fields: [grantedById], references: [id])
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@map("user_permissions")
 }
 
 model RolePermission {
@@ -149,6 +168,8 @@ model User {
   refreshTokens      RefreshToken[]
   
   grantedPermissions RolePermission[]      @relation("PermissionGranter")
+  ownPermissions     UserPermission[]      @relation("UserPermissionOwner")
+  grantedUserPerms   UserPermission[]      @relation("UserPermissionGranter")
   managedTeams       Team[]                @relation("TeamManager")
   delegateTo         User?                 @relation("Delegate", fields: [delegateToId], references: [id])
   delegatedFrom      User[]                @relation("Delegate")

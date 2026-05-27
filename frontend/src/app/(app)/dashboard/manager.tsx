@@ -543,7 +543,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
 
       {/* Manager/CEO viewing individual officer → analytics view */}
       {isCeoViewingOfficer && selectedUser && (
-        <OfficerAnalyticsView userId={selectedUser.id} selectedUser={selectedUser} />
+        <OfficerAnalyticsView userId={selectedUser.id} selectedUser={selectedUser} dashboardData={data} />
       )}
 
       {/* Normal manager/team dashboard */}
@@ -611,7 +611,11 @@ interface OfficerAnalyticsData {
   monthlyTrend: Array<{ month: string; count: number; value: number }>;
 }
 
-function OfficerAnalyticsView({ userId, selectedUser }: { userId: string; selectedUser: { name: string; email: string; role: { code: string; nameTh: string } } }) {
+function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
+  userId: string;
+  selectedUser: { name: string; email: string; role: { code: string; nameTh: string } };
+  dashboardData?: DashboardData | null;
+}) {
   const [data, setData] = useState<OfficerAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [trendTab, setTrendTab] = useState<'count' | 'value'>('value');
@@ -680,78 +684,106 @@ function OfficerAnalyticsView({ userId, selectedUser }: { userId: string; select
 
         {/* ── Monthly Trend ── */}
         <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
-            <span className="text-sm font-semibold">Monthly Trend — 6 เดือน</span>
-            <div className="ml-auto flex bg-muted rounded-lg p-0.5 gap-0.5">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+              <span className="text-sm font-semibold">แนวโน้มรายเดือน</span>
+              <span className="text-[11px] text-muted-foreground">6 เดือนล่าสุด</span>
+            </div>
+            <div className="flex bg-muted rounded-lg p-0.5">
               {(['value', 'count'] as const).map((t) => (
                 <button key={t} onClick={() => setTrendTab(t)}
-                  className={`px-3 py-1 text-xs rounded-md transition-all ${trendTab === t ? 'bg-background shadow text-foreground font-medium' : 'text-muted-foreground'}`}>
+                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${trendTab === t ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                   {t === 'value' ? 'มูลค่า' : 'จำนวน'}
                 </button>
               ))}
             </div>
           </div>
+
           {monthlyTrend.length === 0 ? (
             <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
           ) : (
             <>
-              <svg viewBox="0 0 500 140" className="w-full" style={{ height: 140 }}>
-                <defs>
-                  <linearGradient id="officerTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                {(() => {
-                  const PL = 48; const PR = 16; const PT = 10; const PB = 28;
-                  const cW = 500 - PL - PR; const cH = 140 - PT - PB;
-                  const vals = monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value);
-                  const xi = (i: number) => PL + (i / Math.max(vals.length - 1, 1)) * cW;
-                  const yv = (v: number) => PT + cH - (v / maxTrend) * cH;
-                  const pts = vals.map((v, i) => ({ x: xi(i), y: yv(v) }));
-                  let path = `M ${pts[0].x} ${pts[0].y}`;
-                  for (let i = 1; i < pts.length; i++) {
-                    const cp = (pts[i-1].x + pts[i].x) / 2;
-                    path += ` C ${cp} ${pts[i-1].y} ${cp} ${pts[i].y} ${pts[i].x} ${pts[i].y}`;
-                  }
-                  const area = `${path} L ${pts[pts.length-1].x} ${PT+cH} L ${pts[0].x} ${PT+cH} Z`;
-                  const yTicks = [0, 0.5, 1];
-                  return (
-                    <>
-                      {yTicks.map((t) => {
-                        const gy = PT + cH * (1 - t); const tv = maxTrend * t;
-                        return (
-                          <g key={t}>
-                            <line x1={PL} y1={gy} x2={500-PR} y2={gy} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
-                            <text x={PL-6} y={gy+4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.45}>
-                              {trendTab === 'value' ? (tv >= 1000000 ? `${(tv/1000000).toFixed(1)}M` : tv >= 1000 ? `${(tv/1000).toFixed(0)}K` : tv.toFixed(0)) : tv.toFixed(0)}
+              {/* Bar chart */}
+              {(() => {
+                const vals  = monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value);
+                const max   = Math.max(...vals, 1);
+                const barW  = 32;
+                const gap   = 12;
+                const H     = 120;
+                const PB    = 22;
+                const PL    = 44;
+                const chartH = H - PB;
+                const totalW = PL + monthlyTrend.length * (barW + gap) - gap + 8;
+                const bx    = (i: number) => PL + i * (barW + gap);
+                const bh    = (v: number) => Math.max((v / max) * chartH, v > 0 ? 3 : 0);
+                const fmt   = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v);
+                const yTicks = [0, 0.5, 1];
+                return (
+                  <svg viewBox={`0 0 ${totalW} ${H}`} className="w-full" style={{ height: H }}>
+                    {/* Y grid lines */}
+                    {yTicks.map((t) => {
+                      const gy = (1 - t) * chartH;
+                      return (
+                        <g key={t}>
+                          <line x1={PL - 4} y1={gy} x2={totalW} y2={gy} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
+                          <text x={PL - 7} y={gy + 4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.4}>
+                            {fmt(max * t)}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    {/* Bars */}
+                    {vals.map((v, i) => {
+                      const bHeight = bh(v);
+                      const isLast  = i === vals.length - 1;
+                      const color   = isLast ? '#10b981' : '#10b98166';
+                      return (
+                        <g key={i}>
+                          <rect
+                            x={bx(i)} y={chartH - bHeight}
+                            width={barW} height={bHeight}
+                            rx={4} fill={color}
+                            className="transition-all duration-500"
+                          />
+                          {v > 0 && (
+                            <text x={bx(i) + barW / 2} y={chartH - bHeight - 4}
+                              textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.55}>
+                              {trendTab === 'value' ? fmt(v) : v}
                             </text>
-                          </g>
-                        );
-                      })}
-                      <path d={area} fill="url(#officerTrendGrad)" />
-                      <path d={path} fill="none" stroke="#10b981" strokeWidth={2.5} />
-                      {pts.map((p, i) => (
-                        <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#10b981" stroke="white" strokeWidth={1.5}>
-                          <title>{monthlyTrend[i].month}: {trendTab === 'value' ? formatMoney(vals[i]) : vals[i]}</title>
-                        </circle>
-                      ))}
-                      {monthlyTrend.map((m, i) => (
-                        <text key={i} x={xi(i)} y={140-8} textAnchor="middle" fontSize={10} fill="currentColor" fillOpacity={0.5}>{m.month}</text>
-                      ))}
-                    </>
-                  );
-                })()}
-              </svg>
-              <div className="mt-2 pt-2 border-t border-border/50 grid grid-cols-2 gap-2 text-center">
-                <div>
-                  <div className="text-sm font-bold text-emerald-500">{formatMoney(monthlyTrend.reduce((s,m) => s+m.value, 0))}</div>
-                  <div className="text-[10px] text-muted-foreground">มูลค่ารวม 6 เดือน</div>
+                          )}
+                          <text x={bx(i) + barW / 2} y={H - 5}
+                            textAnchor="middle" fontSize={10} fill="currentColor" fillOpacity={isLast ? 0.8 : 0.45}
+                            fontWeight={isLast ? '600' : '400'}>
+                            {monthlyTrend[i].month}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                );
+              })()}
+
+              {/* Summary stats — tab-aware */}
+              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-3 gap-3">
+                <div className={`text-center rounded-xl px-2 py-2 transition-all ${trendTab === 'value' ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''}`}>
+                  <div className={`text-sm font-bold tabular-nums ${trendTab === 'value' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                    {formatMoney(monthlyTrend.reduce((s,m) => s+m.value, 0))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">มูลค่ารวม</div>
                 </div>
-                <div>
-                  <div className="text-sm font-bold tabular-nums">{monthlyTrend.reduce((s,m) => s+m.count, 0)} ใบ</div>
-                  <div className="text-[10px] text-muted-foreground">จำนวนรวม 6 เดือน</div>
+                <div className={`text-center rounded-xl px-2 py-2 transition-all ${trendTab === 'count' ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                  <div className={`text-base font-bold tabular-nums ${trendTab === 'count' ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}`}>
+                    {monthlyTrend.reduce((s,m) => s+m.count, 0)} ใบ
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">จำนวนรวม</div>
+                </div>
+                <div className="text-center rounded-xl px-2 py-2">
+                  <div className="text-base font-bold tabular-nums">
+                    {formatMoney(Math.round(monthlyTrend.filter(m=>m.count>0).reduce((s,m)=>s+m.value,0) / Math.max(monthlyTrend.filter(m=>m.count>0).length, 1)))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">เฉลี่ย/เดือน</div>
                 </div>
               </div>
             </>
@@ -849,6 +881,175 @@ function OfficerAnalyticsView({ userId, selectedUser }: { userId: string; select
           </div>
         </div>
       )}
+
+      {/* ══ Extra sections from dashboardData (officer-filtered) ══ */}
+      {dashboardData && (() => {
+        const ddConversionRate = dashboardData.totals.conversionRate ??
+          (dashboardData.totals.quotations > 0 && dashboardData.totals.approved > 0
+            ? Math.round((dashboardData.totals.approved / dashboardData.totals.quotations) * 100) : 0);
+        const officerRow = dashboardData.topOfficers.length > 0 ? dashboardData.topOfficers[0] : null;
+        const expiring = dashboardData.expiringQuotations ?? [];
+        const customers = dashboardData.customerInsights ?? [];
+
+        return (
+          <>
+            {/* ── Sales Pipeline ── */}
+            <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+              <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+                <TrendingUp className="h-4 w-4 text-blue-500" />
+                Sales Pipeline
+              </div>
+              <SalesFunnel data={dashboardData} conversionRate={ddConversionRate} />
+            </div>
+
+            {/* ── Sales Team Performance (this officer) ── */}
+            <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+              <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+                <UsersIcon className="h-4 w-4 text-blue-500" />
+                Sales Performance
+              </div>
+              {!officerRow ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <UsersIcon className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">ยังไม่มีข้อมูลในช่วงนี้</p>
+                </div>
+              ) : (() => {
+                const COL = 'grid-cols-[1fr_40px_100px_100px_44px]';
+                const winRateOfficer = officerRow.winRate ?? 0;
+                const soValue = officerRow.avgDealSize ?? officerRow.soValue ?? 0;
+                const winColor = winRateOfficer >= 50 ? 'text-emerald-600 dark:text-emerald-400' : winRateOfficer >= 25 ? 'text-amber-500' : 'text-rose-500';
+                return (
+                  <div>
+                    <div className={`grid ${COL} gap-x-3 px-3 pb-2 border-b items-center`}>
+                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">ชื่อ</span>
+                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-center">QT</span>
+                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">มูลค่า QT</span>
+                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">SO อนุมัติ</span>
+                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Win%</span>
+                    </div>
+                    <div className={`grid ${COL} gap-x-3 px-3 pt-2.5 pb-1.5 items-center`}>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-[13px] truncate leading-tight">{officerRow.userName}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{officerRow.userEmail}</div>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[13px] font-bold tabular-nums">{officerRow.count}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[13px] font-bold tabular-nums">{formatMoney(officerRow.value)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(soValue)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-[13px] font-bold tabular-nums ${winColor}`}>{winRateOfficer}%</span>
+                      </div>
+                    </div>
+                    <div className="mx-3 mb-2 h-[3px] rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-700" style={{ width: '100%' }} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/50">
+                      {[
+                        { label: 'QT ทั้งหมด', value: `${officerRow.count} ใบ`, color: 'text-foreground' },
+                        { label: 'Approved', value: `${officerRow.approvedCount ?? 0} ใบ`, color: 'text-emerald-600 dark:text-emerald-400' },
+                        { label: 'Pending', value: `${officerRow.pendingCount ?? 0} ใบ`, color: 'text-amber-500' },
+                      ].map((s) => (
+                        <div key={s.label} className="text-center">
+                          <div className={`text-sm font-bold tabular-nums ${s.color}`}>{s.value}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* ── Expiring Soon + Customer Insight ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Expiring Soon */}
+              <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+                <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+                  <Timer className="h-4 w-4 text-rose-500" />
+                  Expiring Soon (7 วัน)
+                  {expiring.length > 0 && (
+                    <Badge variant="outline" className="ml-auto text-[10px] bg-rose-50 text-rose-700 border-rose-300">
+                      {expiring.length} รายการ
+                    </Badge>
+                  )}
+                </div>
+                {expiring.length === 0 ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    ไม่มีใบเสนอราคาที่ใกล้หมดอายุ
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {expiring.map((q) => {
+                      const daysLeft = Math.ceil((new Date(q.expiryDate).getTime() - Date.now()) / 86400000);
+                      const urgency = daysLeft < 1 ? 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'
+                        : daysLeft <= 3 ? 'text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'
+                        : 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800';
+                      const dayLabel = daysLeft < 1 ? 'วันนี้!' : `${daysLeft} วัน`;
+                      return (
+                        <Link key={q.id} href={`/quotations/${q.id}`}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border transition-opacity hover:opacity-80 gap-3 ${urgency}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-sm">{q.quotationNo}</div>
+                            <div className="text-xs opacity-75 truncate">{q.customerCompany}</div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-bold">{dayLabel}</div>
+                            <div className="text-[10px] opacity-75">{formatMoney(q.grandTotal)}</div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Insight */}
+              <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+                <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+                  <Target className="h-4 w-4 text-violet-500" />
+                  Customer Insight — Top ลูกค้า
+                  <Badge variant="outline" className="ml-auto text-[10px]">{customers.length} ราย</Badge>
+                </div>
+                {customers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Target className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">ยังไม่มีข้อมูลลูกค้า</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(() => {
+                      const maxVal = Math.max(...customers.map((c) => c.totalValue), 1);
+                      return customers.map((c, i) => {
+                        const pct = Math.round((c.totalValue / maxVal) * 100);
+                        const gradients = ['from-violet-500 to-purple-600','from-blue-500 to-indigo-600','from-cyan-500 to-blue-600','from-teal-500 to-emerald-600','from-amber-500 to-orange-600'];
+                        const grad = gradients[i % gradients.length];
+                        return (
+                          <div key={c.customerId}>
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="font-medium truncate max-w-[60%]">{c.customerCompany}</span>
+                              <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full bg-gradient-to-r ${grad} transition-all duration-700`} style={{ width: `${Math.max(pct, 5)}%` }} />
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
     </div>
   );
