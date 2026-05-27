@@ -72,6 +72,9 @@ export default function CustomersPage() {
   const [expandedIds,    setExpandedIds]    = useState<Set<string>>(new Set());
   const [loadingReqIds,  setLoadingReqIds]  = useState<Set<string>>(new Set());
 
+  // Review request: open edit modal pre-filled with manager's proposed changes
+  const [reviewRequest,  setReviewRequest]  = useState<{ customerId: string; request: CustomerChangeRequest } | null>(null);
+
   const load = useCallback(async (q: string) => {
     setLoading(true);
     try {
@@ -266,6 +269,7 @@ export default function CustomersPage() {
                           <RequestRow
                             key={req.id}
                             request={req}
+                            onEditRequest={(r) => setReviewRequest({ customerId: c.id, request: r })}
                             onActioned={() => refreshRequests(c.id)}
                           />
                         ))}
@@ -285,28 +289,36 @@ export default function CustomersPage() {
       {editingId && (
         <CustomerModal mode="edit" id={editingId} isManager={isManager} onClose={handleCloseEdit} onSaved={handleSavedEdit} />
       )}
+      {reviewRequest && (
+        <CustomerModal
+          mode="edit"
+          id={reviewRequest.customerId}
+          isManager={false}
+          prefilledChanges={reviewRequest.request.changes}
+          resolveRequestId={reviewRequest.request.id}
+          requesterName={reviewRequest.request.requester.name}
+          requesterReason={reviewRequest.request.reason}
+          onClose={() => setReviewRequest(null)}
+          onSaved={() => {
+            setReviewRequest(null);
+            refreshRequests(reviewRequest.customerId);
+            load(search);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /* ── Request row (inside dropdown) ─────────────────────────────────────── */
-function RequestRow({ request, onActioned }: {
+function RequestRow({ request, onEditRequest, onActioned }: {
   request: CustomerChangeRequest;
+  onEditRequest: (request: CustomerChangeRequest) => void;
   onActioned: () => void;
 }) {
-  const [showReject, setShowReject]   = useState(false);
-  const [rejectNote, setRejectNote]   = useState('');
-  const [actioning,  setActioning]    = useState(false);
-
-  const handleApprove = async () => {
-    setActioning(true);
-    try {
-      await api.post(`/customers/edit-requests/${request.id}/approve`);
-      toast.success('อนุมัติคำขอแล้ว — ข้อมูลลูกค้าถูกอัปเดต');
-      onActioned();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setActioning(false); }
-  };
+  const [showReject, setShowReject] = useState(false);
+  const [rejectNote, setRejectNote] = useState('');
+  const [actioning,  setActioning]  = useState(false);
 
   const handleReject = async () => {
     if (!rejectNote.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
@@ -343,7 +355,7 @@ function RequestRow({ request, onActioned }: {
             <span className="font-medium">เหตุผล:</span> {request.reason}
           </p>
 
-          {/* changes */}
+          {/* proposed changes (display only) */}
           <div className="mt-2 flex flex-wrap gap-1.5">
             {Object.entries(request.changes).map(([key, value]) => {
               const meta = CHANGE_FIELD_META[key];
@@ -362,12 +374,10 @@ function RequestRow({ request, onActioned }: {
         <div className="flex gap-1.5 shrink-0">
           <Button
             size="sm"
-            className="h-7 text-[11px] bg-green-600 hover:bg-green-700 gap-1"
-            onClick={handleApprove}
-            disabled={actioning}
+            className="h-7 text-[11px] bg-blue-600 hover:bg-blue-700 gap-1"
+            onClick={() => onEditRequest(request)}
           >
-            {actioning ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-            อนุมัติ
+            <Edit2 className="h-3 w-3" />แก้ไข & บันทึก
           </Button>
           <Button
             size="sm"
@@ -421,10 +431,14 @@ function RequestRow({ request, onActioned }: {
 /* ══════════════════════════════════════════════════════════════════════════
    Customer Modal
 ═══════════════════════════════════════════════════════════════════════════ */
-function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
+function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId, requesterName, requesterReason, onClose, onSaved }: {
   mode: 'create' | 'edit';
   id?: string;
   isManager: boolean;
+  prefilledChanges?: Record<string, string | null>;
+  resolveRequestId?: string;
+  requesterName?: string;
+  requesterReason?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -447,11 +461,23 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
       .then((res) => {
         if (cancelled) return;
         const c = res.data.data;
-        if (c) setForm({
-          contactName: c.contactName, company: c.company, taxId: c.taxId || '',
-          email: c.email || '', phone: c.phone || '',
-          billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '',
-        });
+        if (c) {
+          const base = {
+            contactName: c.contactName, company: c.company, taxId: c.taxId || '',
+            email: c.email || '', phone: c.phone || '',
+            billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '',
+          };
+          // Overlay manager's proposed changes if opening from review mode
+          if (prefilledChanges) {
+            Object.keys(base).forEach((k) => {
+              const key = k as keyof typeof base;
+              if (prefilledChanges[key] !== undefined) {
+                base[key] = prefilledChanges[key] ?? '';
+              }
+            });
+          }
+          setForm(base);
+        }
       })
       .catch((err) => { if (cancelled) return; toast.error(getApiErrorMessage(err)); onClose(); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -471,7 +497,11 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
         toast.success('สร้างลูกค้าสำเร็จ');
       } else if (id) {
         await api.patch(`/customers/${id}`, form);
-        toast.success('แก้ไขลูกค้าสำเร็จ');
+        // If opened from a review request, mark it as resolved (admin already applied own version)
+        if (resolveRequestId) {
+          await api.post(`/customers/edit-requests/${resolveRequestId}/approve`, { skipApply: true });
+        }
+        toast.success('บันทึกข้อมูลลูกค้าแล้ว');
       }
       onSaved();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
@@ -503,6 +533,18 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
               <X className="h-5 w-5" />
             </button>
           </div>
+
+          {/* Review mode banner */}
+          {resolveRequestId && requesterName && (
+            <div className="mx-6 mt-4 flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-[12px] text-blue-800">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-500" />
+              <div>
+                <span className="font-semibold">{requesterName}</span> ขอแก้ไขข้อมูลลูกค้า
+                {requesterReason && <span className="text-blue-600"> — เหตุผล: {requesterReason}</span>}
+                <p className="text-blue-500 mt-0.5">ค่าที่เสนอถูก pre-filled ไว้แล้ว — ตรวจสอบและแก้ไขได้ก่อนกด บันทึก</p>
+              </div>
+            </div>
+          )}
 
           <div className="overflow-y-auto flex-1">
             {loading ? (

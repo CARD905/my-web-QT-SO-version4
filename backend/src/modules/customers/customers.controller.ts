@@ -47,7 +47,9 @@ export const customersController = {
 
   async approveEditRequest(req: Request, res: Response) {
     if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
-    await customersService.approveEditRequest(req.params.requestId, req.user.id, req.body.note, req);
+    await customersService.approveEditRequest(
+      req.params.requestId, req.user.id, req.body.note, req, !!req.body.skipApply,
+    );
     return success(res, null, 'อนุมัติคำขอเรียบร้อย');
   },
 

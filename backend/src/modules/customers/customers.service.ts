@@ -182,7 +182,7 @@ export const customersService = {
     });
   },
 
-  async approveEditRequest(requestId: string, adminId: string, note?: string, req?: Request) {
+  async approveEditRequest(requestId: string, adminId: string, note?: string, req?: Request, skipApply = false) {
     const cr = await prisma.customerChangeRequest.findUnique({
       where: { id: requestId },
       include: { customer: true },
@@ -190,24 +190,24 @@ export const customersService = {
     if (!cr) throw new AppError(404, 'NOT_FOUND', 'ไม่พบคำขอ');
     if (cr.status !== 'PENDING') throw new AppError(400, 'BAD_REQUEST', 'คำขอนี้ไม่ได้อยู่ในสถานะ PENDING');
 
-    const changes = cr.changes as Record<string, unknown>;
-    const updateData: Prisma.CustomerUpdateInput = {};
-    if (changes.contactName !== undefined) updateData.contactName = changes.contactName as string;
-    if (changes.company     !== undefined) updateData.company     = changes.company as string;
-    if (changes.taxId       !== undefined) updateData.taxId       = (changes.taxId as string) || null;
-    if (changes.email       !== undefined) updateData.email       = (changes.email as string) || null;
-    if (changes.phone       !== undefined) updateData.phone       = (changes.phone as string) || null;
-    if (changes.billingAddress  !== undefined) updateData.billingAddress  = (changes.billingAddress as string) || null;
-    if (changes.shippingAddress !== undefined) updateData.shippingAddress = (changes.shippingAddress as string) || null;
-
-    await prisma.$transaction(async (tx) => {
+    if (!skipApply) {
+      const changes = cr.changes as Record<string, unknown>;
+      const updateData: Prisma.CustomerUpdateInput = {};
+      if (changes.contactName !== undefined) updateData.contactName = changes.contactName as string;
+      if (changes.company     !== undefined) updateData.company     = changes.company as string;
+      if (changes.taxId       !== undefined) updateData.taxId       = (changes.taxId as string) || null;
+      if (changes.email       !== undefined) updateData.email       = (changes.email as string) || null;
+      if (changes.phone       !== undefined) updateData.phone       = (changes.phone as string) || null;
+      if (changes.billingAddress  !== undefined) updateData.billingAddress  = (changes.billingAddress as string) || null;
+      if (changes.shippingAddress !== undefined) updateData.shippingAddress = (changes.shippingAddress as string) || null;
       if (Object.keys(updateData).length > 0) {
-        await tx.customer.update({ where: { id: cr.customerId }, data: updateData });
+        await prisma.customer.update({ where: { id: cr.customerId }, data: updateData });
       }
-      await tx.customerChangeRequest.update({
-        where: { id: requestId },
-        data: { status: 'APPROVED', adminNote: note ?? null, reviewedById: adminId, reviewedAt: new Date() },
-      });
+    }
+
+    await prisma.customerChangeRequest.update({
+      where: { id: requestId },
+      data: { status: 'APPROVED', adminNote: note ?? null, reviewedById: adminId, reviewedAt: new Date() },
     });
 
     await prisma.notification.create({
