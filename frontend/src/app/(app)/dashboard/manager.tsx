@@ -757,21 +757,9 @@ function DashboardContent({
             <SalesFunnel data={data} conversionRate={conversionRate} />
           </div>
 
-          {/* RIGHT: Revenue Area Chart */}
+          {/* RIGHT: Combined Trend Card */}
           <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-            <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-1">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
-              Revenue Trend (6 เดือน)
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">มูลค่าที่อนุมัติแล้วรายเดือน</p>
-            {revenueTrendData.length > 0
-              ? <RevenueAreaChart data={revenueTrendData} />
-              : (
-                <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">
-                  ยังไม่มีข้อมูล revenue
-                </div>
-              )
-            }
+            <TrendOverviewCard trendData={trendData} revenueTrendData={revenueTrendData} />
           </div>
         </div>
 
@@ -1154,30 +1142,6 @@ function DashboardContent({
 
         {/* Top Rejection Reasons — Donut Chart */}
         <RejectionDonutCard reasons={reasons} />
-      </div>
-
-      {/* ══ SECTION 9: Approval Trend Chart ══ */}
-      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-        <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-3">
-          <TrendingUp className="h-4 w-4 text-primary" />
-          Approval Trend — 6 เดือนล่าสุด
-        </div>
-        <div className="flex gap-5 mb-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-6 h-0.5 bg-emerald-500 rounded" />Approved
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-6 border-t-2 border-dashed border-red-500" />Rejected
-          </span>
-        </div>
-        {trendData.length > 0
-          ? <TrendChart data={trendData} />
-          : (
-            <div className="flex items-center justify-center h-44 text-muted-foreground text-xs">
-              ยังไม่มีข้อมูล trend
-            </div>
-          )
-        }
       </div>
 
       {/* ══ SECTION 10: Customer Insight + Margin Analysis ══ */}
@@ -1742,6 +1706,99 @@ function TrendChart({ data }: { data: Array<{ month: string; approved: number; r
         </text>
       ))}
     </svg>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TREND OVERVIEW CARD — tabbed count + revenue in one card
+// ════════════════════════════════════════════════════════════════════════════
+function TrendOverviewCard({
+  trendData,
+  revenueTrendData,
+}: {
+  trendData: Array<{ month: string; approved: number; rejected: number }>;
+  revenueTrendData: Array<{ month: string; value: number }>;
+}) {
+  const [tab, setTab] = useState<'count' | 'value'>('count');
+  const totalApproved = trendData.reduce((s, d) => s + d.approved, 0);
+  const totalRejected = trendData.reduce((s, d) => s + d.rejected, 0);
+  const totalRevenue = revenueTrendData.reduce((s, d) => s + d.value, 0);
+  const winRate = totalApproved + totalRejected > 0
+    ? Math.round((totalApproved / (totalApproved + totalRejected)) * 100) : 0;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-3">
+        <TrendingUp className="h-4 w-4 text-emerald-500" />
+        <span className="text-sm font-semibold text-foreground">Trend — 6 เดือนล่าสุด</span>
+        <div className="ml-auto flex bg-muted rounded-lg p-0.5 gap-0.5">
+          <button
+            onClick={() => setTab('count')}
+            className={`px-3 py-1 text-xs rounded-md transition-all ${tab === 'count' ? 'bg-background shadow text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            จำนวน QT
+          </button>
+          <button
+            onClick={() => setTab('value')}
+            className={`px-3 py-1 text-xs rounded-md transition-all ${tab === 'value' ? 'bg-background shadow text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            มูลค่า
+          </button>
+        </div>
+      </div>
+
+      {tab === 'count' ? (
+        <div className="flex gap-4 mb-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-5 h-0.5 bg-emerald-500 rounded" />Approved
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-5 border-t-2 border-dashed border-red-500" />Rejected
+          </span>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground mb-3">มูลค่าที่อนุมัติแล้วรายเดือน</p>
+      )}
+
+      {tab === 'count'
+        ? (trendData.length > 0
+            ? <TrendChart data={trendData} />
+            : <div className="flex items-center justify-center h-44 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>)
+        : (revenueTrendData.length > 0
+            ? <RevenueAreaChart data={revenueTrendData} />
+            : <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>)
+      }
+
+      <div className="mt-3 pt-3 border-t border-border/50">
+        {tab === 'count' ? (
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div className="text-base font-bold text-emerald-500 tabular-nums">{totalApproved}</div>
+              <div className="text-[10px] text-muted-foreground">อนุมัติแล้ว</div>
+            </div>
+            <div>
+              <div className="text-base font-bold text-red-500 tabular-nums">{totalRejected}</div>
+              <div className="text-[10px] text-muted-foreground">ปฏิเสธ</div>
+            </div>
+            <div>
+              <div className="text-base font-bold tabular-nums">{winRate}%</div>
+              <div className="text-[10px] text-muted-foreground">Win Rate</div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-base font-bold text-emerald-500 tabular-nums">{formatMoney(totalRevenue)}</div>
+              <div className="text-[10px] text-muted-foreground">รายได้รวม 6 เดือน</div>
+            </div>
+            <div className="text-right">
+              <div className="text-base font-bold tabular-nums">{formatMoney(revenueTrendData.length > 0 ? Math.round(totalRevenue / revenueTrendData.length) : 0)}</div>
+              <div className="text-[10px] text-muted-foreground">เฉลี่ย/เดือน</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
