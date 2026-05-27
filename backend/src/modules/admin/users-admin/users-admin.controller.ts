@@ -66,4 +66,19 @@ export const usersAdminController = {
     const data = await usersAdminService.listTeams();
     return success(res, data);
   },
+
+  async getUserPermissions(req: Request, res: Response) {
+    const data = await usersAdminService.getUserPermissions(req.params.id);
+    return success(res, data);
+  },
+
+  async setUserPermissions(req: Request, res: Response) {
+    const actor = requireUser(req);
+    const { overrides } = req.body as { overrides: Array<{ code: string; granted: boolean }> };
+    if (!Array.isArray(overrides)) {
+      throw new AppError(400, 'INVALID_BODY', 'overrides must be an array');
+    }
+    await usersAdminService.setUserPermissions(req.params.id, actor.id, overrides, req);
+    return success(res, null, 'Permissions updated');
+  },
 };

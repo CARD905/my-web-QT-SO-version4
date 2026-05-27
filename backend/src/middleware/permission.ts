@@ -22,7 +22,7 @@ export function requirePermission(
         return next(new AppError(401, 'UNAUTHENTICATED', 'Not authenticated'));
       }
 
-      const allowed = await hasPermission(user.roleId, resource, action, scope);
+      const allowed = await hasPermission(user.roleId, resource, action, scope, user.id);
       if (!allowed) {
         return next(
           new AppError(
@@ -63,7 +63,7 @@ export function requireAnyPermission(
       }
 
       for (const [resource, action, scope = 'OWN'] of checks) {
-        const ok = await hasPermission(user.roleId, resource, action, scope);
+        const ok = await hasPermission(user.roleId, resource, action, scope, user.id);
         if (ok) return next();
       }
 

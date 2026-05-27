@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/prisma';
 import { AppError, success } from '../../utils/response';
-import { getRolePermissions } from '../../utils/permissions';
+import { getUserEffectivePermissions } from '../../utils/permissions';
 
 /**
  * GET /permissions/me
@@ -19,7 +19,7 @@ async function myPermissions(req: Request, res: Response) {
   });
   if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
 
-  const permissions = await getRolePermissions(user.roleId);
+  const permissions = await getUserEffectivePermissions(user.id, user.roleId);
 
   // Group by resource for easy lookup on frontend
   const grouped: Record<string, Record<string, string>> = {};

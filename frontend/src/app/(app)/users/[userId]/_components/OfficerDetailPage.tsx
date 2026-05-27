@@ -45,47 +45,55 @@ interface RoleOption { id: string; code: string; nameTh: string; level: number; 
 /* ── Constants ──────────────────────────────────────────────── */
 const PROTECTED_ROLES = ['ADMIN', 'CEO'];
 
-/* ── Permission data (static config) ───────────────────────── */
+/* ── Permission groups config ───────────────────────────────── */
 const PERMISSION_GROUPS = [
   {
     group: 'ใบเสนอราคา',
     items: [
-      { key: 'qt_create', label: 'สร้างใบเสนอราคา', desc: 'สร้าง draft ใหม่ได้', defaultOn: true },
-      { key: 'qt_edit',   label: 'แก้ไขใบเสนอราคา', desc: 'แก้ไขข้อมูลใบเสนอราคาที่มีอยู่', defaultOn: true },
-      { key: 'qt_delete', label: 'ลบใบเสนอราคา',    desc: 'ลบ draft ได้', defaultOn: false },
-      { key: 'qt_pdf',    label: 'ส่งออก PDF',       desc: 'ส่งออกใบเสนอราคาเป็น PDF', defaultOn: true, custom: true },
+      { key: 'qt_create', code: 'quotation:create:own',      label: 'สร้างใบเสนอราคา',      desc: 'สร้าง draft ใหม่ได้' },
+      { key: 'qt_edit',   code: 'quotation:update:own',      label: 'แก้ไขใบเสนอราคา',      desc: 'แก้ไขข้อมูลใบเสนอราคาที่มีอยู่' },
+      { key: 'qt_delete', code: 'quotation:cancel:own',      label: 'ลบใบเสนอราคา',          desc: 'ลบ/ยกเลิก draft ได้' },
+      { key: 'qt_pdf',    code: 'quotation:exportPdf:own',   label: 'ส่งออก PDF',             desc: 'ส่งออกใบเสนอราคาเป็น PDF' },
     ],
   },
   {
     group: 'ใบสั่งขาย',
     items: [
-      { key: 'so_approve',  label: 'อนุมัติใบสั่งขาย', desc: 'อนุมัติได้ไม่เกิน approval limit', defaultOn: true },
-      { key: 'so_convert',  label: 'แปลงเป็นใบสั่งขาย', desc: 'แปลงใบเสนอราคาเป็น SO', defaultOn: true },
+      { key: 'so_approve', code: 'quotation:approve:team',   label: 'อนุมัติใบเสนอราคา',     desc: 'อนุมัติได้ไม่เกิน approval limit' },
+      { key: 'so_convert', code: 'saleOrder:create:own',     label: 'แปลงเป็นใบสั่งขาย',     desc: 'แปลงใบเสนอราคาเป็น SO' },
     ],
   },
   {
     group: 'สินค้า',
     items: [
-      { key: 'pd_cost',  label: 'ดูต้นทุนสินค้า',   desc: 'ดูราคาทุนภายในได้', defaultOn: false },
-      { key: 'pd_price', label: 'แก้ไขราคามาตรฐาน', desc: 'เปลี่ยนราคา standard ได้', defaultOn: false },
+      { key: 'pd_cost',  code: 'product:viewCost:all',       label: 'ดูต้นทุนสินค้า',         desc: 'ดูราคาทุนภายในได้' },
+      { key: 'pd_price', code: 'product:update:all',         label: 'แก้ไขราคามาตรฐาน',       desc: 'เปลี่ยนราคา standard ได้' },
     ],
   },
   {
     group: 'ลูกค้า',
     items: [
-      { key: 'cu_create', label: 'เพิ่มลูกค้า',    desc: 'ลงทะเบียนลูกค้าใหม่ได้', defaultOn: true },
-      { key: 'cu_edit',   label: 'แก้ไขข้อมูลลูกค้า', desc: 'แก้ไขข้อมูลติดต่อได้', defaultOn: true },
-      { key: 'cu_delete', label: 'ลบข้อมูลลูกค้า',  desc: 'ลบรายการลูกค้าได้', defaultOn: false },
+      { key: 'cu_create', code: 'customer:create:all',       label: 'เพิ่มลูกค้า',            desc: 'ลงทะเบียนลูกค้าใหม่ได้' },
+      { key: 'cu_edit',   code: 'customer:update:all',       label: 'แก้ไขข้อมูลลูกค้า',      desc: 'แก้ไขข้อมูลติดต่อได้' },
+      { key: 'cu_delete', code: 'customer:delete:all',       label: 'ลบข้อมูลลูกค้า',          desc: 'ลบรายการลูกค้าได้' },
     ],
   },
   {
     group: 'รายงาน',
     items: [
-      { key: 'rp_own',    label: 'ดูรายงานส่วนตัว', desc: 'ดูผลงานของตัวเองได้', defaultOn: true },
-      { key: 'rp_export', label: 'ส่งออกรายงาน',    desc: 'ดาวน์โหลดข้อมูลรายงาน', defaultOn: true, custom: true },
+      { key: 'rp_own',    code: 'dashboard:view:own',        label: 'ดูรายงานส่วนตัว',         desc: 'ดูผลงานของตัวเองได้' },
+      { key: 'rp_export', code: 'saleOrder:exportPdf:all',   label: 'ส่งออกรายงาน',            desc: 'ดาวน์โหลดข้อมูลรายงาน' },
     ],
   },
 ];
+
+// Map from permission code → UI key (for reverse lookup)
+const CODE_TO_KEY = Object.fromEntries(
+  PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => [i.code, i.key])),
+);
+const KEY_TO_CODE = Object.fromEntries(
+  PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => [i.key, i.code])),
+);
 
 /* ── Mock audit log ─────────────────────────────────────────── */
 const MOCK_LOGS = [
@@ -289,7 +297,14 @@ export function OfficerDetailPage() {
   const [data,          setData]          = useState<UserDetailData | null>(null);
   const [roles,         setRoles]         = useState<RoleOption[]>([]);
   const [loading,       setLoading]       = useState(true);
+  // perms: key → true/false (effective state shown in UI)
   const [perms,         setPerms]         = useState<Record<string, boolean>>({});
+  // rolePerms: codes that come from the role (not overridden)
+  const [rolePermCodes, setRolePermCodes] = useState<Set<string>>(new Set());
+  // overrides: key → true/false (only keys that deviate from role)
+  const [overrides,     setOverrides]     = useState<Record<string, boolean>>({});
+  const [permLoading,   setPermLoading]   = useState(true);
+  const [permSaving,    setPermSaving]    = useState(false);
 
   /* dialog states */
   const [showResetPw,       setShowResetPw]       = useState(false);
@@ -311,11 +326,64 @@ export function OfficerDetailPage() {
     finally { setLoading(false); }
   };
 
+  const loadPerms = async () => {
+    setPermLoading(true);
+    try {
+      const res = await api.get<ApiResponse<{
+        rolePermissionCodes: string[];
+        overrides: Array<{ code: string; granted: boolean }>;
+      }>>(`/admin/users/${userId}/permissions`);
+      const d = res.data.data;
+      if (!d) return;
+
+      const roleCodes = new Set(d.rolePermissionCodes);
+      setRolePermCodes(roleCodes);
+
+      // Build effective perms: start from role, apply overrides
+      const overrideMap: Record<string, boolean> = {};
+      d.overrides.forEach((o) => { overrideMap[CODE_TO_KEY[o.code] ?? o.code] = o.granted; });
+      setOverrides(overrideMap);
+
+      const effective: Record<string, boolean> = {};
+      PERMISSION_GROUPS.forEach((g) =>
+        g.items.forEach((item) => {
+          if (item.key in overrideMap) {
+            effective[item.key] = overrideMap[item.key];
+          } else {
+            effective[item.key] = roleCodes.has(item.code);
+          }
+        }),
+      );
+      setPerms(effective);
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setPermLoading(false); }
+  };
+
+  const savePerms = async () => {
+    setPermSaving(true);
+    try {
+      // Compute only the overrides (where UI state differs from role default)
+      const newOverrides: Array<{ code: string; granted: boolean }> = [];
+      PERMISSION_GROUPS.forEach((g) =>
+        g.items.forEach((item) => {
+          const roleDefault = rolePermCodes.has(item.code);
+          const current = perms[item.key] ?? roleDefault;
+          if (current !== roleDefault) {
+            newOverrides.push({ code: item.code, granted: current });
+          }
+        }),
+      );
+      await api.put(`/admin/users/${userId}/permissions`, { overrides: newOverrides });
+      toast.success('บันทึก permissions เรียบร้อย');
+      // Reload to reflect saved state
+      await loadPerms();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setPermSaving(false); }
+  };
+
   useEffect(() => {
     load();
-    const init: Record<string, boolean> = {};
-    PERMISSION_GROUPS.forEach(g => g.items.forEach(p => { init[p.key] = p.defaultOn; }));
-    setPerms(init);
+    loadPerms();
   }, [userId]);
 
   /* ── Handlers ── */
@@ -501,7 +569,7 @@ export function OfficerDetailPage() {
               </button>
 
               <button
-                onClick={() => toast.info('กำลังเปิด permission editor...')}
+                onClick={() => document.getElementById('perm-section')?.scrollIntoView({ behavior: 'smooth' })}
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-blue-600 hover:bg-blue-50 transition-colors text-left"
               >
                 <ShieldCheck className="h-3.5 w-3.5" /> Edit permissions
@@ -635,52 +703,83 @@ export function OfficerDetailPage() {
           </SectionCard>
 
           {/* ── Section 2: Permissions ── */}
+          <div id="perm-section">
           <SectionCard
             title="Permissions & access control"
             icon={<Shield className="h-4 w-4" />}
             action={
-              <Button variant="outline" size="sm" className="h-7 text-[12px] gap-1.5" onClick={() => toast.success('บันทึก permissions แล้ว')}>
-                <ShieldCheck className="h-3.5 w-3.5" /> Save changes
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[12px] gap-1.5"
+                onClick={savePerms}
+                disabled={permSaving || permLoading}
+              >
+                {permSaving
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <ShieldCheck className="h-3.5 w-3.5" />}
+                Save changes
               </Button>
             }
           >
-            <div className="flex flex-col gap-5">
-              {PERMISSION_GROUPS.map(group => (
-                <div key={group.group}>
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    {group.group}
-                  </p>
-                  <div className="flex flex-col">
-                    {group.items.map((item, idx) => (
-                      <div
-                        key={item.key}
-                        className={`flex items-center justify-between py-2.5 gap-3 ${idx < group.items.length - 1 ? 'border-b border-border/40' : ''}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[13px] font-medium text-foreground">{item.label}</span>
-                            {item.custom
-                              ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">Custom</span>
-                              : <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-medium">Inherited</span>
-                            }
-                          </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
-                        </div>
-                        <Switch
-                          checked={perms[item.key] ?? item.defaultOn}
-                          onCheckedChange={v => {
-                            setPerms(prev => ({ ...prev, [item.key]: v }));
-                            toast.success(`${v ? 'เปิด' : 'ปิด'} "${item.label}" แล้ว`);
-                          }}
-                          className="scale-90 shrink-0"
-                        />
-                      </div>
-                    ))}
+            {permLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="flex items-center justify-between py-2">
+                    <div className="space-y-1">
+                      <div className="h-3.5 w-32 bg-muted rounded animate-pulse" />
+                      <div className="h-2.5 w-48 bg-muted/60 rounded animate-pulse" />
+                    </div>
+                    <div className="h-5 w-9 bg-muted rounded-full animate-pulse" />
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-5">
+                {PERMISSION_GROUPS.map(group => (
+                  <div key={group.group}>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                      {group.group}
+                    </p>
+                    <div className="flex flex-col">
+                      {group.items.map((item, idx) => {
+                        const isOn = perms[item.key] ?? false;
+                        const isCustom = item.key in overrides;
+                        return (
+                          <div
+                            key={item.key}
+                            className={`flex items-center justify-between py-2.5 gap-3 ${idx < group.items.length - 1 ? 'border-b border-border/40' : ''}`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-medium text-foreground">{item.label}</span>
+                                {isCustom
+                                  ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">Custom</span>
+                                  : <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-medium">Inherited</span>
+                                }
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
+                            </div>
+                            <Switch
+                              checked={isOn}
+                              onCheckedChange={v => {
+                                setPerms(prev => ({ ...prev, [item.key]: v }));
+                              }}
+                              className="scale-90 shrink-0"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+                  กด <strong>Save changes</strong> เพื่อบันทึก — การเปลี่ยนแปลงจะมีผลทันทีเมื่อ user ทำการ reload หน้า
+                </p>
+              </div>
+            )}
           </SectionCard>
+          </div>
 
           {/* ── Section 3: Activity log ── */}
           <SectionCard title="Activity log" icon={<Activity className="h-4 w-4" />}>

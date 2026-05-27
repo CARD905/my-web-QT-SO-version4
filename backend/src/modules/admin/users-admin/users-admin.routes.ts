@@ -68,11 +68,22 @@ router.post(
   asyncHandler(usersAdminController.forceLogout),
 );
 
-// ✅ เพิ่มใหม่
 router.delete(
   '/:id',
   requirePermission('user', 'delete', 'ALL'),
   asyncHandler(usersAdminController.remove),
+);
+
+router.get(
+  '/:id/permissions',
+  requirePermission('user', 'update', 'ALL'),
+  asyncHandler(usersAdminController.getUserPermissions),
+);
+
+router.put(
+  '/:id/permissions',
+  requirePermission('user', 'update', 'ALL'),
+  asyncHandler(usersAdminController.setUserPermissions),
 );
 
 export default router;

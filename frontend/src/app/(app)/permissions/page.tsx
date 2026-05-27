@@ -81,6 +81,48 @@ const CAPABILITIES: Record<string, Array<{ icon: LucideIcon; title: string; desc
   ],
 };
 
+// ─── Permission checklist (mirrors OfficerDetailPage groups) ─────────────────
+const MY_PERM_GROUPS = [
+  {
+    group: 'ใบเสนอราคา',
+    items: [
+      { code: 'quotation:create:own',    label: 'สร้างใบเสนอราคา' },
+      { code: 'quotation:update:own',    label: 'แก้ไขใบเสนอราคา' },
+      { code: 'quotation:cancel:own',    label: 'ลบ/ยกเลิกใบเสนอราคา' },
+      { code: 'quotation:exportPdf:own', label: 'ส่งออก PDF' },
+    ],
+  },
+  {
+    group: 'ใบสั่งขาย',
+    items: [
+      { code: 'quotation:approve:team',  label: 'อนุมัติใบเสนอราคา' },
+      { code: 'saleOrder:create:own',    label: 'แปลงเป็นใบสั่งขาย' },
+    ],
+  },
+  {
+    group: 'สินค้า',
+    items: [
+      { code: 'product:viewCost:all',    label: 'ดูต้นทุนสินค้า' },
+      { code: 'product:update:all',      label: 'แก้ไขราคามาตรฐาน' },
+    ],
+  },
+  {
+    group: 'ลูกค้า',
+    items: [
+      { code: 'customer:create:all',     label: 'เพิ่มลูกค้า' },
+      { code: 'customer:update:all',     label: 'แก้ไขข้อมูลลูกค้า' },
+      { code: 'customer:delete:all',     label: 'ลบข้อมูลลูกค้า' },
+    ],
+  },
+  {
+    group: 'รายงาน',
+    items: [
+      { code: 'dashboard:view:own',      label: 'ดูรายงานส่วนตัว' },
+      { code: 'saleOrder:exportPdf:all', label: 'ส่งออกรายงาน' },
+    ],
+  },
+];
+
 // ─── Count-up hook ────────────────────────────────────────────────────────────
 function useCountUp(target: number, duration = 900) {
   const [count, setCount] = useState(0);
@@ -247,6 +289,44 @@ export default function MyPermissionsPage() {
                 : 'การอนุมัติและการจัดการทีมอยู่ในอำนาจของ Manager ขึ้นไป หากต้องการสิทธิ์เพิ่ม กรุณาติดต่อ Admin'}
             </span>
           </div>
+
+          {/* ── My Access checklist ── */}
+          {data && (
+            <div className="rounded-2xl border border-border/60 bg-card/80 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Shield className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">สิทธิ์การเข้าถึงของฉัน</span>
+                <span className="text-[11px] text-muted-foreground ml-1">— อัปเดตโดย Admin</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+                {MY_PERM_GROUPS.map((grp) => (
+                  <div key={grp.group}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">{grp.group}</p>
+                    <div className="space-y-1.5">
+                      {grp.items.map((item) => {
+                        const allowed = data.permissions.includes(item.code);
+                        return (
+                          <div key={item.code} className="flex items-center gap-2.5">
+                            {allowed ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                            ) : (
+                              <Lock className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                            )}
+                            <span className={cn('text-[13px]', allowed ? 'text-foreground' : 'text-muted-foreground line-through')}>
+                              {item.label}
+                            </span>
+                            {!allowed && (
+                              <span className="text-[10px] text-rose-500 font-medium">ถูกจำกัด</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

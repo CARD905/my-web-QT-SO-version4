@@ -324,4 +324,80 @@ export const usersAdminService = {
       orderBy: [{ department: { name: 'asc' } }, { name: 'asc' }],
     });
   },
+
+  async getUserPermissions(userId: string) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { roleId: true },
+    });
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+
+    const [rolePerms, userOverrides] = await Promise.all([
+      prisma.rolePermission.findMany({
+        where: { roleId: user.roleId },
+        include: { permission: true },
+      }),
+      prisma.userPermission.findMany({
+        where: { userId },
+        include: { permission: true },
+      }),
+    ]);
+
+    const rolePermCodes = new Set(rolePerms.map((rp: { permission: { code: string } }) => rp.permission.code));
+
+    return {
+      rolePermissionCodes: Array.from(rolePermCodes),
+      overrides: userOverrides.map((u: { permission: { code: string }; granted: boolean }) => ({
+        code: u.permission.code,
+        granted: u.granted,
+      })),
+    };
+  },
+
+  async setUserPermissions(
+    userId: string,
+    actorId: string,
+    overrides: Array<{ code: string; granted: boolean }>,
+    req?: Request,
+  ) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { email: true, roleId: true },
+    });
+    if (!user) throw new AppError(404, 'NOT_FOUND', 'User not found');
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userPermission.deleteMany({ where: { userId } });
+
+      if (overrides.length > 0) {
+        const perms = await tx.permission.findMany({
+          where: { code: { in: overrides.map((o) => o.code) } },
+          select: { id: true, code: true },
+        });
+        const codeToId = new Map(perms.map((p) => [p.code, p.id]));
+
+        const rows = overrides
+          .filter((o) => codeToId.has(o.code))
+          .map((o) => ({
+            userId,
+            permissionId: codeToId.get(o.code)!,
+            granted: o.granted,
+            grantedById: actorId,
+          }));
+
+        if (rows.length > 0) {
+          await tx.userPermission.createMany({ data: rows });
+        }
+      }
+    });
+
+    await logActivity(prisma, {
+      userId: actorId,
+      action: 'user.updatePermissions',
+      entityType: 'User',
+      entityId: userId,
+      description: `Updated permission overrides for ${user.email}: ${overrides.length} override(s)`,
+      req,
+    });
+  },
 };
