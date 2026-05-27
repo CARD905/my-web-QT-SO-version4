@@ -18,7 +18,15 @@ export const listCustomersSchema = paginationSchema;
 
 export const editRequestSchema = z.object({
   reason: z.string().min(1, 'Reason is required').max(2000),
-  requestedChanges: z.string().min(1, 'Requested changes description is required').max(2000),
+  changes: z.object({
+    contactName:     z.string().min(1).max(255).optional(),
+    company:         z.string().min(1).max(255).optional(),
+    taxId:           z.string().max(50).optional().nullable(),
+    email:           z.string().email().max(255).optional().nullable().or(z.literal('')),
+    phone:           z.string().max(50).optional().nullable(),
+    billingAddress:  z.string().max(2000).optional().nullable(),
+    shippingAddress: z.string().max(2000).optional().nullable(),
+  }),
 });
 
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;

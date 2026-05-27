@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { customersController } from './customers.controller';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/permission';
@@ -11,17 +11,6 @@ import {
   listCustomersSchema,
   updateCustomerSchema,
 } from './customers.schema';
-
-function restrictManagerFields(req: Request, _res: Response, next: NextFunction) {
-  const userRole = (req.user as any)?.roleCode || (req.user as any)?.role;
-  if (userRole === 'MANAGER') {
-    const allowed = new Set(['email', 'phone', 'billingAddress', 'shippingAddress']);
-    for (const key of Object.keys(req.body)) {
-      if (!allowed.has(key)) delete req.body[key];
-    }
-  }
-  next();
-}
 
 const router = Router();
 
@@ -49,11 +38,10 @@ router.post(
   asyncHandler(customersController.create),
 );
 
-// ─── UPDATE — Admin, CEO, Manager (Manager limited to email/phone/addresses) ─
+// ─── UPDATE — Admin, CEO only (Manager must use edit-request) ─────────────────
 router.patch(
   '/:id',
-  requireRole('ADMIN', 'CEO', 'MANAGER'),
-  restrictManagerFields,
+  requireRole('ADMIN', 'CEO'),
   validate(updateCustomerSchema),
   asyncHandler(customersController.update),
 );

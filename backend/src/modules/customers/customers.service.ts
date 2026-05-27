@@ -117,6 +117,15 @@ export const customersService = {
   async editRequest(id: string, input: EditRequestInput, requesterId: string, requesterName: string, req?: Request) {
     const customer = await this.getById(id);
 
+    const FIELD_LABELS: Record<string, string> = {
+      contactName: 'Contact Name', company: 'บริษัท', taxId: 'Tax ID',
+      email: 'Email', phone: 'เบอร์โทร',
+      billingAddress: 'ที่อยู่ออกใบเสร็จ', shippingAddress: 'ที่อยู่จัดส่ง',
+    };
+    const changesText = Object.entries(input.changes)
+      .map(([k, v]) => `${FIELD_LABELS[k] ?? k}: "${v ?? '(ลบออก)'}"`)
+      .join(', ');
+
     const admins = await prisma.user.findMany({
       where: { deletedAt: null, isActive: true, role: { code: 'ADMIN' } },
       select: { id: true },
@@ -127,8 +136,8 @@ export const customersService = {
         data: admins.map((admin) => ({
           userId: admin.id,
           type: 'CUSTOMER_EDIT_REQUEST' as any,
-          title: '📝 ขอแก้ไขข้อมูลลูกค้า',
-          message: `${requesterName} ขอแก้ไขข้อมูลลูกค้า "${customer.company}" — ${input.requestedChanges}`,
+          title: 'ขอแก้ไขข้อมูลลูกค้า',
+          message: `${requesterName} ขอแก้ไขข้อมูลลูกค้า "${customer.company}" — ${changesText}`,
           link: `/customers`,
           metadata: {
             customerId: id,
@@ -136,7 +145,7 @@ export const customersService = {
             requesterId,
             requesterName,
             reason: input.reason,
-            requestedChanges: input.requestedChanges,
+            changes: input.changes,
           },
         })),
       });
@@ -147,7 +156,7 @@ export const customersService = {
       action: 'EDIT_REQUEST',
       entityType: 'Customer',
       entityId: id,
-      description: `Edit request for customer "${customer.company}": ${input.requestedChanges}`,
+      description: `Edit request for customer "${customer.company}": ${changesText}`,
       req,
     });
 

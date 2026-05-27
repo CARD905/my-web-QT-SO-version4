@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Search, Users, X, Loader2, Edit2, Trash2, Lock, Send } from 'lucide-react';
+import { Plus, Search, Users, X, Loader2, Edit2, Trash2, Lock, SendHorizonal } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -137,8 +137,11 @@ export default function CustomersPage() {
                     </div>
                   )}
                   {canEdit && (
-                    <Button variant="ghost" size="icon" onClick={() => setEditingId(c.id)} title="แก้ไข">
-                      <Edit2 className="h-4 w-4" />
+                    <Button variant="ghost" size="icon" onClick={() => setEditingId(c.id)} title={isManager ? 'ดูข้อมูล / ขอแก้ไข' : 'แก้ไข'}>
+                      {isManager
+                        ? <SendHorizonal className="h-4 w-4" />
+                        : <Edit2 className="h-4 w-4" />
+                      }
                     </Button>
                   )}
                   {canDelete && (
@@ -192,14 +195,13 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
   const [submitting, setSubmitting] = useState(false);
   const [showEditRequest, setShowEditRequest] = useState(false);
 
-  const restrictedForManager = isManager && mode === 'edit';
+  // For manager in edit mode: show readonly view + request dialog
+  const readOnly = isManager && mode === 'edit';
 
   useEffect(() => {
     if (mode !== 'edit' || !id) return;
-
     let cancelled = false;
     setLoading(true);
-
     api.get<ApiResponse<Customer>>(`/customers/${id}`)
       .then((res) => {
         if (cancelled) return;
@@ -221,10 +223,7 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
         toast.error(getApiErrorMessage(err));
         onClose();
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id]);
@@ -254,15 +253,30 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
     }
   };
 
+  const FIELD_ROWS: { key: keyof typeof form; label: string; type?: string }[] = [
+    { key: 'contactName', label: t('customer.contactName') },
+    { key: 'company',     label: t('customer.company') },
+    { key: 'taxId',       label: t('customer.taxId') },
+    { key: 'email',       label: t('customer.email'),   type: 'email' },
+    { key: 'phone',       label: t('customer.phone') },
+    { key: 'billingAddress',  label: t('customer.billingAddress') },
+    { key: 'shippingAddress', label: t('customer.shippingAddress') },
+  ];
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
         <Card className="w-full max-w-2xl shadow-2xl animate-slide-up">
           <div className="flex items-center justify-between p-6 border-b">
-            <h2 className="text-xl font-bold">
-              {mode === 'create' ? t('customer.newCustomer') : 'แก้ไขลูกค้า'}
-            </h2>
-            <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
+            <div className="flex items-center gap-2">
+              {readOnly && <Lock className="h-4 w-4 text-muted-foreground" />}
+              <h2 className="text-xl font-bold">
+                {mode === 'create' ? t('customer.newCustomer') : readOnly ? 'ข้อมูลลูกค้า' : 'แก้ไขลูกค้า'}
+              </h2>
+            </div>
+            <button onClick={onClose} className="p-1 hover:bg-muted rounded-md">
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
           {loading ? (
@@ -271,70 +285,43 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </CardContent>
+          ) : readOnly ? (
+            /* ── Read-only view for manager ── */
+            <CardContent className="pt-5 pb-4 space-y-4">
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-700">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                ข้อมูลลูกค้าแก้ไขได้เฉพาะ Admin — กรุณายื่นคำขอแก้ไขผ่านปุ่มด้านล่าง
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {FIELD_ROWS.map(({ key, label }) => (
+                  <div key={key} className={key === 'billingAddress' || key === 'shippingAddress' ? 'md:col-span-2' : ''}>
+                    <Label className="text-xs text-muted-foreground">{label}</Label>
+                    <div className="mt-1 px-3 py-2 rounded-md border bg-muted/30 text-sm min-h-[38px]">
+                      {form[key] || <span className="text-muted-foreground">—</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
           ) : (
+            /* ── Editable form (admin/CEO) ── */
             <CardContent className="pt-6 space-y-4">
-              {/* Restricted fields for manager — read-only with lock icon */}
-              {restrictedForManager && (
-                <div className="rounded-lg border border-muted bg-muted/30 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Lock className="h-3.5 w-3.5" />
-                      <span>ข้อมูลที่แก้ไขได้เฉพาะ Admin — ต้องขอแก้ไข</span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs gap-1.5 border-amber-400 text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                      onClick={() => setShowEditRequest(true)}
-                    >
-                      <Send className="h-3 w-3" />
-                      ขอแก้ไขข้อมูล
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs text-muted-foreground">{t('customer.contactName')}</Label>
-                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
-                        {form.contactName || '—'}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">{t('customer.company')}</Label>
-                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
-                        {form.company || '—'}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-muted-foreground">{t('customer.taxId')}</Label>
-                      <div className="mt-1.5 px-3 py-2 rounded-md border bg-background text-sm text-muted-foreground">
-                        {form.taxId || '—'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Editable fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {!restrictedForManager && (
-                  <>
-                    <div>
-                      <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
-                      <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
-                    </div>
-                    <div>
-                      <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
-                      <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">{t('customer.taxId')}</Label>
-                      <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
-                    </div>
-                  </>
-                )}
-                <div className={restrictedForManager ? '' : ''}>
+                <div>
+                  <Label className="text-xs">{t('customer.contactName')} <span className="text-destructive">*</span></Label>
+                  <Input value={form.contactName} onChange={(e) => update('contactName', e.target.value)} className="mt-1.5" autoFocus />
+                </div>
+                <div>
+                  <Label className="text-xs">{t('customer.company')} <span className="text-destructive">*</span></Label>
+                  <Input value={form.company} onChange={(e) => update('company', e.target.value)} className="mt-1.5" />
+                </div>
+                <div>
+                  <Label className="text-xs">{t('customer.taxId')}</Label>
+                  <Input value={form.taxId} onChange={(e) => update('taxId', e.target.value)} className="mt-1.5" />
+                </div>
+                <div>
                   <Label className="text-xs">{t('customer.email')}</Label>
-                  <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" autoFocus={restrictedForManager} />
+                  <Input type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="mt-1.5" />
                 </div>
                 <div>
                   <Label className="text-xs">{t('customer.phone')}</Label>
@@ -353,11 +340,22 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
           )}
 
           <div className="flex justify-end gap-2 p-6 border-t">
-            <Button variant="outline" onClick={onClose} disabled={submitting}>{t('common.cancel')}</Button>
-            <Button onClick={submit} disabled={submitting || loading}>
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t('common.save')}
+            <Button variant="outline" onClick={onClose} disabled={submitting}>
+              {readOnly ? 'ปิด' : t('common.cancel')}
             </Button>
+            {readOnly ? (
+              <Button
+                onClick={() => setShowEditRequest(true)}
+                className="bg-blue-600 hover:bg-blue-700 gap-1.5"
+              >
+                <SendHorizonal className="h-4 w-4" />ขอแก้ไขข้อมูล
+              </Button>
+            ) : (
+              <Button onClick={submit} disabled={submitting || loading}>
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('common.save')}
+              </Button>
+            )}
           </div>
         </Card>
       </div>
@@ -365,11 +363,9 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
       {showEditRequest && id && (
         <EditRequestDialog
           customerId={id}
-          customerCompany={form.company}
-          currentContactName={form.contactName}
-          currentCompany={form.company}
-          currentTaxId={form.taxId}
+          current={form}
           onClose={() => setShowEditRequest(false)}
+          onSent={() => { setShowEditRequest(false); onClose(); }}
         />
       )}
     </>
@@ -379,39 +375,56 @@ function CustomerModal({ mode, id, isManager, onClose, onSaved }: {
 // ════════════════════════════════════════════════════════════════════════════
 // Edit Request Dialog — Manager sends change request to Admin
 // ════════════════════════════════════════════════════════════════════════════
+type CustomerForm = {
+  contactName: string; company: string; taxId: string;
+  email: string; phone: string; billingAddress: string; shippingAddress: string;
+};
+
 function EditRequestDialog({
   customerId,
-  customerCompany,
-  currentContactName,
-  currentCompany,
-  currentTaxId,
+  current,
   onClose,
+  onSent,
 }: {
   customerId: string;
-  customerCompany: string;
-  currentContactName: string;
-  currentCompany: string;
-  currentTaxId: string;
+  current: CustomerForm;
   onClose: () => void;
+  onSent: () => void;
 }) {
-  const [newContactName, setNewContactName] = useState('');
-  const [newCompany, setNewCompany] = useState('');
-  const [newTaxId, setNewTaxId] = useState('');
+  const t = useT();
+  const [changes, setChanges] = useState<Partial<CustomerForm>>({});
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const buildRequestedChanges = () => {
-    const lines: string[] = [];
-    if (newContactName.trim()) lines.push(`Contact Name: "${currentContactName}" → "${newContactName.trim()}"`);
-    if (newCompany.trim()) lines.push(`Company: "${currentCompany}" → "${newCompany.trim()}"`);
-    if (newTaxId.trim()) lines.push(`Tax ID: "${currentTaxId || '(ว่าง)'}" → "${newTaxId.trim()}"`);
-    return lines.join(', ');
+  const update = (k: keyof CustomerForm, v: string) =>
+    setChanges((prev) => ({ ...prev, [k]: v }));
+
+  const FIELDS: { key: keyof CustomerForm; label: string; type?: string; wide?: boolean }[] = [
+    { key: 'contactName',     label: t('customer.contactName') },
+    { key: 'company',         label: t('customer.company') },
+    { key: 'taxId',           label: t('customer.taxId') },
+    { key: 'email',           label: t('customer.email'),   type: 'email' },
+    { key: 'phone',           label: t('customer.phone') },
+    { key: 'billingAddress',  label: t('customer.billingAddress'),  wide: true },
+    { key: 'shippingAddress', label: t('customer.shippingAddress'), wide: true },
+  ];
+
+  // Build the payload — only fields that were filled in
+  const buildChanges = () => {
+    const out: Record<string, string | null> = {};
+    for (const { key } of FIELDS) {
+      const val = changes[key];
+      if (val !== undefined && val.trim() !== '') {
+        out[key] = val.trim();
+      }
+    }
+    return out;
   };
 
   const submit = async () => {
-    const requestedChanges = buildRequestedChanges();
-    if (!requestedChanges) {
-      toast.error('กรุณาระบุข้อมูลที่ต้องการแก้ไข');
+    const payload = buildChanges();
+    if (Object.keys(payload).length === 0) {
+      toast.error('กรุณาระบุข้อมูลที่ต้องการแก้ไขอย่างน้อย 1 รายการ');
       return;
     }
     if (!reason.trim()) {
@@ -422,10 +435,10 @@ function EditRequestDialog({
     try {
       await api.post(`/customers/${customerId}/edit-request`, {
         reason: reason.trim(),
-        requestedChanges,
+        changes: payload,
       });
       toast.success('ส่งคำขอแก้ไขไปยัง Admin แล้ว');
-      onClose();
+      onSent();
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -435,66 +448,65 @@ function EditRequestDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 animate-fade-in">
-      <Card className="w-full max-w-lg shadow-2xl animate-slide-up">
-        <div className="flex items-center justify-between p-6 border-b">
+      <Card className="w-full max-w-lg shadow-2xl animate-slide-up max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b shrink-0">
           <div>
-            <h2 className="text-lg font-bold">ขอแก้ไขข้อมูลลูกค้า</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">{customerCompany}</p>
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <SendHorizonal className="h-4 w-4 text-blue-500" />ขอแก้ไขข้อมูลลูกค้า
+            </h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{current.company}</p>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X className="h-5 w-5" /></button>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        <CardContent className="pt-6 space-y-5">
-          <div className="space-y-3">
-            <p className="text-sm font-medium">ข้อมูลที่ต้องการแก้ไข (ระบุเฉพาะที่ต้องการเปลี่ยน)</p>
-
-            <div>
-              <Label className="text-xs text-muted-foreground">Contact Name ปัจจุบัน: <span className="font-medium text-foreground">{currentContactName || '—'}</span></Label>
-              <Input
-                placeholder="ชื่อผู้ติดต่อใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
-                value={newContactName}
-                onChange={(e) => setNewContactName(e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground">Company ปัจจุบัน: <span className="font-medium text-foreground">{currentCompany || '—'}</span></Label>
-              <Input
-                placeholder="ชื่อบริษัทใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
-                value={newCompany}
-                onChange={(e) => setNewCompany(e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs text-muted-foreground">Tax ID ปัจจุบัน: <span className="font-medium text-foreground">{currentTaxId || '—'}</span></Label>
-              <Input
-                placeholder="Tax ID ใหม่ (เว้นว่างหากไม่ต้องการเปลี่ยน)"
-                value={newTaxId}
-                onChange={(e) => setNewTaxId(e.target.value)}
-                className="mt-1.5"
-              />
-            </div>
+        <CardContent className="pt-5 space-y-4 overflow-y-auto flex-1">
+          {/* Reason — required */}
+          <div>
+            <Label className="text-xs font-semibold">
+              เหตุผลที่ต้องการแก้ไข <span className="text-destructive">*</span>
+            </Label>
+            <textarea
+              placeholder="เช่น บริษัทเปลี่ยนชื่อ, ข้อมูลผิดพลาด, อัปเดตที่อยู่ใหม่ ฯลฯ"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
           </div>
 
-          <div>
-            <Label className="text-xs font-medium">เหตุผลที่ต้องการแก้ไข <span className="text-destructive">*</span></Label>
-            <textarea
-              placeholder="อธิบายเหตุผลที่ต้องการแก้ไขข้อมูล เช่น บริษัทเปลี่ยนชื่อ, ข้อมูลผิดพลาด ฯลฯ"
-              value={reason}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
-              rows={3}
-              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
-            />
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            ข้อมูลที่ต้องการเปลี่ยน (เว้นว่างหากไม่ต้องการเปลี่ยน)
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {FIELDS.map(({ key, label, type, wide }) => (
+              <div key={key} className={wide ? 'col-span-2' : ''}>
+                <Label className="text-xs">
+                  {label}
+                  {current[key] && (
+                    <span className="ml-1 text-muted-foreground font-normal">
+                      (ปัจจุบัน: {current[key]})
+                    </span>
+                  )}
+                </Label>
+                <Input
+                  type={type ?? 'text'}
+                  value={changes[key] ?? ''}
+                  onChange={(e) => update(key, e.target.value)}
+                  placeholder={`${label}ใหม่...`}
+                  className="mt-1.5 h-9 text-sm"
+                />
+              </div>
+            ))}
           </div>
         </CardContent>
 
-        <div className="flex justify-end gap-2 p-6 border-t">
+        <div className="flex justify-end gap-2 p-6 border-t shrink-0">
           <Button variant="outline" onClick={onClose} disabled={submitting}>ยกเลิก</Button>
-          <Button onClick={submit} disabled={submitting} className="bg-amber-600 hover:bg-amber-700">
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <Button onClick={submit} disabled={submitting} className="bg-blue-600 hover:bg-blue-700 gap-1.5">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
             ส่งคำขอแก้ไข
           </Button>
         </div>
