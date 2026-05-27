@@ -25,6 +25,7 @@ interface NavItem {
   children?: NavItem[];
   showBadge?: boolean;              // manager approval-queue count
   officerBadge?: 'qt' | 'checklist' | 'so';  // officer sidebar counts
+  showCustomerRequestBadge?: boolean; // admin customer pending-request count
   dividerLabel?: string;            // section group label (CEO nav groups)
 }
 
@@ -126,6 +127,34 @@ function OfficerGroupBadge({ types, collapsed }: { types: ReadonlyArray<'qt' | '
 }
 
 
+// ── Admin customer edit-request pending badge ─────────────────────────────
+function CustomerRequestBadge({ collapsed }: { collapsed: boolean }) {
+  const [count, setCount] = useState<number | null>(null);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ success: boolean; data?: { count: number } }>('/customers/edit-requests/pending-count')
+      .then((res) => { if (!cancelled) setCount(res.data.data?.count ?? 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pathname]);
+
+  if (!count || count <= 0) return null;
+  if (collapsed) {
+    return (
+      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-orange-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
+        {count > 9 ? '9+' : count}
+      </span>
+    );
+  }
+  return (
+    <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-orange-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // NAV ITEMS — แบ่งตาม role ชัดเจน
 // ════════════════════════════════════════════════════════════════════════════
@@ -192,6 +221,7 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: 'nav.customers',
     icon: Users,
     requires: { resource: 'customer', action: 'view', scope: 'ALL' },
+    showCustomerRequestBadge: true,
   },
   {
     href: '/products',
@@ -472,10 +502,12 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
           style={{ color: isLeafActive ? theme.accentColor : undefined, filter: isLeafActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         {item.showBadge && collapsed && <ApprovalBadge collapsed={true} />}
         {item.officerBadge && collapsed && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={true} />}
+        {item.showCustomerRequestBadge && collapsed && roleCode === 'ADMIN' && <CustomerRequestBadge collapsed={true} />}
       </div>
       {!collapsed && <span className="truncate flex-1">{t(item.labelKey)}</span>}
       {!collapsed && item.showBadge && <ApprovalBadge collapsed={false} />}
       {!collapsed && item.officerBadge && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={false} />}
+      {!collapsed && item.showCustomerRequestBadge && roleCode === 'ADMIN' && <CustomerRequestBadge collapsed={false} />}
     </Link>
   );
 }

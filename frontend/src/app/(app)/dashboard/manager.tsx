@@ -627,7 +627,6 @@ function DashboardContent({
   const trendData = data.trendData ?? [];
   const revenueTrendData = data.revenueTrend ?? [];
   const reasons = data.rejectionReasons ?? [];
-  const maxReason = Math.max(...reasons.map((r) => r.count), 1);
 
   const alerts: Array<{ type: 'danger' | 'warning' | 'info'; title: string; desc: string }> =
     data.alerts ?? [
@@ -1059,78 +1058,80 @@ function DashboardContent({
                   : 'ไม่มีข้อมูลสำหรับบุคคลนี้'}
               </p>
             </div>
-          ) : (
-            <div className="space-y-1">
-              <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] text-[10px] text-muted-foreground uppercase px-2 pb-2 border-b gap-2 items-center">
-                <span>#</span><span>ชื่อ</span><span className="text-center">QT</span>
-                <span className="text-right">Win%</span><span className="text-right">Avg Deal</span><span className="text-right">Value</span>
+          ) : (() => {
+            const COL = 'grid-cols-[26px_1fr_36px_96px_80px_48px]';
+            const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
+            return (
+              <div>
+                {/* ── Header ── */}
+                <div className={`grid ${COL} gap-x-3 px-3 pb-2 border-b items-center`}>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">#</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">ชื่อ</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-center">QT</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Value</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Avg Deal</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Win%</span>
+                </div>
+
+                {/* ── Rows ── */}
+                <div className="divide-y divide-border/40">
+                  {data.topOfficers.map((o, idx) => {
+                    const barPct   = Math.round((o.value / maxVal) * 100);
+                    const winRate  = o.winRate ?? (o.conversionRate ?? 0);
+                    const avgDeal  = o.avgDealSize ?? (o.count > 0 ? Math.round(o.value / o.count) : 0);
+                    const medal    = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                    const numColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground/50';
+                    const barColor = idx === 0 ? 'from-amber-400 to-yellow-300' : idx === 1 ? 'from-slate-400 to-slate-300' : idx === 2 ? 'from-orange-400 to-amber-300' : 'from-blue-500 to-cyan-400';
+                    const winColor = winRate >= 50 ? 'text-emerald-600 dark:text-emerald-400' : winRate >= 25 ? 'text-amber-500' : 'text-rose-500';
+                    return (
+                      <Link key={o.userId} href={`/manager/team/${o.userId}`}
+                        className="group block hover:bg-accent/50 transition-colors rounded-xl"
+                      >
+                        <div className={`grid ${COL} gap-x-3 px-3 pt-2.5 pb-1.5 items-center`}>
+                          {/* # */}
+                          <div className={`text-xs font-bold text-center ${numColor}`}>
+                            {medal ?? <span className="text-[11px]">{idx + 1}</span>}
+                          </div>
+                          {/* Name */}
+                          <div className="min-w-0">
+                            <div className="font-semibold text-[13px] truncate group-hover:text-primary transition-colors leading-tight">
+                              {o.userName}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground truncate">{o.userEmail}</div>
+                          </div>
+                          {/* QT */}
+                          <div className="text-center">
+                            <span className="text-[13px] font-bold tabular-nums">{o.count}</span>
+                          </div>
+                          {/* Value */}
+                          <div className="text-right">
+                            <span className="text-[13px] font-bold tabular-nums">{formatMoney(o.value)}</span>
+                          </div>
+                          {/* Avg Deal */}
+                          <div className="text-right">
+                            <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(avgDeal)}</span>
+                          </div>
+                          {/* Win% */}
+                          <div className="text-right">
+                            <span className={`text-[13px] font-bold tabular-nums ${winColor}`}>{winRate}%</span>
+                          </div>
+                        </div>
+                        {/* Value bar */}
+                        <div className="mx-3 mb-2 h-[3px] rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-700`}
+                            style={{ width: `${barPct}%` }} />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-              {data.topOfficers.map((o, idx) => {
-                const maxVal = Math.max(...data.topOfficers.map((x) => x.value), 1);
-                const barPct = Math.round((o.value / maxVal) * 100);
-                const winRate = o.winRate ?? (o.conversionRate ?? 0);
-                const avgDeal = o.avgDealSize ?? (o.count > 0 ? Math.round(o.value / o.count) : 0);
-                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
-                const rankColor = idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-orange-400' : 'text-muted-foreground';
-                return (
-                  <Link key={o.userId} href={`/manager/team/${o.userId}`}
-                    className="block p-2 rounded-xl hover:bg-accent transition-colors"
-                  >
-                    <div className="grid grid-cols-[24px_1fr_auto_auto_auto_auto] items-center gap-2 mb-1.5">
-                      <span className={`text-xs font-bold text-center ${rankColor}`}>{medal ?? (idx + 1)}</span>
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm truncate">{o.userName}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{o.userEmail}</div>
-                      </div>
-                      <Badge variant="outline" className="text-xs">{o.count}</Badge>
-                      <div className="text-xs text-right font-semibold text-emerald-600">{winRate}%</div>
-                      <div className="text-xs text-right text-muted-foreground">{formatMoney(avgDeal)}</div>
-                      <div className="text-sm font-semibold text-right">{formatMoney(o.value)}</div>
-                    </div>
-                    <div className="ml-7 h-1 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-500"
-                        style={{ width: `${barPct}%` }} />
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
+            );
+          })()}
         </div>
 
-        {/* Top Rejection Reasons */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
-            <XCircle className="h-4 w-4 text-red-500" />
-            Top Rejection Reasons
-          </div>
-          {reasons.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <XCircle className="h-10 w-10 mx-auto mb-2 opacity-20" />
-              <p className="text-sm">ยังไม่มีข้อมูล rejection</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {reasons.map((r, i) => {
-                const pct = Math.round((r.count / maxReason) * 100);
-                const redShades = ['#ef4444', '#f87171', '#fca5a5', '#fecaca', '#fee2e2'];
-                const shade = redShades[Math.min(i, redShades.length - 1)];
-                return (
-                  <div key={r.reason}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="font-medium text-foreground truncate max-w-[70%]">{r.reason}</span>
-                      <span className="text-muted-foreground ml-2 shrink-0 tabular-nums">{r.count} ครั้ง</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%`, background: shade }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {/* Top Rejection Reasons — Donut Chart */}
+        <RejectionDonutCard reasons={reasons} />
       </div>
 
       {/* ══ SECTION 9: Approval Trend Chart ══ */}
@@ -1803,6 +1804,147 @@ function ActivityCol({
         {rate !== null
           ? <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{rate}% approval</span>
           : <span className="text-xs text-muted-foreground">ยังไม่มีกิจกรรม</span>}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REJECTION DONUT CHART CARD
+// ════════════════════════════════════════════════════════════════════════════
+const DONUT_COLORS = ['#ef4444', '#f97316', '#a855f7', '#3b82f6', '#10b981', '#eab308', '#ec4899'];
+
+function polarXY(cx: number, cy: number, r: number, deg: number) {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function donutArc(cx: number, cy: number, outerR: number, innerR: number, start: number, end: number) {
+  const o1 = polarXY(cx, cy, outerR, start);
+  const o2 = polarXY(cx, cy, outerR, end);
+  const i1 = polarXY(cx, cy, innerR, start);
+  const i2 = polarXY(cx, cy, innerR, end);
+  const lg = end - start > 180 ? 1 : 0;
+  return [
+    `M ${o1.x} ${o1.y}`,
+    `A ${outerR} ${outerR} 0 ${lg} 1 ${o2.x} ${o2.y}`,
+    `L ${i2.x} ${i2.y}`,
+    `A ${innerR} ${innerR} 0 ${lg} 0 ${i1.x} ${i1.y}`,
+    'Z',
+  ].join(' ');
+}
+
+function RejectionDonutCard({ reasons }: { reasons: Array<{ reason: string; count: number }> }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  if (reasons.length === 0) {
+    return (
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
+          <XCircle className="h-4 w-4 text-red-500" />
+          Top Rejection Reasons
+        </div>
+        <div className="text-center py-10 text-muted-foreground">
+          <div className="mx-auto mb-3 h-16 w-16 rounded-full bg-muted/40 flex items-center justify-center">
+            <XCircle className="h-8 w-8 opacity-20" />
+          </div>
+          <p className="text-sm">ยังไม่มีข้อมูล rejection</p>
+        </div>
+      </div>
+    );
+  }
+
+  const total = reasons.reduce((s, r) => s + r.count, 0);
+  const CX = 80; const CY = 80; const OR = 70; const IR = 44;
+  const GAP = 1.5;
+
+  let angle = 0;
+  const slices = reasons.map((r, i) => {
+    const sweep = (r.count / total) * 360;
+    const start = angle + GAP / 2;
+    const end = angle + sweep - GAP / 2;
+    angle += sweep;
+    return { ...r, start, end, pct: Math.round((r.count / total) * 100), color: DONUT_COLORS[i % DONUT_COLORS.length] };
+  });
+
+  const active = hovered !== null ? slices[hovered] : null;
+
+  return (
+    <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="text-sm font-semibold flex items-center gap-2 text-foreground">
+          <XCircle className="h-4 w-4 text-red-500" />
+          Top Rejection Reasons
+        </div>
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {total} ครั้งทั้งหมด
+        </span>
+      </div>
+
+      <div className="flex items-center gap-5">
+        {/* Donut SVG */}
+        <div className="relative shrink-0" style={{ width: 160, height: 160 }}>
+          <svg viewBox="0 0 160 160" width={160} height={160}>
+            {slices.map((s, i) => {
+              const isHov = hovered === i;
+              const scale = isHov ? 1.04 : 1;
+              return (
+                <path
+                  key={s.reason}
+                  d={donutArc(CX, CY, OR * scale, IR * (1 / scale), s.start, s.end)}
+                  fill={s.color}
+                  opacity={hovered !== null && !isHov ? 0.35 : 1}
+                  style={{ cursor: 'pointer', transition: 'opacity 0.2s, transform 0.15s' }}
+                  onMouseEnter={() => setHovered(i)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              );
+            })}
+          </svg>
+          {/* Centre label */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+            {active ? (
+              <>
+                <div className="text-xl font-bold leading-none tabular-nums" style={{ color: active.color }}>
+                  {active.pct}%
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{active.count} ครั้ง</div>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold leading-none tabular-nums">{total}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">ครั้ง</div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Legend */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          {slices.map((s, i) => (
+            <div
+              key={s.reason}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-default transition-colors"
+              style={{ background: hovered === i ? `${s.color}18` : undefined }}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+            >
+              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: s.color }} />
+              <span className="flex-1 min-w-0 text-[11px] leading-tight text-foreground truncate">
+                {s.reason}
+              </span>
+              <div className="shrink-0 text-right">
+                <span className="text-[11px] font-semibold tabular-nums" style={{ color: s.color }}>
+                  {s.pct}%
+                </span>
+                <span className="text-[10px] text-muted-foreground ml-1.5 tabular-nums">
+                  {s.count} ครั้ง
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

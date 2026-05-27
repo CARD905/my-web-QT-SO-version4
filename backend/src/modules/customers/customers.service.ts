@@ -166,6 +166,11 @@ export const customersService = {
     return cr;
   },
 
+  async pendingEditRequestCount() {
+    const count = await prisma.customerChangeRequest.count({ where: { status: 'PENDING' } });
+    return { count };
+  },
+
   async listEditRequests(customerId?: string, status?: string) {
     const where: Prisma.CustomerChangeRequestWhereInput = {};
     if (customerId) where.customerId = customerId;

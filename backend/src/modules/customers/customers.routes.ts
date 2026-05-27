@@ -24,6 +24,13 @@ router.get(
   asyncHandler(customersController.list),
 );
 
+// ─── PENDING COUNT — Admin badge ───────────────────────────────────────────
+router.get(
+  '/edit-requests/pending-count',
+  requireRole('ADMIN', 'CEO'),
+  asyncHandler(customersController.pendingEditRequestCount),
+);
+
 router.get(
   '/:id',
   requirePermission('customer', 'view', 'ALL'),

@@ -38,6 +38,11 @@ export const customersController = {
     return success(res, result, 'Edit request sent to admin');
   },
 
+  async pendingEditRequestCount(_req: Request, res: Response) {
+    const data = await customersService.pendingEditRequestCount();
+    return success(res, data);
+  },
+
   async listEditRequests(req: Request, res: Response) {
     const customerId = req.params.id as string | undefined;
     const status = req.query.status as string | undefined;
