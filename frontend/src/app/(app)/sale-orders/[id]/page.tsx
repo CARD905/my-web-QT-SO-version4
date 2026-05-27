@@ -6,13 +6,12 @@ import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Printer, FileText, Send, CheckCircle2,
-  XCircle, Loader2, Clock, AlertTriangle, Download, Calendar, Save,
+  XCircle, Loader2, Clock, AlertTriangle, Download, Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
@@ -106,13 +105,6 @@ function toThaiBahtText(num: number): string {
   return bahtText;
 }
 
-// helper: แปลง deadlineDate (string | Date | null | undefined) → "YYYY-MM-DD"
-function toDateInput(val: string | Date | null | undefined): string {
-  if (!val) return '';
-  const s = typeof val === 'string' ? val : val.toISOString();
-  return s.slice(0, 10);
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Main
 // ════════════════════════════════════════════════════════════════════════════
@@ -127,8 +119,6 @@ export default function SaleOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
   const [dialogAction, setDialogAction] = useState<'submit' | 'resubmit' | 'approve' | 'reject' | null>(null);
-  const [deadlineEdit, setDeadlineEdit] = useState('');
-  const [savingDeadline, setSavingDeadline] = useState(false);
 
   const userId = session?.user?.id;
   const isManager = !!(role?.code && MANAGER_ROLES.includes(role.code));
@@ -142,9 +132,6 @@ export default function SaleOrderDetailPage() {
       const data = soRes.data.data ?? null;
       setSo(data);
       setCompany(cRes.data.data ?? null);
-      if (data?.deadlineDate) {
-        setDeadlineEdit(toDateInput(data.deadlineDate));
-      }
     } catch (err) {
       toast.error(getApiErrorMessage(err));
     } finally {
@@ -172,17 +159,6 @@ export default function SaleOrderDetailPage() {
       await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setActing(null); }
-  };
-
-  const handleSaveDeadline = async () => {
-    if (!deadlineEdit) { toast.error('กรุณาเลือกวันที่'); return; }
-    setSavingDeadline(true);
-    try {
-      await api.patch(`/sale-orders/${id}/deadline`, { deadlineDate: deadlineEdit });
-      toast.success('บันทึกวันกำหนดส่งเรียบร้อย');
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setSavingDeadline(false); }
   };
 
   if (loading) {
@@ -405,39 +381,15 @@ export default function SaleOrderDetailPage() {
           </Card>
 
           {/* Deadline Card */}
-          <Card className={isRejected && isOwner ? 'border-amber-300' : ''}>
+          <Card>
             <CardContent className="pt-5">
               <h2 className="font-semibold mb-3 text-sm flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />วันกำหนดส่ง (Deadline)
+                <Calendar className="h-4 w-4 text-primary" />วันจัดส่ง
               </h2>
-              {isRejected && isOwner ? (
-                <div className="space-y-2">
-                  <Label htmlFor="deadlineDate" className="text-xs text-muted-foreground">
-                    วันสุดท้ายในการดำเนินการ
-                  </Label>
-                  <Input
-                    id="deadlineDate"
-                    type="date"
-                    value={deadlineEdit}
-                    onChange={(e) => setDeadlineEdit(e.target.value)}
-                    min={new Date().toISOString().slice(0, 10)}
-                    className="text-sm"
-                  />
-                  <Button className="w-full" size="sm" onClick={handleSaveDeadline}
-                    disabled={savingDeadline || !deadlineEdit}>
-                    {savingDeadline ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    บันทึกวันกำหนดส่ง
-                  </Button>
-                 
-                </div>
-              ) : (
-                <div>
-                  {so.deadlineDate
-                    ? <div className="font-semibold">{formatDate(so.deadlineDate)}</div>
-                    : <div className="text-sm text-muted-foreground">ยังไม่ได้กำหนด</div>
-                  }
-                </div>
-              )}
+              {so.deadlineDate
+                ? <div className="font-semibold">{formatDate(so.deadlineDate)}</div>
+                : <div className="text-sm text-muted-foreground">ไม่ได้ระบุวันจัดส่ง</div>
+              }
             </CardContent>
           </Card>
 

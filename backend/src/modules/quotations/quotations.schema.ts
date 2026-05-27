@@ -23,6 +23,7 @@ export const createQuotationSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   issueDate: dateString,
   expiryDate: dateString,
+  deliveryDate: dateString.optional().nullable(),
   currency: z.enum(['THB', 'USD']).default('THB'),
   vatEnabled: z.boolean().default(true),
   vatRate: z.coerce.number().min(0).max(100).default(7),

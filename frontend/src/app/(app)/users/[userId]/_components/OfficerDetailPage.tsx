@@ -7,7 +7,7 @@ import {
   ArrowLeft, Shield, Key, UserX, UserCheck, Loader2, Crown,
   LogOut, Edit, Lock, ShieldCheck, ShieldOff, RefreshCw,
   Monitor, Smartphone, Globe, Clock, CheckCircle2, XCircle,
-  AlertTriangle, ChevronRight, Activity, Mail,
+  AlertTriangle, ChevronRight, Activity, Mail, SendHorizonal,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -141,6 +141,146 @@ function PermToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => v
   return <Switch checked={on} onCheckedChange={onChange} className="scale-90" />;
 }
 
+/* ── Change Request Dialog ──────────────────────────────────── */
+function ChangeRequestDialog({
+  user, roles, open, onClose, onSubmitted,
+}: {
+  user: NonNullable<UserDetailData['user']>;
+  roles: RoleOption[];
+  open: boolean;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [isActive, setIsActive] = useState<'' | 'true' | 'false'>('');
+  const [approvalLimit, setApprovalLimit] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleClose = () => {
+    setReason(''); setName(''); setEmail(''); setPhone('');
+    setRoleId(''); setIsActive(''); setApprovalLimit('');
+    onClose();
+  };
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    const changes: Record<string, unknown> = {};
+    if (name.trim() && name.trim() !== user.name) changes.name = name.trim();
+    if (email.trim() && email.trim() !== user.email) changes.email = email.trim().toLowerCase();
+    if (phone.trim() !== '') changes.phone = phone.trim() || null;
+    if (roleId && roleId !== user.role.id) changes.roleId = roleId;
+    if (isActive !== '') changes.isActive = isActive === 'true';
+    if (approvalLimit !== '') changes.approvalLimit = approvalLimit ? Number(approvalLimit) : null;
+
+    if (Object.keys(changes).length === 0) {
+      toast.error('กรุณาระบุข้อมูลที่ต้องการเปลี่ยนแปลงอย่างน้อย 1 รายการ');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post('/admin/change-requests', {
+        targetUserId: user.id,
+        reason: reason.trim(),
+        changes,
+      });
+      toast.success('ส่งคำขอแก้ไขไปยัง Admin เรียบร้อย');
+      handleClose();
+      onSubmitted();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <SendHorizonal className="h-4 w-4 text-blue-500" />ขอแก้ไขข้อมูลผู้ใช้
+          </DialogTitle>
+          <DialogDescription>
+            คำขอจะถูกส่งให้ Admin อนุมัติก่อน — กรอกเฉพาะข้อมูลที่ต้องการเปลี่ยนแปลง
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          <div>
+            <Label className="text-xs font-semibold">เหตุผลในการขอแก้ไข <span className="text-destructive">*</span></Label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="ระบุเหตุผลที่ต้องการแก้ไขข้อมูล เช่น เปลี่ยนตำแหน่ง, อีเมลเดิมใช้งานไม่ได้"
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลที่ต้องการเปลี่ยน (เว้นว่างหากไม่ต้องการเปลี่ยน)</div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">ชื่อใหม่</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)}
+                placeholder={user.name} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Email ใหม่</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder={user.email} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">เบอร์โทรใหม่</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)}
+                placeholder={user.phone ?? 'ไม่มี'} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Role ใหม่</Label>
+              <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
+                className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— ไม่เปลี่ยน —</option>
+                {roles.filter((r) => !PROTECTED_ROLES.includes(r.code)).map((r) => (
+                  <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">สถานะ Account</Label>
+              <select value={isActive} onChange={(e) => setIsActive(e.target.value as any)}
+                className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— ไม่เปลี่ยน —</option>
+                <option value="true">เปิดใช้งาน (Active)</option>
+                <option value="false">ปิดใช้งาน (Inactive)</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Approval Limit (฿)</Label>
+              <Input type="number" min="0" step="10000" value={approvalLimit}
+                onChange={(e) => setApprovalLimit(e.target.value)}
+                placeholder={user.approvalLimit ? String(Math.round(Number(user.approvalLimit))) : 'ไม่จำกัด'}
+                className="mt-1.5 h-9 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={submitting}>ยกเลิก</Button>
+          <Button onClick={handleSubmit} disabled={submitting || !reason.trim()} className="bg-blue-600 hover:bg-blue-700">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
+            ส่งคำขอแก้ไข
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────── */
 export function OfficerDetailPage() {
   const params  = useParams();
@@ -152,18 +292,11 @@ export function OfficerDetailPage() {
   const [perms,         setPerms]         = useState<Record<string, boolean>>({});
 
   /* dialog states */
-  const [showResetPw,    setShowResetPw]   = useState(false);
-  const [newPassword,    setNewPassword]   = useState('');
-  const [resetting,      setResetting]     = useState(false);
-  const [showAssignRole, setShowAssignRole] = useState(false);
-  const [selectedRoleId, setSelectedRoleId]= useState('');
-  const [assigning,      setAssigning]     = useState(false);
-  const [toggling,       setToggling]      = useState(false);
-  const [showSuspend,    setShowSuspend]   = useState(false);
-  const [showLogout,     setShowLogout]    = useState(false);
-  const [showEditEmail,  setShowEditEmail] = useState(false);
-  const [newEmail,       setNewEmail]      = useState('');
-  const [savingEmail,    setSavingEmail]   = useState(false);
+  const [showResetPw,       setShowResetPw]       = useState(false);
+  const [newPassword,       setNewPassword]       = useState('');
+  const [resetting,         setResetting]         = useState(false);
+  const [showLogout,        setShowLogout]        = useState(false);
+  const [showChangeRequest, setShowChangeRequest] = useState(false);
 
   /* ── Data loading ── */
   const load = async () => {
@@ -174,32 +307,18 @@ export function OfficerDetailPage() {
       ]);
       setData(uRes.data.data ?? null);
       setRoles(rRes.data.data ?? []);
-      if (uRes.data.data?.user) setSelectedRoleId(uRes.data.data.user.role.id);
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setLoading(false); }
   };
 
   useEffect(() => {
     load();
-    /* init perm toggles from static config */
     const init: Record<string, boolean> = {};
     PERMISSION_GROUPS.forEach(g => g.items.forEach(p => { init[p.key] = p.defaultOn; }));
     setPerms(init);
   }, [userId]);
 
   /* ── Handlers ── */
-  const handleToggleActive = async () => {
-    if (!data?.user) return;
-    setShowSuspend(false);
-    setToggling(true);
-    try {
-      await api.patch(`/admin/users/${userId}/toggle-active`);
-      toast.success('อัปเดตสถานะเรียบร้อย');
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setToggling(false); }
-  };
-
   const handleResetPassword = async () => {
     if (newPassword.length < 8) { toast.error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
     setResetting(true);
@@ -211,38 +330,12 @@ export function OfficerDetailPage() {
     finally { setResetting(false); }
   };
 
-  const handleAssignRole = async () => {
-    if (!selectedRoleId) return;
-    setAssigning(true);
-    try {
-      await api.patch(`/admin/users/${userId}/role`, { roleId: selectedRoleId });
-      toast.success('เปลี่ยน Role เรียบร้อย');
-      setShowAssignRole(false);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setAssigning(false); }
-  };
-
   const handleForceLogout = async () => {
     setShowLogout(false);
     try {
       await api.post(`/admin/users/${userId}/force-logout`);
       toast.success('Force logout เรียบร้อย');
     } catch (err) { toast.error(getApiErrorMessage(err)); }
-  };
-
-  const handleSaveEmail = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newEmail.trim())) { toast.error('รูปแบบ Email ไม่ถูกต้อง'); return; }
-    setSavingEmail(true);
-    try {
-      await api.patch(`/admin/users/${userId}`, { email: newEmail.trim().toLowerCase() });
-      toast.success('เปลี่ยน Email เรียบร้อย');
-      setShowEditEmail(false);
-      setNewEmail('');
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setSavingEmail(false); }
   };
 
   /* ── Loading skeleton ── */
@@ -341,8 +434,7 @@ export function OfficerDetailPage() {
         <div className="max-w-6xl mx-auto px-5 pt-4">
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[13px] text-amber-800">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            Account นี้เป็น <strong>{user.role.nameTh}</strong> — ไม่สามารถเปลี่ยน Role หรือระงับการใช้งานได้
-            <span className="text-amber-600">(Reset Password ได้)</span>
+            Account นี้เป็น <strong>{user.role.nameTh}</strong> — ไม่สามารถยื่นคำขอแก้ไขได้
           </div>
         </div>
       )}
@@ -392,26 +484,12 @@ export function OfficerDetailPage() {
             </CardHeader>
             <CardContent className="px-3 pb-4 flex flex-col gap-1">
 
-              <button
-                onClick={() => toast.info('กำลังเปิด edit form...')}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-foreground hover:bg-slate-100 transition-colors text-left"
-              >
-                <Edit className="h-3.5 w-3.5 text-muted-foreground" /> Edit user
-              </button>
-
-              <button
-                onClick={() => { setNewEmail(user.email); setShowEditEmail(true); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-foreground hover:bg-slate-100 transition-colors text-left"
-              >
-                <Mail className="h-3.5 w-3.5 text-muted-foreground" /> Edit email
-              </button>
-
               {!isProtected && (
                 <button
-                  onClick={() => setShowAssignRole(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-foreground hover:bg-slate-100 transition-colors text-left"
+                  onClick={() => setShowChangeRequest(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-blue-600 hover:bg-blue-50 transition-colors text-left"
                 >
-                  <Shield className="h-3.5 w-3.5 text-muted-foreground" /> Change role
+                  <SendHorizonal className="h-3.5 w-3.5" /> ขอแก้ไขข้อมูล
                 </button>
               )}
 
@@ -437,18 +515,6 @@ export function OfficerDetailPage() {
               >
                 <LogOut className="h-3.5 w-3.5" /> Force logout
               </button>
-
-              {!isProtected && (
-                <button
-                  onClick={() => setShowSuspend(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[12px] font-medium text-red-600 hover:bg-red-50 transition-colors text-left"
-                >
-                  {user.isActive
-                    ? <><UserX className="h-3.5 w-3.5" /> Suspend account</>
-                    : <><UserCheck className="h-3.5 w-3.5" /> Reactivate account</>
-                  }
-                </button>
-              )}
 
             </CardContent>
           </Card>
@@ -531,6 +597,16 @@ export function OfficerDetailPage() {
 
             {/* action buttons */}
             <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-border/50">
+              {!isProtected && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-[12px] gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => setShowChangeRequest(true)}
+                >
+                  <SendHorizonal className="h-3.5 w-3.5" /> ขอแก้ไขข้อมูล / สถานะ
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -547,22 +623,15 @@ export function OfficerDetailPage() {
               >
                 <LogOut className="h-3.5 w-3.5" /> Logout all devices
               </Button>
-              {!isProtected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-[12px] gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
-                  onClick={() => setShowSuspend(true)}
-                  disabled={toggling}
-                >
-                  {toggling
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <Lock className="h-3.5 w-3.5" />
-                  }
-                  {user.isActive ? 'Suspend account' : 'Reactivate account'}
-                </Button>
-              )}
             </div>
+
+            {/* change request info banner */}
+            {!isProtected && (
+              <div className="mt-3 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-[12px] text-blue-700">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                การเปลี่ยน Role, Email, ชื่อ, หรือระงับบัญชี ต้องยื่นคำขอผ่าน Admin — Admin จะอนุมัติและดำเนินการให้
+              </div>
+            )}
           </SectionCard>
 
           {/* ── Section 2: Permissions ── */}
@@ -717,6 +786,17 @@ export function OfficerDetailPage() {
 
       {/* ════ DIALOGS ════ */}
 
+      {/* Change Request */}
+      {!isProtected && (
+        <ChangeRequestDialog
+          user={user}
+          roles={roles}
+          open={showChangeRequest}
+          onClose={() => setShowChangeRequest(false)}
+          onSubmitted={load}
+        />
+      )}
+
       {/* Reset Password */}
       <Dialog open={showResetPw} onOpenChange={o => { if (!o) { setShowResetPw(false); setNewPassword(''); } }}>
         <DialogContent className="sm:max-w-sm">
@@ -754,71 +834,6 @@ export function OfficerDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Assign Role */}
-      {!isProtected && (
-        <Dialog open={showAssignRole} onOpenChange={o => { if (!o) setShowAssignRole(false); }}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-[15px]">เปลี่ยน Role</DialogTitle>
-              <DialogDescription className="text-[13px]">
-                {user.name} — ปัจจุบัน: <strong>{user.role.nameTh}</strong>
-              </DialogDescription>
-            </DialogHeader>
-            <div>
-              <Label className="text-[12px]">Role ใหม่</Label>
-              <select
-                value={selectedRoleId}
-                onChange={e => setSelectedRoleId(e.target.value)}
-                className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] text-foreground"
-              >
-                {roles
-                  .filter(r => !PROTECTED_ROLES.includes(r.code))
-                  .map(r => <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>)
-                }
-              </select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" size="sm" onClick={() => setShowAssignRole(false)} disabled={assigning}>
-                ยกเลิก
-              </Button>
-              <Button size="sm" onClick={handleAssignRole} disabled={assigning || !selectedRoleId}>
-                {assigning && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-                ยืนยัน
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Suspend confirm */}
-      <Dialog open={showSuspend} onOpenChange={setShowSuspend}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-[15px]">
-              {user.isActive ? 'Suspend account' : 'Reactivate account'}
-            </DialogTitle>
-            <DialogDescription className="text-[13px]">
-              {user.isActive
-                ? `ระงับการเข้าถึงของ ${user.name} ทันที session ทั้งหมดจะถูกยกเลิก`
-                : `เปิดใช้งาน account ของ ${user.name} อีกครั้ง`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowSuspend(false)}>ยกเลิก</Button>
-            <Button
-              size="sm"
-              variant={user.isActive ? 'destructive' : 'default'}
-              onClick={handleToggleActive}
-              disabled={toggling}
-            >
-              {toggling && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-              {user.isActive ? 'Suspend' : 'Reactivate'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Force logout confirm */}
       <Dialog open={showLogout} onOpenChange={setShowLogout}>
         <DialogContent className="sm:max-w-sm">
@@ -832,46 +847,6 @@ export function OfficerDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setShowLogout(false)}>ยกเลิก</Button>
             <Button size="sm" variant="destructive" onClick={handleForceLogout}>
               <LogOut className="h-3.5 w-3.5 mr-1" /> Force logout
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Email */}
-      <Dialog open={showEditEmail} onOpenChange={o => { if (!o) { setShowEditEmail(false); setNewEmail(''); } }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-[15px]">
-              <Mail className="h-4 w-4 text-blue-500" /> แก้ไข Email
-            </DialogTitle>
-            <DialogDescription className="text-[13px]">
-              {user.name} — ปัจจุบัน: {user.email}
-            </DialogDescription>
-          </DialogHeader>
-          <div>
-            <Label className="text-xs">Email ใหม่</Label>
-            <Input
-              type="email"
-              value={newEmail}
-              onChange={e => setNewEmail(e.target.value)}
-              placeholder="example@company.com"
-              className="mt-1.5 h-9 text-[13px]"
-              autoFocus
-            />
-            <p className="text-[11px] text-muted-foreground mt-1.5">Email ต้องไม่ซ้ำกับ account อื่นในระบบ</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setShowEditEmail(false); setNewEmail(''); }} disabled={savingEmail}>
-              ยกเลิก
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveEmail}
-              disabled={savingEmail || !newEmail.trim() || newEmail.trim() === user.email}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {savingEmail && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-              บันทึก
             </Button>
           </DialogFooter>
         </DialogContent>

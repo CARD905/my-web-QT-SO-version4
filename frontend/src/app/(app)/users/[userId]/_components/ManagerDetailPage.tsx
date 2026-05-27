@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft, FileText, Shield, Key, UserX, UserCheck, Loader2, Crown,
-  Edit, Users, LogOut, Lock, AlertTriangle, Search, Download, RefreshCw,
-  Check, X, TrendingUp, Smartphone, Monitor, Globe, Clock, Bell,
-  DollarSign, Percent, ArrowUpRight, Building2, Mail, Phone, BadgeCheck,
-  Calendar, Activity, UserPlus, UserMinus, GitBranch, AlertCircle,
+  Edit, Users, LogOut, Lock, AlertTriangle, Search, RefreshCw,
+  TrendingUp, DollarSign, ArrowUpRight, Building2, Mail, Phone, BadgeCheck,
+  Calendar, Activity, UserPlus, GitBranch, AlertCircle,
   CheckCircle2, XCircle, Hash, Layers, BarChart3, FileCheck,
-  Sliders, ShieldAlert, ShieldCheck, Fingerprint, Laptop2,
+  Sliders, ShieldAlert, ShieldCheck, Fingerprint, Clock, Globe,
+  SendHorizonal,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,7 +27,6 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/utils';
 import type { ApiResponse } from '@/types/api';
 
-// ─── Types ────────────────────────────────────────────────────
 interface UserDetailData {
   user: {
     id: string; name: string; email: string;
@@ -44,12 +43,10 @@ interface UserDetailData {
 }
 
 interface RoleOption { id: string; code: string; nameTh: string; level: number; }
-
 interface ActivityLogItem {
   id: string; action: string; entityType: string; description: string;
-  createdAt: string; ipAddress?: string; userAgent?: string;
+  createdAt: string; ipAddress?: string;
 }
-
 interface TeamMemberItem {
   id: string; name: string; email: string; isActive: boolean;
   role: { code: string; nameTh: string };
@@ -58,7 +55,6 @@ interface TeamMemberItem {
 
 const PROTECTED_ROLES = ['ADMIN', 'CEO'];
 
-// ─── Helpers ──────────────────────────────────────────────────
 function OnlineIndicator({ isOnline }: { isOnline: boolean }) {
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${isOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -87,7 +83,148 @@ function SectionHeader({ icon: Icon, title, subtitle, action }: {
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────
+// ─── Change Request Dialog ─────────────────────────────────────────────────
+function ChangeRequestDialog({
+  user, roles, open, onClose, onSubmitted,
+}: {
+  user: NonNullable<UserDetailData['user']>;
+  roles: RoleOption[];
+  open: boolean;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [isActive, setIsActive] = useState<'' | 'true' | 'false'>('');
+  const [approvalLimit, setApprovalLimit] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleClose = () => {
+    setReason(''); setName(''); setEmail(''); setPhone('');
+    setRoleId(''); setIsActive(''); setApprovalLimit('');
+    onClose();
+  };
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    const changes: Record<string, unknown> = {};
+    if (name.trim() && name.trim() !== user.name) changes.name = name.trim();
+    if (email.trim() && email.trim() !== user.email) changes.email = email.trim().toLowerCase();
+    if (phone.trim() !== '') changes.phone = phone.trim() || null;
+    if (roleId && roleId !== user.role.id) changes.roleId = roleId;
+    if (isActive !== '') changes.isActive = isActive === 'true';
+    if (approvalLimit !== '') changes.approvalLimit = approvalLimit ? Number(approvalLimit) : null;
+
+    if (Object.keys(changes).length === 0) {
+      toast.error('กรุณาระบุข้อมูลที่ต้องการเปลี่ยนแปลงอย่างน้อย 1 รายการ');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post('/admin/change-requests', {
+        targetUserId: user.id,
+        reason: reason.trim(),
+        changes,
+      });
+      toast.success('ส่งคำขอแก้ไขไปยัง Admin เรียบร้อย');
+      handleClose();
+      onSubmitted();
+    } catch (err) {
+      toast.error(getApiErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <SendHorizonal className="h-4 w-4 text-blue-500" />ขอแก้ไขข้อมูลผู้ใช้
+          </DialogTitle>
+          <DialogDescription>
+            คำขอจะถูกส่งให้ Admin อนุมัติก่อน — กรอกเฉพาะข้อมูลที่ต้องการเปลี่ยนแปลง
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+          {/* Reason — required */}
+          <div>
+            <Label className="text-xs font-semibold">เหตุผลในการขอแก้ไข <span className="text-destructive">*</span></Label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="ระบุเหตุผลที่ต้องการแก้ไขข้อมูล เช่น เปลี่ยนตำแหน่ง, อีเมลเดิมใช้งานไม่ได้"
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลที่ต้องการเปลี่ยน (เว้นว่างหากไม่ต้องการเปลี่ยน)</div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">ชื่อใหม่</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)}
+                placeholder={user.name} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Email ใหม่</Label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder={user.email} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">เบอร์โทรใหม่</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)}
+                placeholder={user.phone ?? 'ไม่มี'} className="mt-1.5 h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs">Role ใหม่</Label>
+              <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
+                className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— ไม่เปลี่ยน —</option>
+                {roles.filter((r) => !PROTECTED_ROLES.includes(r.code)).map((r) => (
+                  <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">สถานะ Account</Label>
+              <select value={isActive} onChange={(e) => setIsActive(e.target.value as any)}
+                className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="">— ไม่เปลี่ยน —</option>
+                <option value="true">เปิดใช้งาน (Active)</option>
+                <option value="false">ปิดใช้งาน (Inactive)</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Approval Limit (฿)</Label>
+              <Input type="number" min="0" step="10000" value={approvalLimit}
+                onChange={(e) => setApprovalLimit(e.target.value)}
+                placeholder={user.approvalLimit ? String(Math.round(Number(user.approvalLimit))) : 'ไม่จำกัด'}
+                className="mt-1.5 h-9 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={submitting}>ยกเลิก</Button>
+          <Button onClick={handleSubmit} disabled={submitting || !reason.trim()} className="bg-blue-600 hover:bg-blue-700">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
+            ส่งคำขอแก้ไข
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main ──────────────────────────────────────────────────────
 export function ManagerDetailPage() {
   const params = useParams();
   const userId = params.userId as string;
@@ -97,87 +234,47 @@ export function ManagerDetailPage() {
   const [loading,     setLoading]     = useState(true);
   const [activeSection, setActiveSection] = useState('approval');
 
-  // ✅ Real data states
   const [activityLogs,   setActivityLogs]   = useState<ActivityLogItem[]>([]);
   const [teamMembers,    setTeamMembers]     = useState<TeamMemberItem[]>([]);
   const [logsLoading,    setLogsLoading]     = useState(false);
   const [membersLoading, setMembersLoading]  = useState(false);
 
-  // Approval limits — โหลดจาก user.approvalLimit
-  const [quotLimit,     setQuotLimit]     = useState('500000');
-  const [discountLimit, setDiscountLimit] = useState('15');
-  const [savingLimits,  setSavingLimits]  = useState(false);
+  const [showChangeRequest, setShowChangeRequest] = useState(false);
+  const [showForceLogout,   setShowForceLogout]   = useState(false);
+  const [actionLoading,     setActionLoading]     = useState(false);
+  const [logSearch,         setLogSearch]         = useState('');
 
-  // Dialogs
-  const [showResetPw,      setShowResetPw]      = useState(false);
-  const [showAssignRole,   setShowAssignRole]   = useState(false);
-  const [showEditLimits,   setShowEditLimits]   = useState(false);
-  const [showEditEmail,    setShowEditEmail]    = useState(false);
-  const [showConfirmLock,  setShowConfirmLock]  = useState(false);
-  const [showConfirmSuspend, setShowConfirmSuspend] = useState(false);
-  const [showForceLogout,  setShowForceLogout]  = useState(false);
-
-  // Edit email
-  const [newEmail,    setNewEmail]    = useState('');
-  const [savingEmail, setSavingEmail] = useState(false);
-
-  const [newPassword,   setNewPassword]   = useState('');
-  const [selectedRoleId, setSelectedRoleId] = useState('');
-  const [resetting,     setResetting]     = useState(false);
-  const [assigning,     setAssigning]     = useState(false);
-  const [toggling,      setToggling]      = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-
-  // Log filters
-  const [logSearch,     setLogSearch]     = useState('');
-  const [logTypeFilter, setLogTypeFilter] = useState('all');
-
-  // ─── Loaders ───────────────────────────────────────────────
   const load = async () => {
     try {
       const [uRes, rRes] = await Promise.all([
         api.get<ApiResponse<UserDetailData>>(`/manager-dashboard/users/${userId}`),
         api.get<ApiResponse<RoleOption[]>>('/admin/users/_roles'),
       ]);
-      const userData = uRes.data.data;
-      setData(userData ?? null);
+      setData(uRes.data.data ?? null);
       setRoles(rRes.data.data ?? []);
-      if (userData?.user) {
-        setSelectedRoleId(userData.user.role.id);
-        // โหลด approval limit จาก user จริง
-        setQuotLimit(userData.user.approvalLimit ? String(Math.round(Number(userData.user.approvalLimit))) : '');
-      }
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setLoading(false); }
   };
 
-  // ✅ โหลด Activity Logs จริงจาก backend
   const loadActivityLogs = async () => {
     setLogsLoading(true);
     try {
       const res = await api.get<any>(`/admin/activity-logs?userId=${userId}&limit=20`);
       setActivityLogs(res.data.data ?? []);
-    } catch (err) {
-      // ถ้า endpoint ไม่มี ใช้ empty array
-      setActivityLogs([]);
-    } finally { setLogsLoading(false); }
+    } catch { setActivityLogs([]); }
+    finally { setLogsLoading(false); }
   };
 
-  // ✅ โหลด Team Members จาก team ของ manager
   const loadTeamMembers = async (teamId: string) => {
     setMembersLoading(true);
     try {
       const res = await api.get<any>(`/admin/users?teamId=${teamId}&limit=50`);
-      const members = (res.data.data ?? []).filter((m: any) => m.id !== userId);
-      setTeamMembers(members);
-    } catch (err) {
-      setTeamMembers([]);
-    } finally { setMembersLoading(false); }
+      setTeamMembers((res.data.data ?? []).filter((m: any) => m.id !== userId));
+    } catch { setTeamMembers([]); }
+    finally { setMembersLoading(false); }
   };
 
   useEffect(() => { load(); }, [userId]);
-
-  // โหลด logs และ team members เมื่อ data พร้อม
   useEffect(() => {
     if (data?.user) {
       loadActivityLogs();
@@ -186,75 +283,6 @@ export function ManagerDetailPage() {
     }
   }, [data?.user?.id]);
 
-  // ─── Handlers ──────────────────────────────────────────────
-
-  // ✅ Toggle Active
-  const handleToggleActive = async () => {
-    if (!data?.user) return;
-    setShowConfirmSuspend(false);
-    setToggling(true);
-    try {
-      await api.patch(`/admin/users/${userId}/toggle-active`);
-      toast.success(`${data.user.isActive ? 'ปิด' : 'เปิด'}การใช้งาน ${data.user.name} เรียบร้อย`);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setToggling(false); }
-  };
-
-  // ✅ Reset Password
-  const handleResetPassword = async () => {
-    if (newPassword.length < 8) { toast.error('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'); return; }
-    setResetting(true);
-    try {
-      await api.post(`/admin/users/${userId}/reset-password`, { newPassword });
-      toast.success('Reset password เรียบร้อย');
-      setShowResetPw(false); setNewPassword('');
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setResetting(false); }
-  };
-
-  // ✅ Assign Role
-  const handleAssignRole = async () => {
-    if (!selectedRoleId) return;
-    setAssigning(true);
-    try {
-      await api.patch(`/admin/users/${userId}/role`, { roleId: selectedRoleId });
-      toast.success('เปลี่ยน Role เรียบร้อย');
-      setShowAssignRole(false);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setAssigning(false); }
-  };
-
-  // ✅ Save Email
-  const handleSaveEmail = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newEmail.trim())) { toast.error('รูปแบบ Email ไม่ถูกต้อง'); return; }
-    setSavingEmail(true);
-    try {
-      await api.patch(`/admin/users/${userId}`, { email: newEmail.trim().toLowerCase() });
-      toast.success('เปลี่ยน Email เรียบร้อย');
-      setShowEditEmail(false);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setSavingEmail(false); }
-  };
-
-  // ✅ Save Approval Limit — ใช้ endpoint ที่มีจริง
-  const handleSaveLimits = async () => {
-    setSavingLimits(true);
-    try {
-      await api.patch(`/admin/approval-authority/users/${userId}`, {
-        limit: Number(quotLimit) || null,
-      });
-      toast.success('บันทึก Approval Limit เรียบร้อย');
-      setShowEditLimits(false);
-      await load();
-    } catch (err) { toast.error(getApiErrorMessage(err)); }
-    finally { setSavingLimits(false); }
-  };
-
-  // ✅ Force Logout
   const handleForceLogout = async () => {
     setShowForceLogout(false);
     setActionLoading(true);
@@ -262,24 +290,10 @@ export function ManagerDetailPage() {
       await api.post(`/admin/users/${userId}/force-logout`);
       toast.success('Force logout เรียบร้อย — user จะต้อง login ใหม่ทุกอุปกรณ์');
       await loadActivityLogs();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err));
-    } finally { setActionLoading(false); }
-  };
-
-  // ✅ Lock Account (ปิดการใช้งาน + log)
-  const handleLockAccount = async () => {
-    setShowConfirmLock(false);
-    setActionLoading(true);
-    try {
-      await api.patch(`/admin/users/${userId}/toggle-active`);
-      toast.success('Lock account เรียบร้อย');
-      await load();
     } catch (err) { toast.error(getApiErrorMessage(err)); }
     finally { setActionLoading(false); }
   };
 
-  // ─── Loading ───────────────────────────────────────────────
   if (loading) return (
     <div className="flex gap-6 max-w-[1400px] p-6">
       <div className="w-64 space-y-3 shrink-0">
@@ -289,7 +303,6 @@ export function ManagerDetailPage() {
       <div className="flex-1 space-y-4">
         <Skeleton className="h-32 rounded-2xl" />
         <Skeleton className="h-64 rounded-2xl" />
-        <Skeleton className="h-48 rounded-2xl" />
       </div>
     </div>
   );
@@ -309,23 +322,21 @@ export function ManagerDetailPage() {
     : false;
 
   const navItems = [
-    { id: 'approval',    label: 'Approval Settings', icon: DollarSign },
-    { id: 'hierarchy',   label: 'Team Hierarchy',    icon: GitBranch },
-    { id: 'security',    label: 'Security',           icon: ShieldAlert },
-    { id: 'logs',        label: 'Activity Logs',      icon: Activity },
+    { id: 'approval',  label: 'Approval Settings', icon: DollarSign },
+    { id: 'hierarchy', label: 'Team Hierarchy',    icon: GitBranch  },
+    { id: 'security',  label: 'Security',           icon: ShieldAlert },
+    { id: 'logs',      label: 'Activity Logs',      icon: Activity   },
   ];
 
-  // Filter logs
-  const filteredLogs = activityLogs.filter(log => {
-    const matchSearch = logSearch === '' ||
-      log.description.toLowerCase().includes(logSearch.toLowerCase()) ||
-      log.action.toLowerCase().includes(logSearch.toLowerCase());
-    return matchSearch;
-  });
+  const filteredLogs = activityLogs.filter((log) =>
+    logSearch === '' ||
+    log.description.toLowerCase().includes(logSearch.toLowerCase()) ||
+    log.action.toLowerCase().includes(logSearch.toLowerCase()),
+  );
 
   return (
     <div className="min-h-screen bg-slate-50/50">
-      {/* ── Top nav ── */}
+      {/* Top nav */}
       <div className="px-6 py-3 border-b bg-white sticky top-0 z-30 flex items-center gap-3">
         <Link href="/users" className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-medium">
           <ArrowLeft className="h-3.5 w-3.5" />กลับรายการ Users
@@ -340,7 +351,7 @@ export function ManagerDetailPage() {
         )}
       </div>
 
-      {/* ── Header Card ── */}
+      {/* Header Card */}
       <div className="px-6 pt-5 pb-0">
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
           <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-violet-700 px-6 py-5">
@@ -374,28 +385,27 @@ export function ManagerDetailPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button onClick={() => { setNewEmail(user.email); setShowEditEmail(true); }} className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5" />Edit Email
-                </button>
-                <button onClick={() => setShowEditLimits(true)} className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5">
-                  <Sliders className="h-3.5 w-3.5" />Edit Limit
-                </button>
-                <button onClick={() => setShowResetPw(true)} className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5" />Reset PW
-                </button>
                 {!isProtected && (
-                  <button onClick={() => setShowConfirmSuspend(true)} disabled={toggling} className="h-8 px-3 rounded-lg bg-red-500/20 hover:bg-red-500/35 text-red-100 text-xs font-medium border border-red-400/30 flex items-center gap-1.5">
-                    {toggling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
-                    {user.isActive ? 'Deactivate' : 'Activate'}
+                  <button
+                    onClick={() => setShowChangeRequest(true)}
+                    className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5"
+                  >
+                    <SendHorizonal className="h-3.5 w-3.5" />ขอแก้ไขข้อมูล
                   </button>
                 )}
+                <button
+                  onClick={() => setShowForceLogout(true)}
+                  className="h-8 px-3 rounded-lg bg-red-500/20 hover:bg-red-500/35 text-red-100 text-xs font-medium border border-red-400/30 flex items-center gap-1.5"
+                >
+                  <LogOut className="h-3.5 w-3.5" />Force Logout
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Main ── */}
+      {/* Main */}
       <div className="flex gap-5 px-6 py-5 items-start">
 
         {/* Sidebar */}
@@ -416,15 +426,15 @@ export function ManagerDetailPage() {
             </div>
             <div className="p-4 space-y-2.5 text-xs">
               {[
-                { icon: Mail,         label: 'Email',        value: user.email },
-                { icon: Phone,        label: 'Phone',        value: user.phone ?? '—' },
-                { icon: Shield,       label: 'Role',         value: user.role.nameTh },
-                { icon: Layers,       label: 'Level',        value: user.managerLevel ?? '—' },
-                { icon: Building2,    label: 'Team',         value: user.team?.name ?? '—' },
-                { icon: Users,        label: 'Reports To',   value: user.reportsTo?.name ?? '—' },
-                { icon: DollarSign,   label: 'Approval Limit', value: user.approvalLimit ? formatMoney(Number(user.approvalLimit)) : 'ไม่จำกัด' },
-                { icon: Calendar,     label: 'Created',      value: formatDate(user.createdAt) },
-                { icon: Clock,        label: 'Last Login',   value: user.lastLoginAt ? formatDate(user.lastLoginAt) : 'ยังไม่เคย' },
+                { icon: Mail,       label: 'Email',          value: user.email },
+                { icon: Phone,      label: 'Phone',          value: user.phone ?? '—' },
+                { icon: Shield,     label: 'Role',           value: user.role.nameTh },
+                { icon: Layers,     label: 'Level',          value: user.managerLevel ?? '—' },
+                { icon: Building2,  label: 'Team',           value: user.team?.name ?? '—' },
+                { icon: Users,      label: 'Reports To',     value: user.reportsTo?.name ?? '—' },
+                { icon: DollarSign, label: 'Approval Limit', value: user.approvalLimit ? formatMoney(Number(user.approvalLimit)) : 'ไม่จำกัด' },
+                { icon: Calendar,   label: 'Created',        value: formatDate(user.createdAt) },
+                { icon: Clock,      label: 'Last Login',     value: user.lastLoginAt ? formatDate(user.lastLoginAt) : 'ยังไม่เคย' },
               ].map(({ icon: Icon, label, value }) => (
                 <div key={label} className="flex items-start gap-2">
                   <Icon className="h-3 w-3 text-slate-400 mt-0.5 shrink-0" />
@@ -444,7 +454,7 @@ export function ManagerDetailPage() {
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="p-3">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Sections</p>
-              {navItems.map(item => (
+              {navItems.map((item) => (
                 <button key={item.id} onClick={() => setActiveSection(item.id)}
                   className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${activeSection === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}>
                   <item.icon className={`h-3.5 w-3.5 ${activeSection === item.id ? 'text-blue-600' : 'text-slate-400'}`} />
@@ -459,22 +469,16 @@ export function ManagerDetailPage() {
             <div className="p-3">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Quick Actions</p>
               <div className="space-y-0.5">
-                {[
-                  { icon: Edit,          label: 'Edit Manager',        action: () => setActiveSection('approval') },
-                  { icon: Mail,          label: 'Edit Email',          action: () => { setNewEmail(user.email); setShowEditEmail(true); } },
-                  { icon: Shield,        label: 'Change Role',         action: () => !isProtected && setShowAssignRole(true), disabled: isProtected },
-                  { icon: Sliders,       label: 'Edit Approval Limit', action: () => setShowEditLimits(true) },
-                  { icon: UserPlus,      label: 'Assign Team Members', action: () => { window.location.href = '/admin/teams'; } },
-                  { icon: Key,           label: 'Reset Password',      action: () => setShowResetPw(true) },
-                  { icon: LogOut,        label: 'Force Logout',         action: () => setShowForceLogout(true), color: 'text-amber-600 hover:bg-amber-50' },
-                  { icon: Lock,          label: 'Lock Account',         action: () => setShowConfirmLock(true), color: 'text-red-500 hover:bg-red-50', disabled: isProtected || !user.isActive },
-                  { icon: user.isActive ? UserX : UserCheck, label: user.isActive ? 'Suspend Account' : 'Activate Account', action: () => setShowConfirmSuspend(true), color: 'text-red-600 hover:bg-red-50', disabled: isProtected },
-                ].map(({ icon: Icon, label, action, color = '', disabled = false }) => (
-                  <button key={label} onClick={action} disabled={disabled || actionLoading}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${disabled ? 'opacity-40 cursor-not-allowed text-slate-400' : `text-slate-600 hover:bg-slate-50 ${color}`}`}>
-                    <Icon className="h-3 w-3 shrink-0" />{label}
+                {!isProtected && (
+                  <button onClick={() => setShowChangeRequest(true)}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-blue-600 hover:bg-blue-50">
+                    <SendHorizonal className="h-3 w-3 shrink-0" />ขอแก้ไขข้อมูล
                   </button>
-                ))}
+                )}
+                <button onClick={() => setShowForceLogout(true)} disabled={actionLoading}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-amber-600 hover:bg-amber-50">
+                  <LogOut className="h-3 w-3 shrink-0" />Force Logout
+                </button>
               </div>
             </div>
           </div>
@@ -483,25 +487,26 @@ export function ManagerDetailPage() {
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-5">
 
-          {/* ════ APPROVAL SETTINGS ════ */}
+          {/* APPROVAL SETTINGS */}
           {activeSection === 'approval' && (
             <section>
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
                 <SectionHeader icon={DollarSign} title="Approval Settings"
                   subtitle="วงเงินอนุมัติและสิทธิ์ของ Manager คนนี้"
                   action={
-                    <button onClick={() => setShowEditLimits(true)} className="h-7 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 flex items-center gap-1.5">
-                      <Edit className="h-3 w-3" />Edit Limit
-                    </button>
+                    !isProtected ? (
+                      <button onClick={() => setShowChangeRequest(true)} className="h-7 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 flex items-center gap-1.5">
+                        <SendHorizonal className="h-3 w-3" />ขอแก้ไข Limit
+                      </button>
+                    ) : undefined
                   }
                 />
 
-                {/* Stats from real data */}
                 <div className="grid grid-cols-3 gap-3 mb-5">
                   {[
-                    { label: 'Quotations Total',  value: data.totals.quotations,                    icon: FileText,  color: 'blue' },
-                    { label: 'Approved Value',     value: formatMoney(data.totals.approvedValue),    icon: DollarSign, color: 'emerald' },
-                    { label: 'This Month',         value: data.totals.thisMonth,                     icon: Calendar,  color: 'violet' },
+                    { label: 'Quotations Total', value: data.totals.quotations,                 icon: FileText,   color: 'blue'    },
+                    { label: 'Approved Value',    value: formatMoney(data.totals.approvedValue), icon: DollarSign, color: 'emerald' },
+                    { label: 'This Month',        value: data.totals.thisMonth,                  icon: Calendar,   color: 'violet'  },
                   ].map(({ label, value, icon: Icon, color }) => (
                     <div key={label} className={`rounded-xl border-2 p-4 bg-gradient-to-br ${color === 'blue' ? 'border-blue-100 from-blue-50 to-blue-50/30' : color === 'emerald' ? 'border-emerald-100 from-emerald-50 to-emerald-50/30' : 'border-violet-100 from-violet-50 to-violet-50/30'}`}>
                       <div className={`h-7 w-7 rounded-lg flex items-center justify-center mb-2 ${color === 'blue' ? 'bg-blue-100' : color === 'emerald' ? 'bg-emerald-100' : 'bg-violet-100'}`}>
@@ -513,25 +518,18 @@ export function ManagerDetailPage() {
                   ))}
                 </div>
 
-                {/* Approval limit display */}
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 mb-4">
                   <p className="text-xs font-semibold text-slate-600 mb-2">Approval Limit ปัจจุบัน</p>
-                  <div className="flex items-center gap-3">
-                    <div className="text-2xl font-bold text-blue-700">
-                      {user.approvalLimit ? formatMoney(Number(user.approvalLimit)) : 'ไม่จำกัด'}
-                    </div>
-                    <button onClick={() => setShowEditLimits(true)} className="text-xs text-primary hover:underline flex items-center gap-1">
-                      <Edit className="h-3 w-3" />แก้ไข
-                    </button>
+                  <div className="text-2xl font-bold text-blue-700">
+                    {user.approvalLimit ? formatMoney(Number(user.approvalLimit)) : 'ไม่จำกัด'}
                   </div>
                 </div>
 
-                {/* Quotation status breakdown */}
                 {data.byStatus.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-slate-600 mb-3">Status Breakdown</p>
                     <div className="flex flex-wrap gap-2">
-                      {data.byStatus.map(s => (
+                      {data.byStatus.map((s) => (
                         <div key={s.status} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-100 bg-slate-50 text-xs">
                           <span className="font-medium text-slate-600">{s.status}</span>
                           <span className="font-bold text-slate-800">{s.count}</span>
@@ -541,12 +539,11 @@ export function ManagerDetailPage() {
                   </div>
                 )}
 
-                {/* Recent quotations */}
                 {data.recent.length > 0 && (
                   <div className="mt-4">
                     <p className="text-xs font-semibold text-slate-600 mb-3">Quotations ล่าสุด</p>
                     <div className="space-y-2">
-                      {data.recent.slice(0, 5).map(q => (
+                      {data.recent.slice(0, 5).map((q) => (
                         <Link key={q.id} href={`/quotations/${q.id}`}
                           className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all">
                           <div className="flex-1 min-w-0">
@@ -566,7 +563,7 @@ export function ManagerDetailPage() {
             </section>
           )}
 
-          {/* ════ TEAM HIERARCHY ════ */}
+          {/* TEAM HIERARCHY */}
           {activeSection === 'hierarchy' && (
             <section>
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
@@ -578,8 +575,6 @@ export function ManagerDetailPage() {
                     </Link>
                   }
                 />
-
-                {/* Manager info */}
                 <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 mb-5">
                   <p className="text-[10px] text-blue-600 font-semibold uppercase tracking-wider mb-2">Current Manager</p>
                   <div className="flex items-center gap-3">
@@ -593,8 +588,6 @@ export function ManagerDetailPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* Team members */}
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-xs font-semibold text-slate-600">
@@ -606,18 +599,17 @@ export function ManagerDetailPage() {
                       <RefreshCw className="h-2.5 w-2.5" />Refresh
                     </button>
                   </div>
-
                   {membersLoading ? (
-                    <div className="space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
+                    <div className="space-y-2">{[0,1,2].map((i) => <Skeleton key={i} className="h-12 rounded-xl" />)}</div>
                   ) : teamMembers.length === 0 ? (
                     <div className="text-center py-8 text-xs text-slate-400">
                       {user.team ? 'ไม่มีสมาชิกในทีม' : 'Manager ยังไม่ได้อยู่ใน Team'}
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      {teamMembers.map(member => (
+                      {teamMembers.map((member) => (
                         <Link key={member.id} href={`/users/${member.id}`}
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all group">
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all">
                           <div className={`h-7 w-7 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${member.isActive ? 'bg-gradient-to-br from-blue-500 to-violet-500' : 'bg-slate-300'}`}>
                             {member.name.slice(0, 1)}
                           </div>
@@ -637,20 +629,18 @@ export function ManagerDetailPage() {
             </section>
           )}
 
-          {/* ════ SECURITY ════ */}
+          {/* SECURITY */}
           {activeSection === 'security' && (
             <section>
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
                 <SectionHeader icon={ShieldAlert} title="Security & Account Control"
-                  subtitle="จัดการความปลอดภัยและการเข้าถึง Account"
+                  subtitle="การควบคุมความปลอดภัยของ Account (การแก้ไขข้อมูลใช้คำขอผ่าน Admin)"
                 />
-
-                {/* Status grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                   {[
-                    { label: 'Account Status',  value: user.isActive ? 'Active' : 'Inactive', icon: ShieldCheck, ok: user.isActive },
-                    { label: 'Last Login',       value: user.lastLoginAt ? formatDate(user.lastLoginAt) : 'ยังไม่เคย', icon: Clock, ok: !!user.lastLoginAt },
-                    { label: 'MFA Status',       value: 'ตรวจสอบจาก Log',    icon: Fingerprint, ok: true },
+                    { label: 'Account Status', value: user.isActive ? 'Active' : 'Inactive', icon: ShieldCheck, ok: user.isActive },
+                    { label: 'Last Login',      value: user.lastLoginAt ? formatDate(user.lastLoginAt) : 'ยังไม่เคย', icon: Clock, ok: !!user.lastLoginAt },
+                    { label: 'MFA Status',      value: 'ตรวจสอบจาก Log', icon: Fingerprint, ok: true },
                   ].map(({ label, value, icon: Icon, ok }) => (
                     <div key={label} className={`p-3 rounded-xl border ${ok ? 'border-slate-100 bg-slate-50' : 'border-red-100 bg-red-50/40'}`}>
                       <div className="flex items-center justify-between mb-1.5">
@@ -663,27 +653,31 @@ export function ManagerDetailPage() {
                   ))}
                 </div>
 
-                {/* Actions */}
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 mb-4 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700">
+                    การเปลี่ยน Role, Email, ระงับบัญชี หรือ Reset Password ต้องยื่นคำขอผ่าน Admin
+                    — กดปุ่ม <strong>ขอแก้ไขข้อมูล</strong> ด้านบน
+                  </p>
+                </div>
+
                 <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: 'Reset Password',     icon: Key,    action: () => setShowResetPw(true),      color: 'border-slate-200 text-slate-600 hover:bg-slate-50' },
-                    { label: 'Force Logout All',   icon: LogOut, action: () => setShowForceLogout(true),  color: 'border-amber-200 text-amber-600 hover:bg-amber-50' },
-                    ...(isProtected ? [] : [
-                      { label: 'Lock Account', icon: Lock, action: () => setShowConfirmLock(true), color: 'border-red-200 text-red-600 hover:bg-red-50' },
-                      { label: user.isActive ? 'Suspend Account' : 'Activate Account', icon: user.isActive ? UserX : UserCheck, action: () => setShowConfirmSuspend(true), color: 'border-red-200 text-red-500 hover:bg-red-50' },
-                    ]),
-                  ].map(({ label, icon: Icon, action, color }) => (
-                    <button key={label} onClick={action} disabled={actionLoading}
-                      className={`h-8 px-3 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all ${color} disabled:opacity-50`}>
-                      <Icon className="h-3.5 w-3.5" />{label}
+                  {!isProtected && (
+                    <button onClick={() => setShowChangeRequest(true)}
+                      className="h-8 px-3 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 text-xs font-medium flex items-center gap-1.5 transition-all">
+                      <SendHorizonal className="h-3.5 w-3.5" />ขอแก้ไขข้อมูล / สถานะ
                     </button>
-                  ))}
+                  )}
+                  <button onClick={() => setShowForceLogout(true)} disabled={actionLoading}
+                    className="h-8 px-3 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 text-xs font-medium flex items-center gap-1.5 transition-all disabled:opacity-50">
+                    <LogOut className="h-3.5 w-3.5" />Force Logout All Devices
+                  </button>
                 </div>
               </div>
             </section>
           )}
 
-          {/* ════ ACTIVITY LOGS ════ */}
+          {/* ACTIVITY LOGS */}
           {activeSection === 'logs' && (
             <section>
               <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
@@ -696,23 +690,21 @@ export function ManagerDetailPage() {
                     </button>
                   }
                 />
-
                 <div className="flex items-center gap-2 mb-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                     <input type="text" placeholder="ค้นหา log..." value={logSearch}
-                      onChange={e => setLogSearch(e.target.value)}
+                      onChange={(e) => setLogSearch(e.target.value)}
                       className="w-full h-8 pl-8 pr-3 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-300 focus:bg-white transition-all" />
                   </div>
                 </div>
-
                 {logsLoading ? (
-                  <div className="space-y-2">{[0,1,2,3].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
+                  <div className="space-y-2">{[0,1,2,3].map((i) => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
                 ) : filteredLogs.length === 0 ? (
                   <div className="text-center py-10 text-xs text-slate-400">ไม่พบ Activity Log</div>
                 ) : (
                   <div className="space-y-2">
-                    {filteredLogs.map(log => (
+                    {filteredLogs.map((log) => (
                       <div key={log.id} className="border-l-2 border-l-blue-300 bg-blue-50/30 pl-3 py-2.5 pr-3 rounded-r-lg">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0">
@@ -732,122 +724,19 @@ export function ManagerDetailPage() {
               </div>
             </section>
           )}
-
         </div>
       </div>
 
-      {/* ════ DIALOGS ════ */}
-
-      {/* Edit Email */}
-      <Dialog open={showEditEmail} onOpenChange={o => { if (!o) { setShowEditEmail(false); setNewEmail(''); } }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Mail className="h-4 w-4 text-blue-500" />แก้ไข Email</DialogTitle>
-            <DialogDescription>{user.name} — ปัจจุบัน: {user.email}</DialogDescription>
-          </DialogHeader>
-          <div>
-            <Label className="text-xs">Email ใหม่</Label>
-            <Input
-              type="email"
-              value={newEmail}
-              onChange={e => setNewEmail(e.target.value)}
-              placeholder="example@company.com"
-              className="mt-1.5"
-              autoFocus
-            />
-            <p className="text-[11px] text-muted-foreground mt-1.5">
-              Email ต้องไม่ซ้ำกับ account อื่นในระบบ
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowEditEmail(false); setNewEmail(''); }} disabled={savingEmail}>
-              ยกเลิก
-            </Button>
-            <Button
-              onClick={handleSaveEmail}
-              disabled={savingEmail || !newEmail.trim() || newEmail.trim() === user.email}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {savingEmail && <Loader2 className="h-4 w-4 animate-spin" />}บันทึก
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reset Password */}
-      <Dialog open={showResetPw} onOpenChange={o => { if (!o) { setShowResetPw(false); setNewPassword(''); } }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Reset Password</DialogTitle>
-            <DialogDescription>ตั้งรหัสผ่านใหม่สำหรับ {user.name}</DialogDescription>
-          </DialogHeader>
-          <div>
-            <Label className="text-xs">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</Label>
-            <Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-              placeholder="••••••••" className="mt-1.5" autoFocus />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowResetPw(false); setNewPassword(''); }} disabled={resetting}>ยกเลิก</Button>
-            <Button variant="destructive" onClick={handleResetPassword} disabled={resetting || newPassword.length < 8}>
-              {resetting && <Loader2 className="h-4 w-4 animate-spin" />}Reset Password
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Change Role */}
+      {/* Change Request Dialog */}
       {!isProtected && (
-        <Dialog open={showAssignRole} onOpenChange={o => { if (!o) setShowAssignRole(false); }}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>เปลี่ยน Role</DialogTitle>
-              <DialogDescription>{user.name} — ปัจจุบัน: {user.role.nameTh}</DialogDescription>
-            </DialogHeader>
-            <div>
-              <Label className="text-xs">Role ใหม่</Label>
-              <select value={selectedRoleId} onChange={e => setSelectedRoleId(e.target.value)}
-                className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-                {roles.filter(r => !PROTECTED_ROLES.includes(r.code)).map(r => (
-                  <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
-                ))}
-              </select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAssignRole(false)} disabled={assigning}>ยกเลิก</Button>
-              <Button onClick={handleAssignRole} disabled={assigning || !selectedRoleId}>
-                {assigning && <Loader2 className="h-4 w-4 animate-spin" />}ยืนยัน
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ChangeRequestDialog
+          user={user}
+          roles={roles}
+          open={showChangeRequest}
+          onClose={() => setShowChangeRequest(false)}
+          onSubmitted={load}
+        />
       )}
-
-      {/* Edit Approval Limit */}
-      <Dialog open={showEditLimits} onOpenChange={setShowEditLimits}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>แก้ไข Approval Limit</DialogTitle>
-            <DialogDescription>กำหนดวงเงินอนุมัติสำหรับ {user.name}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="text-xs">วงเงินอนุมัติ (฿) — ปล่อยว่าง = ไม่จำกัด</Label>
-              <Input type="number" min="0" step="10000"
-                value={quotLimit} onChange={e => setQuotLimit(e.target.value)}
-                placeholder="เช่น 500000" className="mt-1.5" />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Quotation ที่เกินวงเงินนี้จะถูก escalate ขึ้นไปยัง Manager ระดับสูงกว่า
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditLimits(false)} disabled={savingLimits}>ยกเลิก</Button>
-            <Button onClick={handleSaveLimits} disabled={savingLimits} className="bg-blue-600 hover:bg-blue-700">
-              {savingLimits && <Loader2 className="h-4 w-4 animate-spin" />}บันทึก
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Force Logout */}
       <Dialog open={showForceLogout} onOpenChange={setShowForceLogout}>
@@ -864,54 +753,6 @@ export function ManagerDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Lock Account */}
-      <Dialog open={showConfirmLock} onOpenChange={setShowConfirmLock}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600"><Lock className="h-4 w-4" />Lock Account</DialogTitle>
-            <DialogDescription>ปิดการเข้าถึง {user.name} ทันที — session ทั้งหมดจะถูกยกเลิก</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
-            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">การ Lock account จะปิดการใช้งาน account นี้ทันที สามารถ Activate กลับมาได้ในภายหลัง</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfirmLock(false)} disabled={actionLoading}>ยกเลิก</Button>
-            <Button variant="destructive" onClick={handleLockAccount} disabled={actionLoading}>
-              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}Lock Account
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Suspend / Activate */}
-      <Dialog open={showConfirmSuspend} onOpenChange={setShowConfirmSuspend}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {user.isActive
-                ? <><AlertTriangle className="h-4 w-4 text-red-500" />Suspend Account</>
-                : <><UserCheck className="h-4 w-4 text-emerald-500" />Activate Account</>
-              }
-            </DialogTitle>
-            <DialogDescription>
-              {user.isActive
-                ? `ระงับการเข้าถึงของ ${user.name} ทันที — สามารถเปิดกลับมาได้`
-                : `เปิดใช้งาน account ของ ${user.name} อีกครั้ง`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowConfirmSuspend(false)} disabled={toggling}>ยกเลิก</Button>
-            <Button variant={user.isActive ? 'destructive' : 'default'} onClick={handleToggleActive} disabled={toggling}>
-              {toggling && <Loader2 className="h-4 w-4 animate-spin" />}
-              {user.isActive ? 'Suspend' : 'Activate'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
     </div>
   );
 }

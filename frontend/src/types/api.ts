@@ -198,6 +198,7 @@ export interface Quotation {
   customerShippingAddress?: string | null;
   issueDate: string | Date;
   expiryDate: string | Date;
+  deliveryDate?: string | Date | null;
   currency: Currency;
   subtotal: string | number;
   discountTotal: string | number;

@@ -71,7 +71,8 @@
     "approvalQueueAdmin": "Approval Queue",
     "staff": "Staff",
     "auditTrail": "Audit Trail",
-    "pipeline": "Pipeline"
+    "pipeline": "Pipeline",
+    "changeRequests": "Change Requests"
   },
   "login": {
     "title": "Sign In",

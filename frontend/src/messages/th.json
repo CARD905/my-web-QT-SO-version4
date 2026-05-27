@@ -72,7 +72,8 @@
     "approvalQueueAdmin": "Approval Queue",
     "staff": "บุคลากร",
     "auditTrail": "ประวัติการอนุมัติ",
-    "pipeline": "Pipeline"
+    "pipeline": "Pipeline",
+    "changeRequests": "คำขอแก้ไขข้อมูล"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

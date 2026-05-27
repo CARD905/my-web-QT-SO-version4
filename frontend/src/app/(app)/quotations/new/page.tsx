@@ -52,6 +52,7 @@ export default function NewQuotationPage() {
   const expireDefault = useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return formatDateInput(d); }, []);
   const [issueDate, setIssueDate] = useState(today);
   const [expiryDate, setExpiryDate] = useState(expireDefault);
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
@@ -156,7 +157,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
     setSubmitting(mode);
     try {
       const createRes = await api.post<ApiResponse<{ id: string; quotationNo: string }>>('/quotations', {
-        customerId, issueDate, expiryDate, currency, vatEnabled, vatRate, paymentTerms, conditions,
+        customerId, issueDate, expiryDate, deliveryDate: deliveryDate || null, currency, vatEnabled, vatRate, paymentTerms, conditions,
         items: items.map((it, idx) => ({
           productId: it.productId, productSku: it.productSku, productName: it.productName,
           description: it.description, quantity: it.quantity, unit: it.unit,
@@ -215,6 +216,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
             <div><Label className="text-xs">{t('quotation.documentNo')}</Label><Input value="auto-generated" disabled className="mt-1.5 bg-muted" /></div>
             <div><Label className="text-xs">{t('quotation.issueDate')}</Label><Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} className="mt-1.5" disabled={isFullyDisabled} /></div>
             <div><Label className="text-xs">{t('quotation.expiryDate')}</Label><Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="mt-1.5" disabled={isFullyDisabled} /></div>
+            <div><Label className="text-xs">วันจัดส่ง (ถ้ามี)</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="mt-1.5" disabled={isFullyDisabled} /></div>
             <div>
               <Label className="text-xs">Currency</Label>
               <select value={currency} onChange={(e) => setCurrency(e.target.value as 'THB' | 'USD')} disabled={isFullyDisabled} className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">

@@ -15,6 +15,7 @@ import { adminService } from './admin.service';
 // ── ดึง sub-routers เดิมมาใช้ต่อ ────────────────────────────────────────────
 import usersAdminRoutes from './users-admin/users-admin.routes';
 import rolesAdminRoutes from './roles-admin/roles-admin.routes';
+import { changeRequestsService } from './change-requests.service';
 
 const router = Router();
 router.use(authenticate);
@@ -257,6 +258,60 @@ router.patch('/users/:userId/team', requireAnyPermission(['user', 'update', 'ALL
     const { teamId } = req.body as { teamId?: string | null };
     const data = await adminService.assignUserToTeam(req.params.userId, teamId ?? null, user, req);
     return success(res, data, teamId ? 'Assigned to team' : 'Removed from team');
+  }),
+);
+
+// ─── Change Requests ─────────────────────────────────────────────────────────
+
+// GET /admin/change-requests/pending-count — admin badge
+router.get('/change-requests/pending-count',
+  asyncHandler(async (_req, res) => {
+    const count = await changeRequestsService.pendingCount();
+    return success(res, { count });
+  }),
+);
+
+// GET /admin/change-requests — list (admin/CEO)
+router.get('/change-requests',
+  asyncHandler(async (req, res) => {
+    adminOnly(req);
+    const { data, meta } = await changeRequestsService.list({
+      status: req.query.status as string | undefined,
+      page: req.query.page ? Number(req.query.page) : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    return success(res, data, undefined, meta);
+  }),
+);
+
+// POST /admin/change-requests — submit request (any authenticated user)
+router.post('/change-requests',
+  asyncHandler(async (req, res) => {
+    const user = requireUser(req);
+    const { targetUserId, reason, changes } = req.body as {
+      targetUserId: string; reason: string; changes: Record<string, unknown>;
+    };
+    if (!targetUserId) throw new AppError(400, 'VALIDATION', 'targetUserId required');
+    const data = await changeRequestsService.submit(user.id, targetUserId, reason, changes as any, req);
+    return created(res, data, 'ส่งคำขอแก้ไขเรียบร้อย');
+  }),
+);
+
+// POST /admin/change-requests/:id/approve — admin only
+router.post('/change-requests/:id/approve',
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    await changeRequestsService.approve(req.params.id, user.id, req.body.note, req);
+    return success(res, null, 'อนุมัติคำขอเรียบร้อย');
+  }),
+);
+
+// POST /admin/change-requests/:id/reject — admin only
+router.post('/change-requests/:id/reject',
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    await changeRequestsService.reject(req.params.id, user.id, req.body.note, req);
+    return success(res, null, 'ปฏิเสธคำขอเรียบร้อย');
   }),
 );
 

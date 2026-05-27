@@ -58,6 +58,7 @@ export default function EditQuotationPage() {
   const [customerId, setCustomerId] = useState('');
   const [issueDate, setIssueDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
@@ -101,6 +102,7 @@ export default function EditQuotationPage() {
         setCustomerId(q.customerId);
         setIssueDate(formatDateInput(q.issueDate));
         setExpiryDate(formatDateInput(q.expiryDate));
+        setDeliveryDate(q.deliveryDate ? formatDateInput(q.deliveryDate) : '');
         setCurrency(q.currency);
         setVatEnabled(q.vatEnabled);
         setVatRate(Number(q.vatRate));
@@ -211,6 +213,7 @@ export default function EditQuotationPage() {
         customerId,
         issueDate,
         expiryDate,
+        deliveryDate: deliveryDate || null,
         currency,
         vatEnabled,
         vatRate,
@@ -332,6 +335,15 @@ export default function EditQuotationPage() {
                 type="date"
                 value={expiryDate}
                 onChange={(e) => setExpiryDate(e.target.value)}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">วันจัดส่ง (ถ้ามี)</Label>
+              <Input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
                 className="mt-1.5"
               />
             </div>

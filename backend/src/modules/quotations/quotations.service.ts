@@ -253,7 +253,9 @@ export const quotationsService = {
       return tx.quotation.create({
         data: {
           quotationNo, status: 'DRAFT',
-          issueDate: input.issueDate, expiryDate: input.expiryDate, currency: input.currency,
+          issueDate: input.issueDate, expiryDate: input.expiryDate,
+          deliveryDate: input.deliveryDate ?? null,
+          currency: input.currency,
           customerId: customer.id,
           customerContactName: customer.contactName,
           customerCompany: customer.company,
@@ -328,7 +330,7 @@ export const quotationsService = {
         where: { id },
         data: {
           version: existing.version + 1, status: newStatus,
-          issueDate: input.issueDate, expiryDate: input.expiryDate, currency: input.currency,
+          issueDate: input.issueDate, expiryDate: input.expiryDate, deliveryDate: input.deliveryDate ?? null, currency: input.currency,
           customerId: customer.id, customerContactName: customer.contactName,
           customerCompany: customer.company, customerTaxId: customer.taxId,
           customerEmail: customer.email, customerPhone: customer.phone,

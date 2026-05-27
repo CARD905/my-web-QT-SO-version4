@@ -70,7 +70,6 @@ export default function ChecklistDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [poNumber, setPoNumber] = useState('');
-  const [deadlineDate, setDeadlineDate] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userId = session?.user?.id;
@@ -124,7 +123,7 @@ export default function ChecklistDetailPage() {
     try {
       const res = await api.post<ApiResponse<{ quotation: ChecklistQuotation; saleOrder: { id: string; saleOrderNo: string } }>>(
         `/quotations/${id}/po-submit`,
-        { poNumber: poNumber.trim(), deadlineDate: deadlineDate || undefined },
+        { poNumber: poNumber.trim() },
       );
       const soId = res.data.data?.saleOrder?.id;
       const soNo = res.data.data?.saleOrder?.saleOrderNo;
@@ -346,19 +345,6 @@ export default function ChecklistDetailPage() {
                       value={poNumber}
                       onChange={(e) => setPoNumber(e.target.value)}
                       placeholder="เช่น PO-2026-0001"
-                      className="text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="deadlineDate" className="text-xs font-semibold flex items-center gap-1.5 mb-1.5">
-                      <Clock className="h-3.5 w-3.5" />
-                      วันส่งมอบ Sale Order (Deadline)
-                    </Label>
-                    <Input
-                      id="deadlineDate"
-                      type="date"
-                      value={deadlineDate}
-                      onChange={(e) => setDeadlineDate(e.target.value)}
                       className="text-sm"
                     />
                   </div>

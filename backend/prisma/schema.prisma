@@ -161,6 +161,9 @@ model User {
   poApprovedQuotations  Quotation[]  @relation("QuotationPoApprovedBy")
   poRejectedQuotations  Quotation[]  @relation("QuotationPoRejectedBy")
   pendingApprovalQuotations  Quotation[]  @relation("CurrentApprover")
+  changeRequestsAsTarget    UserChangeRequest[] @relation("ChangeRequestTarget")
+  changeRequestsAsRequester UserChangeRequest[] @relation("ChangeRequestSubmitter")
+  changeRequestsReviewed    UserChangeRequest[] @relation("ChangeRequestReviewer")
   @@unique([email, deletedAt])
   @@index([email])
   @@index([roleId])
@@ -315,6 +318,7 @@ model Quotation {
   customerShippingAddress  String?               @map("customer_shipping_address")
   issueDate                DateTime              @map("issue_date")
   expiryDate               DateTime              @map("expiry_date")
+  deliveryDate             DateTime?             @map("delivery_date")
   currency                 Currency              @default(THB)
   subtotal                 Decimal               @db.Decimal(15, 2)
   discountTotal            Decimal               @default(0) @map("discount_total") @db.Decimal(15, 2)
@@ -766,6 +770,7 @@ enum NotificationType {
   PO_REJECTED
   SO_CREATED
   CUSTOMER_EDIT_REQUEST
+  USER_EDIT_REQUEST
 }
 
 enum Lang {
@@ -782,4 +787,27 @@ enum ManagerLevel {
   SECTION
   DEPARTMENT
   DIVISION
+}
+
+model UserChangeRequest {
+  id           String    @id @default(uuid())
+  targetUserId String    @map("target_user_id")
+  requesterId  String    @map("requester_id")
+  reason       String    @db.Text
+  changes      Json
+  status       String    @default("PENDING")
+  adminNote    String?   @map("admin_note") @db.Text
+  reviewedById String?   @map("reviewed_by_id")
+  reviewedAt   DateTime? @map("reviewed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  targetUser User  @relation("ChangeRequestTarget",   fields: [targetUserId], references: [id])
+  requester  User  @relation("ChangeRequestSubmitter", fields: [requesterId],  references: [id])
+  reviewedBy User? @relation("ChangeRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([targetUserId])
+  @@index([requesterId])
+  @@index([status])
+  @@map("user_change_requests")
 }

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, FileText, ClipboardList, Users, Package,
   Building2, Shield, ChevronLeft, ChevronRight, ChevronDown, X,
   CheckSquare, Mail, History, Settings, Activity,
-  Key, BarChart3, LogIn, BookOpen,
+  Key, BarChart3, LogIn, BookOpen, Inbox,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,7 @@ interface NavItem {
   children?: NavItem[];
   showBadge?: boolean;              // manager approval-queue count
   officerBadge?: 'qt' | 'checklist' | 'so';  // officer sidebar counts
+  showChangeRequestBadge?: boolean; // admin change-request pending count
   dividerLabel?: string;            // section group label (CEO nav groups)
 }
 
@@ -121,6 +122,34 @@ function OfficerGroupBadge({ types, collapsed }: { types: ReadonlyArray<'qt' | '
   return (
     <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-blue-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
       {total > 99 ? '99+' : total}
+    </span>
+  );
+}
+
+// ── Admin change-request pending badge ───────────────────────────────────────
+function ChangeRequestsBadge({ collapsed }: { collapsed: boolean }) {
+  const [count, setCount] = useState<number | null>(null);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ success: boolean; data?: { count: number } }>('/admin/change-requests/pending-count')
+      .then((res) => { if (!cancelled) setCount(res.data.data?.count ?? 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pathname]);
+
+  if (!count || count <= 0) return null;
+  if (collapsed) {
+    return (
+      <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-orange-500 text-[9px] font-bold text-white flex items-center justify-center shadow">
+        {count > 9 ? '9+' : count}
+      </span>
+    );
+  }
+  return (
+    <span className="ml-auto h-5 min-w-[20px] px-1 rounded-full bg-orange-500 text-[10px] font-bold text-white flex items-center justify-center shadow shrink-0">
+      {count > 99 ? '99+' : count}
     </span>
   );
 }
@@ -269,6 +298,13 @@ const NAV_ITEMS: NavItem[] = [
         labelKey: 'nav.activityLogs',
         icon: Activity,
         requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+      },
+      {
+        href: '/admin/change-requests',
+        labelKey: 'nav.changeRequests',
+        icon: Inbox,
+        requires: { resource: 'user', action: 'manage', scope: 'ALL' },
+        showChangeRequestBadge: true,
       },
       {
         href: '/admin/settings',
@@ -471,10 +507,12 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
           style={{ color: isLeafActive ? theme.accentColor : undefined, filter: isLeafActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         {item.showBadge && collapsed && <ApprovalBadge collapsed={true} />}
         {item.officerBadge && collapsed && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={true} />}
+        {item.showChangeRequestBadge && collapsed && <ChangeRequestsBadge collapsed={true} />}
       </div>
       {!collapsed && <span className="truncate flex-1">{t(item.labelKey)}</span>}
       {!collapsed && item.showBadge && <ApprovalBadge collapsed={false} />}
       {!collapsed && item.officerBadge && roleCode === 'OFFICER' && <OfficerNavBadge type={item.officerBadge} collapsed={false} />}
+      {!collapsed && item.showChangeRequestBadge && <ChangeRequestsBadge collapsed={false} />}
     </Link>
   );
 }

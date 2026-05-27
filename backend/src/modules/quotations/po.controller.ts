@@ -37,8 +37,7 @@ export const poController = {
   // POST /quotations/:id/po-submit
   async submit(req: Request, res: Response) {
     const user = requireUser(req);
-    const deadlineDate = req.body.deadlineDate ? new Date(req.body.deadlineDate) : undefined;
-    const data = await poService.submitPo(req.params.id, user, req.body.poNumber, req, deadlineDate);
+    const data = await poService.submitPo(req.params.id, user, req.body.poNumber, req);
     return success(res, data);
   },
 
