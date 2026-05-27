@@ -26,10 +26,10 @@ import { cn } from '@/lib/utils';
 
 export default function ProductsPage() {
   const t = useT();
-  const { role } = usePermissions();
+  const { can } = usePermissions();
 
-  const roleCode = role?.code ?? '';
-  const canManage = roleCode === 'ADMIN' || roleCode === 'CEO';
+  const canManage   = can('product', 'update', 'ALL');
+  const canViewCost = can('product', 'viewCost', 'ALL');
 
   const [list, setList]               = useState<Product[]>([]);
   const [categories, setCategories]   = useState<ProductCategory[]>([]);
@@ -723,6 +723,8 @@ function ProductModal({
   onSaved: () => void;
 }) {
   const t = useT();
+  const { can } = usePermissions();
+  const canViewCost = can('product', 'viewCost', 'ALL');
   const [form, setForm] = useState({
     sku: '', name: '', description: '', unitPrice: 0, unit: 'pcs', categoryId: '',
   });
@@ -993,8 +995,8 @@ function ProductModal({
                     </p>
                   </div>
 
-                  {/* Analyzer CTA */}
-                  <button
+                  {/* Analyzer CTA — only for users with product:viewCost:all */}
+                  {canViewCost && <button
                     type="button"
                     onClick={() => setView('analyzer')}
                     className="group w-full rounded-xl border border-violet-200 dark:border-violet-800
@@ -1020,7 +1022,7 @@ function ProductModal({
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-violet-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
+                  </button>}
                 </div>
               )}
             </>

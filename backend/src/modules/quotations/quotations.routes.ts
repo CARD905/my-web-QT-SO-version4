@@ -139,7 +139,11 @@ router.get(
 // ─── PO WORKFLOW ─────────────────────────────────────────────────────────────
 
 router.post('/:id/po-upload', uploadPoFile, asyncHandler(poController.upload));
-router.post('/:id/po-submit', asyncHandler(poController.submit));
+router.post(
+  '/:id/po-submit',
+  requirePermission('saleOrder', 'create', 'OWN'),
+  asyncHandler(poController.submit),
+);
 router.post(
   '/:id/po-approve',
   requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),

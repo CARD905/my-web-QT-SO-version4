@@ -94,9 +94,9 @@ router.post(
 router.post(
   '/:id/pdf',
   requireAnyPermission(
-    ['saleOrder', 'view', 'OWN'],
-    ['saleOrder', 'view', 'TEAM'],
-    ['saleOrder', 'view', 'ALL'],
+    ['saleOrder', 'exportPdf', 'ALL'],
+    ['saleOrder', 'exportPdf', 'TEAM'],
+    ['saleOrder', 'exportPdf', 'OWN'],
   ),
   asyncHandler(saleOrdersController.generatePdf),
 );
@@ -104,9 +104,9 @@ router.post(
 router.get(
   '/:id/pdf/download',
   requireAnyPermission(
-    ['saleOrder', 'view', 'OWN'],
-    ['saleOrder', 'view', 'TEAM'],
-    ['saleOrder', 'view', 'ALL'],
+    ['saleOrder', 'exportPdf', 'ALL'],
+    ['saleOrder', 'exportPdf', 'TEAM'],
+    ['saleOrder', 'exportPdf', 'OWN'],
   ),
   asyncHandler(saleOrdersController.downloadPdf),
 );

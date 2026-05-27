@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { productsController } from './products.controller';
 import { authenticate } from '../../middleware/auth';
 import { requirePermission } from '../../middleware/permission';
-import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../middleware/error';
 import {
@@ -29,24 +28,24 @@ router.get(
   asyncHandler(productsController.getById),
 );
 
-// ─── CREATE / UPDATE / DELETE — Admin, CEO เท่านั้น ─────────────────────────
+// ─── CREATE / UPDATE / DELETE — ผู้มีสิทธิ์ product:create/update/delete:all ─
 router.post(
   '/',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('product', 'create', 'ALL'),
   validate(createProductSchema),
   asyncHandler(productsController.create),
 );
 
 router.patch(
   '/:id',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('product', 'update', 'ALL'),
   validate(updateProductSchema),
   asyncHandler(productsController.update),
 );
 
 router.delete(
   '/:id',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('product', 'delete', 'ALL'),
   asyncHandler(productsController.remove),
 );
 

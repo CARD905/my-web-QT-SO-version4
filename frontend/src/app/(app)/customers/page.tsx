@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Search, Users, X, Loader2, Edit2, Trash2, Lock,
   SendHorizonal, ChevronDown, ChevronRight, CheckCircle2, XCircle,
-  Clock, AlertTriangle, User, Building2, FileText, Phone, Mail,
+  Clock, User, Building2, Phone, Mail,
   MapPin, Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -49,16 +49,13 @@ const CHANGE_FIELD_META: Record<string, { label: string; icon: React.ReactNode }
 /* ── Main page ── */
 export default function CustomersPage() {
   const t = useT();
-  const { role } = usePermissions();
+  const { can, hasRole } = usePermissions();
 
-  const roleCode = role?.code ?? '';
-  const isAdmin   = roleCode === 'ADMIN';
-  const isCEO     = roleCode === 'CEO';
-  const isManager = roleCode === 'MANAGER';
+  const isAdmin = hasRole('ADMIN');
 
-  const canCreate = isAdmin || isCEO;
-  const canEdit   = isAdmin || isCEO || isManager;
-  const canDelete = isAdmin || isCEO;
+  const canCreate = can('customer', 'create', 'ALL');
+  const canEdit   = can('customer', 'update', 'ALL');
+  const canDelete = can('customer', 'delete', 'ALL');
   const canReview = isAdmin;
 
   const [list,       setList]       = useState<Customer[]>([]);

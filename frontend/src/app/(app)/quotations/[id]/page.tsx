@@ -246,7 +246,7 @@ export default function QuotationDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const { data: session } = useSession();
-  const { role } = usePermissions();
+  const { role, can } = usePermissions();
 
   const [q, setQ] = useState<Quotation | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
@@ -338,7 +338,7 @@ export default function QuotationDetailPage() {
   const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
   const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
-  const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string);
+  const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string) && can('quotation', 'exportPdf', 'OWN');
   const canRenew  = q.status === 'EXPIRED' && isOwner;
 
   // ── Approval logic ──────────────────────────────────────────────────────

@@ -37,18 +37,18 @@ router.get(
   asyncHandler(customersController.getById),
 );
 
-// ─── CREATE — Admin, CEO ────────────────────────────────────────────────────
+// ─── CREATE — ผู้มีสิทธิ์ customer:create:all ──────────────────────────────
 router.post(
   '/',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('customer', 'create', 'ALL'),
   validate(createCustomerSchema),
   asyncHandler(customersController.create),
 );
 
-// ─── UPDATE — Admin, CEO only (Manager must use edit-request) ─────────────────
+// ─── UPDATE — ผู้มีสิทธิ์ customer:update:all (Manager ต้องใช้ edit-request) ──
 router.patch(
   '/:id',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('customer', 'update', 'ALL'),
   validate(updateCustomerSchema),
   asyncHandler(customersController.update),
 );
@@ -81,10 +81,10 @@ router.post(
   asyncHandler(customersController.rejectEditRequest),
 );
 
-// ─── DELETE — Admin, CEO เท่านั้น ───────────────────────────────────────────
+// ─── DELETE — ผู้มีสิทธิ์ customer:delete:all ──────────────────────────────
 router.delete(
   '/:id',
-  requireRole('ADMIN', 'CEO'),
+  requirePermission('customer', 'delete', 'ALL'),
   asyncHandler(customersController.remove),
 );
 
