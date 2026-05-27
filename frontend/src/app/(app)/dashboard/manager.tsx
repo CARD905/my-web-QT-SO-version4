@@ -256,8 +256,9 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const isTeamView = filterValue === 'team' || filterValue === 'all';
   const isUserView = filterValue.startsWith('user:');
   const isSelfView = false;
-  // CEO selecting an individual officer → show officer's own dashboard view
-  const isCeoViewingOfficer = isCeo && isUserView && selectedUser != null && selectedUser.role.code !== 'MANAGER';
+  // Any manager/CEO selecting an individual officer/sales → show officer's own dashboard
+  const MANAGER_LEVEL_ROLES = ['MANAGER', 'CEO', 'ADMIN', 'APPROVER'];
+  const isCeoViewingOfficer = isUserView && selectedUser != null && !MANAGER_LEVEL_ROLES.includes(selectedUser.role.code);
 
   return (
     <div className="space-y-0 max-w-7xl">
