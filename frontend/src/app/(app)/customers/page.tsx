@@ -51,7 +51,8 @@ export default function CustomersPage() {
   const t = useT();
   const { can, hasRole } = usePermissions();
 
-  const isAdmin = hasRole('ADMIN');
+  const isAdmin   = hasRole('ADMIN');
+  const isManager = hasRole('MANAGER');
 
   const canCreate = can('customer', 'create', 'ALL');
   const canEdit   = can('customer', 'update', 'ALL');
