@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { usersAdminController } from './users-admin.controller';
 import { authenticate } from '../../../middleware/auth';
-import { requirePermission } from '../../../middleware/permission';
+import { requirePermission, requireAnyPermission } from '../../../middleware/permission';
 import { validate } from '../../../middleware/validate';
 import { asyncHandler } from '../../../middleware/error';
 import {
@@ -14,7 +14,7 @@ router.use(authenticate);
 
 router.get(
   '/',
-  requirePermission('user', 'view', 'ALL'),
+  requireAnyPermission(['user', 'view', 'ALL'], ['user', 'view', 'TEAM']),
   validate(listUsersQuerySchema, 'query'),
   asyncHandler(usersAdminController.list),
 );

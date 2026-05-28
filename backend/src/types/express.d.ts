@@ -7,6 +7,9 @@ declare global {
         id: string;
         email: string;
         role: UserRole;
+        roleCode?: string;
+        roleId?: string;
+        teamId?: string | null;
         name: string;
       };
     }

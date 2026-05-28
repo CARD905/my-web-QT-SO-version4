@@ -286,8 +286,12 @@ export function ManagerDetailPage() {
     setMembersLoading(true);
     try {
       const res = await api.get<any>(`/admin/users?teamId=${teamId}&limit=50`);
-      setTeamMembers((res.data.data ?? []).filter((m: any) => m.id !== userId));
-    } catch { setTeamMembers([]); }
+      const list: any[] = Array.isArray(res.data.data) ? res.data.data : [];
+      setTeamMembers(list.filter((m: any) => m.id !== userId));
+    } catch (err) {
+      console.error('loadTeamMembers error:', err);
+      setTeamMembers([]);
+    }
     finally { setMembersLoading(false); }
   };
 

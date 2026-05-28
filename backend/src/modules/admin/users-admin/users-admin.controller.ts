@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { usersAdminService } from './users-admin.service';
 import { AppError, success } from '../../../utils/response';
 import { resetPasswordSchema } from './users-admin.schema';
+import { hasPermission } from '../../../utils/permissions';
 
 function requireUser(req: Request) {
   if (!req.user) throw new AppError(401, 'UNAUTHENTICATED', 'Not authenticated');
@@ -10,7 +11,19 @@ function requireUser(req: Request) {
 
 export const usersAdminController = {
   async list(req: Request, res: Response) {
-    const result = await usersAdminService.list(req.query as never);
+    const user = requireUser(req);
+    const query: any = { ...req.query };
+
+    // If user only has TEAM scope (not ALL), restrict to their own team
+    const hasAll = await hasPermission(user.roleId ?? '', 'user', 'view', 'ALL', user.id);
+    if (!hasAll) {
+      if (!user.teamId) {
+        return success(res, [], undefined, { total: 0, page: 1, limit: 50, totalPages: 0 });
+      }
+      query.teamId = user.teamId;
+    }
+
+    const result = await usersAdminService.list(query);
     return success(res, result.data, undefined, result.meta);
   },
 
