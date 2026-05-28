@@ -1453,14 +1453,15 @@ function DashboardContent({
 
       {/* ══ SECTION 6-7: Action Required (unified — no duplication) ══ */}
       {(() => {
-        const hasEscalated = data.recentEscalated.length > 0;
-        const pendingCount = data.totals.pending ?? 0;
-        const pendingVal   = data.totals.pendingValue ?? 0;
-        const poCount      = data.totals.poVerificationPending ?? 0;
-        const escalatedVal = data.recentEscalated.reduce((s, q) => s + (q.grandTotal ?? 0), 0);
+        const hasEscalated   = data.recentEscalated.length > 0;
+        const pendingCount   = data.totals.pending ?? 0;
+        const pendingVal     = data.totals.pendingValue ?? 0;
+        const poCount        = data.totals.poVerificationPending ?? 0;
+        const escalatedCount = data.totals.escalated ?? data.recentEscalated.length;
+        const escalatedVal   = data.recentEscalated.reduce((s, q) => s + (q.grandTotal ?? 0), 0);
 
-        // badge = actual actionable items (QT pending + PO pending); escalated = monitoring only
-        const actionableCount = pendingCount + poCount;
+        // badge = all actionable items including escalated
+        const actionableCount = pendingCount + poCount + escalatedCount;
         const hasAny = actionableCount > 0 || hasEscalated;
         if (!hasAny) return null;
 
@@ -1529,11 +1530,11 @@ function DashboardContent({
                             <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-red-400 transition-colors shrink-0" />
                           </Link>
                         ))}
-                        {qtItems.length > 4 && (
+                        {pendingCount > 4 && (
                           <Link href="/approval-queue"
                             className="flex items-center justify-center gap-1 px-5 py-2 text-[11px] text-red-600 hover:bg-red-50/60 dark:hover:bg-red-900/10 transition-colors border-t border-border/30"
                           >
-                            ดูทั้งหมด {qtItems.length} รายการ <ChevronRight className="h-3 w-3" />
+                            ดูทั้งหมด {pendingCount} รายการ <ChevronRight className="h-3 w-3" />
                           </Link>
                         )}
                       </>
@@ -1583,11 +1584,11 @@ function DashboardContent({
                       <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-amber-400 transition-colors shrink-0" />
                     </Link>
                   ))}
-                  {(data.pipelineDetail?.stage3Top ?? []).length > 4 && (
+                  {poCount > 4 && (
                     <Link href="/quotations?status=PO_PENDING"
                       className="flex items-center justify-center gap-1 px-5 py-2 text-[11px] text-amber-600 hover:bg-amber-50/60 transition-colors border-t border-border/30"
                     >
-                      ดูทั้งหมด {data.pipelineDetail!.stage3Top.length} รายการ <ChevronRight className="h-3 w-3" />
+                      ดูทั้งหมด {poCount} รายการ <ChevronRight className="h-3 w-3" />
                     </Link>
                   )}
                 </div>
