@@ -729,9 +729,13 @@ export const managerDashboardService = {
       months6.push({ label, gte: d, lt: next });
     }
 
+    const now7d = new Date(Date.now() + 7 * 86400000);
+
     const [
       totalCount, approvedAgg, thisMonthCount, byStatusRaw, recent,
       soCountRaw, soAgg, recentSos,
+      totalValueAgg, pendingValueAgg,
+      expiringRaw, customerTopRaw,
     ] = await Promise.all([
       prisma.quotation.count({ where: { createdById: userId, deletedAt: null } }),
       prisma.quotation.aggregate({ where: { createdById: userId, status: { in: ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'] }, deletedAt: null }, _sum: { grandTotal: true }, _count: { id: true } }),
@@ -741,6 +745,30 @@ export const managerDashboardService = {
       prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } } }),
       prisma.saleOrder.aggregate({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } }, _sum: { grandTotal: true } }),
       prisma.saleOrder.findMany({ where: { deletedAt: null, quotation: { createdById: userId, deletedAt: null } }, orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, saleOrderNo: true, status: true, grandTotal: true, createdAt: true, customerCompany: true } }),
+      // Total value of all QTs (pipeline baseline)
+      prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null }, _sum: { grandTotal: true } }),
+      // Pending value
+      prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } }, _sum: { grandTotal: true } }),
+      // Expiring in 7 days
+      prisma.quotation.findMany({
+        where: {
+          createdById: userId, deletedAt: null,
+          status: { notIn: ['APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'PO_APPROVED', 'PO_REJECTED'] },
+          expiryDate: { gte: new Date(), lte: now7d },
+        },
+        select: { id: true, quotationNo: true, customerCompany: true, grandTotal: true, expiryDate: true, status: true },
+        orderBy: { expiryDate: 'asc' },
+        take: 10,
+      }),
+      // Top 5 customers by total QT value
+      prisma.quotation.groupBy({
+        by: ['customerId'],
+        where: { createdById: userId, deletedAt: null },
+        _count: { id: true },
+        _sum: { grandTotal: true },
+        orderBy: [{ _sum: { grandTotal: 'desc' } }],
+        take: 5,
+      }),
     ]);
 
     // Monthly trend — parallel per bucket
@@ -760,6 +788,13 @@ export const managerDashboardService = {
 
     const rejCount = byStatusRaw.find((s) => s.status === 'REJECTED')?._count.id ?? 0;
     const approvedCount = approvedAgg._count.id;
+
+    // Hydrate customer names
+    const customerIds = customerTopRaw.map((c) => c.customerId).filter(Boolean) as string[];
+    const customerDocs = customerIds.length > 0
+      ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, company: true } })
+      : [];
+    const customerMap = new Map(customerDocs.map((c) => [c.id, c.company ?? '(ไม่ระบุ)']));
 
     return {
       user: {
@@ -787,11 +822,28 @@ export const managerDashboardService = {
         rejectedCount: rejCount,
         soCount: soCountRaw,
         soValue: Number(soAgg._sum.grandTotal ?? 0),
+        totalValue: Number(totalValueAgg._sum.grandTotal ?? 0),
+        pendingValue: Number(pendingValueAgg._sum.grandTotal ?? 0),
+        pendingCount: (byStatusRaw.find((s) => s.status === 'PENDING')?._count.id ?? 0)
+          + (byStatusRaw.find((s) => s.status === 'PENDING_ESCALATED')?._count.id ?? 0)
+          + (byStatusRaw.find((s) => s.status === 'PENDING_BACKUP')?._count.id ?? 0),
+        poPendingCount: byStatusRaw.find((s) => s.status === 'PO_PENDING')?._count.id ?? 0,
+        approvedCount2: byStatusRaw.find((s) => s.status === 'APPROVED')?._count.id ?? 0,
       },
       byStatus: byStatusRaw.map((s) => ({ status: s.status, count: s._count.id })),
       recent: recent.map((q) => ({ id: q.id, quotationNo: q.quotationNo, status: q.status, grandTotal: Number(q.grandTotal), createdAt: q.createdAt.toISOString(), customerCompany: q.customerCompany })),
       recentSos: recentSos.map((so) => ({ id: so.id, saleOrderNo: so.saleOrderNo, status: so.status, grandTotal: Number(so.grandTotal), createdAt: so.createdAt.toISOString(), customerCompany: so.customerCompany })),
       monthlyTrend,
+      expiringQuotations: expiringRaw.map((q) => ({
+        id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
+        grandTotal: Number(q.grandTotal), expiryDate: q.expiryDate!.toISOString(), status: q.status,
+      })),
+      topCustomers: customerTopRaw.map((c) => ({
+        customerId: c.customerId ?? '',
+        customerCompany: c.customerId ? (customerMap.get(c.customerId) ?? '(ไม่ระบุ)') : '(ไม่ระบุ)',
+        qtCount: c._count.id,
+        totalValue: Number(c._sum.grandTotal ?? 0),
+      })),
     };
   },
 };

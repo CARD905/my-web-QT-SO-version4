@@ -237,6 +237,24 @@ export const invitationsService = {
 
     const passwordHash = await bcrypt.hash(input.password, 12);
 
+    // Resolve manager limits: invitation value first, then fall back to the
+    // currently configured limit for that manager level (set by admin).
+    const managerLevel = (invitation as any).managerLevel ?? null;
+    let resolvedApprovalLimit = (invitation as any).approvalLimit ?? null;
+    let resolvedDiscountLimit: any = null;
+
+    if (managerLevel) {
+      const refManager = await prisma.user.findFirst({
+        where: { deletedAt: null, isActive: true, managerLevel, role: { code: 'MANAGER' } },
+        select: { approvalLimit: true, discountLimit: true } as any,
+        orderBy: { createdAt: 'asc' },
+      });
+      if (refManager) {
+        if (resolvedApprovalLimit === null) resolvedApprovalLimit = (refManager as any).approvalLimit ?? null;
+        resolvedDiscountLimit = (refManager as any).discountLimit ?? null;
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -248,10 +266,10 @@ export const invitationsService = {
           teamId: invitation.teamId ?? null,
           reportsToId: invitation.reportsToId ?? null,
           isActive: true,
-          // ✅ นำ managerLevel และ approvalLimit จาก invitation
-          managerLevel: (invitation as any).managerLevel ?? null,
-          approvalLimit: (invitation as any).approvalLimit ?? null,
-        },
+          managerLevel,
+          approvalLimit: resolvedApprovalLimit,
+          ...(resolvedDiscountLimit !== null && { discountLimit: resolvedDiscountLimit }),
+        } as any,
       });
 
       await tx.invitation.update({

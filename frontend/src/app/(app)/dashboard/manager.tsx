@@ -543,7 +543,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
 
       {/* Manager/CEO viewing individual officer → analytics view */}
       {isCeoViewingOfficer && selectedUser && (
-        <OfficerAnalyticsView userId={selectedUser.id} selectedUser={selectedUser} dashboardData={data} />
+        <OfficerAnalyticsView userId={selectedUser.id} selectedUser={selectedUser} />
       )}
 
       {/* Normal manager/team dashboard */}
@@ -604,17 +604,20 @@ interface OfficerAnalyticsData {
   totals: {
     quotations: number; approvedValue: number; thisMonth: number;
     approvedCount: number; rejectedCount: number; soCount: number; soValue: number;
+    totalValue?: number; pendingValue?: number;
+    pendingCount?: number; poPendingCount?: number; approvedCount2?: number;
   };
   byStatus: Array<{ status: string; count: number }>;
   recent: Array<{ id: string; quotationNo: string; status: string; grandTotal: number; createdAt: string; customerCompany: string }>;
   recentSos: Array<{ id: string; saleOrderNo: string; status: string; grandTotal: number; createdAt: string; customerCompany: string }>;
   monthlyTrend: Array<{ month: string; count: number; value: number }>;
+  expiringQuotations?: Array<{ id: string; quotationNo: string; customerCompany: string; grandTotal: number; expiryDate: string; status: string }>;
+  topCustomers?: Array<{ customerId: string; customerCompany: string; qtCount: number; totalValue: number }>;
 }
 
-function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
+function OfficerAnalyticsView({ userId, selectedUser }: {
   userId: string;
   selectedUser: { name: string; email: string; role: { code: string; nameTh: string } };
-  dashboardData?: DashboardData | null;
 }) {
   const [data, setData] = useState<OfficerAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -650,6 +653,19 @@ function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
   const winRate = totals.quotations > 0 ? Math.round((totals.approvedCount / totals.quotations) * 100) : 0;
   const maxTrend = Math.max(...monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value), 1);
 
+  // Monthly trend derived stats
+  const totalRevenue    = monthlyTrend.reduce((s, m) => s + m.value, 0);
+  const totalDocs       = monthlyTrend.reduce((s, m) => s + m.count, 0);
+  const activeMonths    = monthlyTrend.filter((m) => m.count > 0);
+  const avgMonthRevenue = activeMonths.length > 0 ? Math.round(totalRevenue / activeMonths.length) : 0;
+  const avgPerOrder     = totalDocs > 0 ? Math.round(totalRevenue / totalDocs) : 0;
+  const bestMonthEntry  = monthlyTrend.reduce<typeof monthlyTrend[0] | null>((b, m) => (!b || m.value > b.value ? m : b), null);
+  const lastM  = monthlyTrend[monthlyTrend.length - 1];
+  const prevM  = monthlyTrend[monthlyTrend.length - 2];
+  const revenueGrowth = prevM && prevM.value > 0 ? Math.round(((lastM.value - prevM.value) / prevM.value) * 100) : null;
+  const countGrowth   = prevM && prevM.count > 0 ? Math.round(((lastM.count - prevM.count) / prevM.count) * 100) : null;
+  const bestCustomer  = data.topCustomers?.[0]?.customerCompany ?? null;
+
   const STATUS_COLORS: Record<string, string> = {
     DRAFT: '#94a3b8', PENDING: '#f59e0b', PENDING_ESCALATED: '#ef4444',
     APPROVED: '#10b981', REJECTED: '#ef4444', CANCELLED: '#6b7280',
@@ -680,148 +696,182 @@ function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* ── Monthly Trend ── */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
-              <span className="text-sm font-semibold">แนวโน้มรายเดือน</span>
-              <span className="text-[11px] text-muted-foreground">6 เดือนล่าสุด</span>
-            </div>
-            <div className="flex bg-muted rounded-lg p-0.5">
-              {(['value', 'count'] as const).map((t) => (
-                <button key={t} onClick={() => setTrendTab(t)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${trendTab === t ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {t === 'value' ? 'มูลค่า' : 'จำนวน'}
-                </button>
-              ))}
-            </div>
+      {/* ── Monthly Trend (full width, redesigned) ── */}
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <span className="text-sm font-semibold">แนวโน้มรายเดือน</span>
+            <span className="text-[11px] text-muted-foreground">6 เดือนล่าสุด</span>
           </div>
-
-          {monthlyTrend.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
-          ) : (
-            <>
-              {/* Bar chart */}
-              {(() => {
-                const vals  = monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value);
-                const max   = Math.max(...vals, 1);
-                const barW  = 32;
-                const gap   = 12;
-                const H     = 120;
-                const PB    = 22;
-                const PL    = 44;
-                const chartH = H - PB;
-                const totalW = PL + monthlyTrend.length * (barW + gap) - gap + 8;
-                const bx    = (i: number) => PL + i * (barW + gap);
-                const bh    = (v: number) => Math.max((v / max) * chartH, v > 0 ? 3 : 0);
-                const fmt   = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v);
-                const yTicks = [0, 0.5, 1];
-                return (
-                  <svg viewBox={`0 0 ${totalW} ${H}`} className="w-full" style={{ height: H }}>
-                    {/* Y grid lines */}
-                    {yTicks.map((t) => {
-                      const gy = (1 - t) * chartH;
-                      return (
-                        <g key={t}>
-                          <line x1={PL - 4} y1={gy} x2={totalW} y2={gy} stroke="currentColor" strokeOpacity={0.07} strokeWidth={1} />
-                          <text x={PL - 7} y={gy + 4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.4}>
-                            {fmt(max * t)}
-                          </text>
-                        </g>
-                      );
-                    })}
-                    {/* Bars */}
-                    {vals.map((v, i) => {
-                      const bHeight = bh(v);
-                      const isLast  = i === vals.length - 1;
-                      const color   = isLast ? '#10b981' : '#10b98166';
-                      return (
-                        <g key={i}>
-                          <rect
-                            x={bx(i)} y={chartH - bHeight}
-                            width={barW} height={bHeight}
-                            rx={4} fill={color}
-                            className="transition-all duration-500"
-                          />
-                          {v > 0 && (
-                            <text x={bx(i) + barW / 2} y={chartH - bHeight - 4}
-                              textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.55}>
-                              {trendTab === 'value' ? fmt(v) : v}
-                            </text>
-                          )}
-                          <text x={bx(i) + barW / 2} y={H - 5}
-                            textAnchor="middle" fontSize={10} fill="currentColor" fillOpacity={isLast ? 0.8 : 0.45}
-                            fontWeight={isLast ? '600' : '400'}>
-                            {monthlyTrend[i].month}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                );
-              })()}
-
-              {/* Summary stats — tab-aware */}
-              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-3 gap-3">
-                <div className={`text-center rounded-xl px-2 py-2 transition-all ${trendTab === 'value' ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''}`}>
-                  <div className={`text-sm font-bold tabular-nums ${trendTab === 'value' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                    {formatMoney(monthlyTrend.reduce((s,m) => s+m.value, 0))}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">มูลค่ารวม</div>
-                </div>
-                <div className={`text-center rounded-xl px-2 py-2 transition-all ${trendTab === 'count' ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                  <div className={`text-base font-bold tabular-nums ${trendTab === 'count' ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}`}>
-                    {monthlyTrend.reduce((s,m) => s+m.count, 0)} ใบ
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">จำนวนรวม</div>
-                </div>
-                <div className="text-center rounded-xl px-2 py-2">
-                  <div className="text-base font-bold tabular-nums">
-                    {formatMoney(Math.round(monthlyTrend.filter(m=>m.count>0).reduce((s,m)=>s+m.value,0) / Math.max(monthlyTrend.filter(m=>m.count>0).length, 1)))}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">เฉลี่ย/เดือน</div>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="flex bg-muted rounded-lg p-0.5">
+            {(['value', 'count'] as const).map((t) => (
+              <button key={t} onClick={() => setTrendTab(t)}
+                className={`px-3 py-1 text-xs rounded-md font-medium transition-all ${trendTab === t ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                {t === 'value' ? 'Revenue' : 'Documents'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* ── Status Breakdown ── */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <PieChart className="h-4 w-4 text-violet-500" />
-            <span className="text-sm font-semibold">Status Breakdown</span>
-            <span className="ml-auto text-xs text-muted-foreground">{totals.quotations} ใบทั้งหมด</span>
-          </div>
-          {byStatus.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
-          ) : (
-            <div className="space-y-2">
-              {byStatus.sort((a, b) => b.count - a.count).map(({ status, count }) => {
-                const pct = totals.quotations > 0 ? Math.round((count / totals.quotations) * 100) : 0;
-                const color = STATUS_COLORS[status] ?? '#94a3b8';
+        {/* ── KPI Mini Cards ── */}
+        {(() => {
+          const growth = trendTab === 'value' ? revenueGrowth : countGrowth;
+          const growthColor = growth == null ? 'text-muted-foreground' : growth > 0 ? 'text-emerald-600 dark:text-emerald-400' : growth < 0 ? 'text-rose-500' : 'text-muted-foreground';
+          const growthLabel = growth == null ? 'N/A' : `${growth > 0 ? '+' : ''}${growth}%`;
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Revenue Total</div>
+                <div className="text-base font-bold tabular-nums truncate">{formatMoney(totalRevenue)}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">6 เดือนล่าสุด</div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Avg / Month</div>
+                <div className="text-base font-bold tabular-nums truncate">{formatMoney(avgMonthRevenue)}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{activeMonths.length} เดือนที่มีข้อมูล</div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Total Documents</div>
+                <div className="text-base font-bold tabular-nums">{totalDocs} ใบ</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">QT + SO ทั้งหมด</div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+                <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Growth %</div>
+                <div className={`text-base font-bold tabular-nums ${growthColor}`}>{growthLabel}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">vs เดือนก่อน</div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Line Chart ── */}
+        {monthlyTrend.length === 0 ? (
+          <div className="flex items-center justify-center h-40 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
+        ) : (() => {
+          const vals    = monthlyTrend.map((m) => trendTab === 'count' ? m.count : m.value);
+          const max     = Math.max(...vals, 1);
+          const H       = 140;
+          const PB      = 24;
+          const PL      = 48;
+          const PR      = 12;
+          const PT      = 10;
+          const chartH  = H - PB - PT;
+          const n       = vals.length;
+          const VW      = 480;
+          const chartW  = VW - PL - PR;
+          const cx      = (i: number) => PL + (n <= 1 ? chartW / 2 : (i / (n - 1)) * chartW);
+          const cy      = (v: number) => PT + chartH - (v / max) * chartH * 0.88;
+          const fmt     = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}K` : String(v);
+          const yTicks  = [0, 0.25, 0.5, 0.75, 1];
+          const pathD   = n >= 2 ? `M ${vals.map((v, i) => `${cx(i)},${cy(v)}`).join(' L ')}` : '';
+          const areaD   = n >= 2 ? `${pathD} L ${cx(n - 1)},${PT + chartH} L ${cx(0)},${PT + chartH} Z` : '';
+          const lineColor = trendTab === 'value' ? '#10b981' : '#6366f1';
+          const areaColor = trendTab === 'value' ? '#10b98122' : '#6366f122';
+          const dotColor  = trendTab === 'value' ? '#10b981' : '#6366f1';
+          return (
+            <svg viewBox={`0 0 ${VW} ${H}`} className="w-full" style={{ height: H }}>
+              {/* Y grid + labels */}
+              {yTicks.map((t) => {
+                const gy = PT + chartH - t * chartH * 0.88;
                 return (
-                  <div key={status}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span className="font-medium">{STATUS_LABELS[status] ?? status}</span>
-                      </span>
-                      <span className="text-muted-foreground tabular-nums">{count} ใบ · {pct}%</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }} />
-                    </div>
-                  </div>
+                  <g key={t}>
+                    <line x1={PL - 4} y1={gy} x2={VW - PR} y2={gy} stroke="currentColor" strokeOpacity={0.06} strokeWidth={1} />
+                    {t > 0 && (
+                      <text x={PL - 8} y={gy + 4} textAnchor="end" fontSize={9} fill="currentColor" fillOpacity={0.4}>
+                        {fmt(max * t)}
+                      </text>
+                    )}
+                  </g>
                 );
               })}
+              {/* Area fill */}
+              {areaD && <path d={areaD} fill={areaColor} />}
+              {/* Line */}
+              {pathD && <path d={pathD} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />}
+              {/* Dots + value labels + x labels */}
+              {vals.map((v, i) => {
+                const isLast = i === n - 1;
+                const x = cx(i);
+                const y = cy(v);
+                return (
+                  <g key={i}>
+                    <circle cx={x} cy={y} r={isLast ? 4 : 3} fill={isLast ? dotColor : 'var(--background)'} stroke={dotColor} strokeWidth={2} />
+                    {(isLast || n <= 4) && v > 0 && (
+                      <text x={x} y={y - 8} textAnchor="middle" fontSize={9} fill="currentColor" fillOpacity={0.6}>
+                        {trendTab === 'value' ? fmt(v) : v}
+                      </text>
+                    )}
+                    <text x={x} y={H - 5} textAnchor="middle" fontSize={10} fill="currentColor"
+                      fillOpacity={isLast ? 0.85 : 0.45} fontWeight={isLast ? '600' : '400'}>
+                      {monthlyTrend[i].month}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          );
+        })()}
+
+        {/* ── Insights Row ── */}
+        {monthlyTrend.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border/50 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Best Month</span>
+              <span className="text-sm font-bold">{bestMonthEntry?.month ?? '—'}</span>
+              <span className="text-[10px] text-muted-foreground tabular-nums">{bestMonthEntry ? formatMoney(bestMonthEntry.value) : '—'}</span>
             </div>
-          )}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Avg per Order</span>
+              <span className="text-sm font-bold tabular-nums">{formatMoney(avgPerOrder)}</span>
+              <span className="text-[10px] text-muted-foreground">ต่อใบเสนอราคา</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Conversion Rate</span>
+              <span className={`text-sm font-bold tabular-nums ${winRate >= 50 ? 'text-emerald-600 dark:text-emerald-400' : winRate >= 25 ? 'text-amber-500' : 'text-rose-500'}`}>{winRate}%</span>
+              <span className="text-[10px] text-muted-foreground">QT → Approved</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Best Customer</span>
+              <span className="text-sm font-bold truncate">{bestCustomer ?? '—'}</span>
+              <span className="text-[10px] text-muted-foreground">{bestCustomer ? `${data.topCustomers![0].qtCount} QT` : 'ยังไม่มีข้อมูล'}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Status Breakdown ── */}
+      <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <PieChart className="h-4 w-4 text-violet-500" />
+          <span className="text-sm font-semibold">Status Breakdown</span>
+          <span className="ml-auto text-xs text-muted-foreground">{totals.quotations} ใบทั้งหมด</span>
         </div>
+        {byStatus.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+            {byStatus.sort((a, b) => b.count - a.count).map(({ status, count }) => {
+              const pct = totals.quotations > 0 ? Math.round((count / totals.quotations) * 100) : 0;
+              const color = STATUS_COLORS[status] ?? '#94a3b8';
+              return (
+                <div key={status}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="font-medium">{STATUS_LABELS[status] ?? status}</span>
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">{count} ใบ · {pct}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Recent Quotations ── */}
@@ -882,14 +932,24 @@ function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
         </div>
       )}
 
-      {/* ══ Extra sections from dashboardData (officer-filtered) ══ */}
-      {dashboardData && (() => {
-        const ddConversionRate = dashboardData.totals.conversionRate ??
-          (dashboardData.totals.quotations > 0 && dashboardData.totals.approved > 0
-            ? Math.round((dashboardData.totals.approved / dashboardData.totals.quotations) * 100) : 0);
-        const officerRow = dashboardData.topOfficers.length > 0 ? dashboardData.topOfficers[0] : null;
-        const expiring = dashboardData.expiringQuotations ?? [];
-        const customers = dashboardData.customerInsights ?? [];
+      {/* ══ Extra sections — Sales Pipeline, Performance, Expiring, Customers ══ */}
+      {(() => {
+        const pendingCnt = totals.pendingCount ?? 0;
+        const approvedCnt2 = totals.approvedCount2 ?? totals.approvedCount;
+        const poPendingCnt = totals.poPendingCount ?? 0;
+        const totalVal = totals.totalValue ?? 0;
+        const pendingVal = totals.pendingValue ?? 0;
+        const expiring = data.expiringQuotations ?? [];
+        const customers = data.topCustomers ?? [];
+
+        const pipelineStages = [
+          { label: 'รออนุมัติ', count: pendingCnt, value: pendingVal, color: '#f59e0b' },
+          { label: 'อนุมัติแล้ว', count: approvedCnt2, value: totals.approvedValue, color: '#10b981' },
+          { label: 'รอ PO', count: poPendingCnt, value: 0, color: '#8b5cf6' },
+          { label: 'SO', count: totals.soCount, value: totals.soValue, color: '#06b6d4' },
+        ].filter((s) => s.count > 0);
+
+        const winColor = winRate >= 50 ? 'text-emerald-600 dark:text-emerald-400' : winRate >= 25 ? 'text-amber-500' : 'text-rose-500';
 
         return (
           <>
@@ -898,71 +958,82 @@ function OfficerAnalyticsView({ userId, selectedUser, dashboardData }: {
               <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
                 <TrendingUp className="h-4 w-4 text-blue-500" />
                 Sales Pipeline
+                <span className="ml-auto text-xs text-muted-foreground font-normal">มูลค่ารวม {formatMoney(totalVal)}</span>
               </div>
-              <SalesFunnel data={dashboardData} conversionRate={ddConversionRate} />
+              {pipelineStages.length === 0 ? (
+                <div className="flex items-center justify-center h-20 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
+              ) : (
+                <div className="space-y-2.5">
+                  {pipelineStages.map((s) => {
+                    const pct = totalVal > 0 && s.value > 0 ? Math.round((s.value / totalVal) * 100) : 0;
+                    return (
+                      <div key={s.label}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                            <span className="font-medium">{s.label}</span>
+                            <span className="text-muted-foreground">({s.count} ใบ)</span>
+                          </span>
+                          <span className="tabular-nums text-muted-foreground">{s.value > 0 ? formatMoney(s.value) : '—'} {pct > 0 ? `· ${pct}%` : ''}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, s.count > 0 ? 4 : 0)}%`, backgroundColor: s.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* ── Sales Team Performance (this officer) ── */}
+            {/* ── Sales Performance (this officer) ── */}
             <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
               <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
                 <UsersIcon className="h-4 w-4 text-blue-500" />
                 Sales Performance
               </div>
-              {!officerRow ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <UsersIcon className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">ยังไม่มีข้อมูลในช่วงนี้</p>
+              <div>
+                <div className="grid grid-cols-[1fr_40px_100px_100px_44px] gap-x-3 px-3 pb-2 border-b items-center">
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">ชื่อ</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-center">QT</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">มูลค่า QT</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">SO มูลค่า</span>
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Win%</span>
                 </div>
-              ) : (() => {
-                const COL = 'grid-cols-[1fr_40px_100px_100px_44px]';
-                const winRateOfficer = officerRow.winRate ?? 0;
-                const soValue = officerRow.avgDealSize ?? officerRow.soValue ?? 0;
-                const winColor = winRateOfficer >= 50 ? 'text-emerald-600 dark:text-emerald-400' : winRateOfficer >= 25 ? 'text-amber-500' : 'text-rose-500';
-                return (
-                  <div>
-                    <div className={`grid ${COL} gap-x-3 px-3 pb-2 border-b items-center`}>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase">ชื่อ</span>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-center">QT</span>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">มูลค่า QT</span>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">SO อนุมัติ</span>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase text-right">Win%</span>
-                    </div>
-                    <div className={`grid ${COL} gap-x-3 px-3 pt-2.5 pb-1.5 items-center`}>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-[13px] truncate leading-tight">{officerRow.userName}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{officerRow.userEmail}</div>
-                      </div>
-                      <div className="text-center">
-                        <span className="text-[13px] font-bold tabular-nums">{officerRow.count}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[13px] font-bold tabular-nums">{formatMoney(officerRow.value)}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(soValue)}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className={`text-[13px] font-bold tabular-nums ${winColor}`}>{winRateOfficer}%</span>
-                      </div>
-                    </div>
-                    <div className="mx-3 mb-2 h-[3px] rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-700" style={{ width: '100%' }} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/50">
-                      {[
-                        { label: 'QT ทั้งหมด', value: `${officerRow.count} ใบ`, color: 'text-foreground' },
-                        { label: 'Approved', value: `${officerRow.approvedCount ?? 0} ใบ`, color: 'text-emerald-600 dark:text-emerald-400' },
-                        { label: 'Pending', value: `${officerRow.pendingCount ?? 0} ใบ`, color: 'text-amber-500' },
-                      ].map((s) => (
-                        <div key={s.label} className="text-center">
-                          <div className={`text-sm font-bold tabular-nums ${s.color}`}>{s.value}</div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
-                        </div>
-                      ))}
-                    </div>
+                <div className="grid grid-cols-[1fr_40px_100px_100px_44px] gap-x-3 px-3 pt-2.5 pb-1.5 items-center">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-[13px] truncate leading-tight">{data.user.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{data.user.email}</div>
                   </div>
-                );
-              })()}
+                  <div className="text-center">
+                    <span className="text-[13px] font-bold tabular-nums">{totals.quotations}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[13px] font-bold tabular-nums">{formatMoney(totalVal)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(totals.soValue)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-[13px] font-bold tabular-nums ${winColor}`}>{winRate}%</span>
+                  </div>
+                </div>
+                <div className="mx-3 mb-2 h-[3px] rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-700" style={{ width: '100%' }} />
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/50">
+                  {[
+                    { label: 'QT ทั้งหมด', value: `${totals.quotations} ใบ`, color: 'text-foreground' },
+                    { label: 'Approved', value: `${approvedCnt2} ใบ`, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Pending', value: `${pendingCnt} ใบ`, color: 'text-amber-500' },
+                  ].map((s) => (
+                    <div key={s.label} className="text-center">
+                      <div className={`text-sm font-bold tabular-nums ${s.color}`}>{s.value}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* ── Expiring Soon + Customer Insight ── */}
@@ -1662,50 +1733,6 @@ function DashboardContent({
                   );
                 });
               })()}
-            </div>
-          )}
-        </div>
-
-        {/* Margin / Discount Analysis */}
-        <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-5">
-          <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
-            <Percent className="h-4 w-4 text-amber-500" />
-            Margin &amp; Discount Analysis
-          </div>
-          {!data.marginAnalysis ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">ยังไม่มีข้อมูล</div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: 'ส่วนลดรวม (Approved)', value: formatMoney(data.marginAnalysis.totalDiscountGiven), color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-900/20' },
-                  { label: 'Avg Discount Rate', value: `${data.marginAnalysis.avgDiscountRate.toFixed(1)}%`, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-                  { label: 'QT Approved ทั้งหมด', value: data.marginAnalysis.approvedCount, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-                ].map((item) => (
-                  <div key={item.label} className={`rounded-xl p-3 ${item.bg}`}>
-                    <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">{item.label}</div>
-                  </div>
-                ))}
-              </div>
-              {data.marginAnalysis.totalApprovedSubtotal > 0 && (
-                <div>
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>Net Revenue vs ส่วนลดที่ให้</span>
-                    <span>{data.marginAnalysis.avgDiscountRate.toFixed(1)}% discount rate</span>
-                  </div>
-                  <div className="h-3 rounded-full bg-muted overflow-hidden flex">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
-                      style={{ width: `${Math.max(100 - data.marginAnalysis.avgDiscountRate, 0)}%` }} />
-                    <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 transition-all duration-700"
-                      style={{ width: `${Math.min(data.marginAnalysis.avgDiscountRate, 100)}%` }} />
-                  </div>
-                  <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Net Revenue</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />Discount Given</span>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

@@ -43,8 +43,6 @@ interface RoleOption {
 }
 
 type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
-type ManagerLevel = 'DIVISION' | 'DEPARTMENT' | 'SECTION';
-
 const STATUS_META: Record<InvitationStatus, { color: string; icon: typeof Clock; label: string }> = {
   PENDING:  { color: 'bg-amber-500/10 text-amber-600',   icon: Clock,         label: 'Pending' },
   ACCEPTED: { color: 'bg-emerald-500/10 text-emerald-600', icon: CheckCircle2, label: 'Accepted' },
@@ -52,11 +50,6 @@ const STATUS_META: Record<InvitationStatus, { color: string; icon: typeof Clock;
   REVOKED:  { color: 'bg-red-500/10 text-red-600',       icon: XCircle,       label: 'Revoked' },
 };
 
-const LEVEL_LABEL: Record<ManagerLevel, string> = {
-  DIVISION:   'Division Manager',
-  DEPARTMENT: 'Department Manager',
-  SECTION:    'Section Manager',
-};
 
 export default function AdminInvitationsPage() {
   const { can, loading: permLoading } = usePermissions();
@@ -158,7 +151,6 @@ export default function AdminInvitationsPage() {
                       <span className="font-semibold">{inv.email}</span>
                       <Badge variant="outline" className="text-xs">{inv.role.nameTh}</Badge>
                       <Badge className={`text-xs ${meta.color}`} variant="outline">{meta.label}</Badge>
-                      {inv.team && <Badge variant="secondary" className="text-xs">{inv.team.name}</Badge>}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {inv.name && `${inv.name} · `}Invited by {inv.invitedBy.name} {formatRelativeTime(inv.createdAt)}
@@ -194,7 +186,7 @@ export default function AdminInvitationsPage() {
 
       {creating && (
         <CreateInvitationDialog
-          teams={teams} roles={roles}
+          roles={roles}
           onClose={() => setCreating(false)}
           onCreated={(url, email) => { setCreating(false); setShowCreated({ url, email }); fetchData(); }}
         />
@@ -224,12 +216,12 @@ export default function AdminInvitationsPage() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Create Invitation Dialog — ✅ เพิ่ม roleId, managerLevel, approvalLimit
+// ════════════════════════════════════════════════════════════════════════════
+// Create Invitation Dialog
 // ════════════════════════════════════════════════════════════════════════════
 function CreateInvitationDialog({
-  teams, roles, onClose, onCreated,
+  roles, onClose, onCreated,
 }: {
-  teams: TeamOption[];
   roles: RoleOption[];
   onClose: () => void;
   onCreated: (url: string, email: string) => void;
@@ -238,15 +230,8 @@ function CreateInvitationDialog({
   const [emailError, setEmailError] = useState('');
   const [name, setName] = useState('');
   const [roleId, setRoleId] = useState('');
-  const [teamId, setTeamId] = useState('');
-  const [managerLevel, setManagerLevel] = useState<ManagerLevel>('SECTION');
-  const [approvalLimit, setApprovalLimit] = useState('');
   const [expiresInDays, setExpiresInDays] = useState(3);
   const [submitting, setSubmitting] = useState(false);
-
-  // หา role code จาก roleId ที่เลือก
-  const selectedRole = roles.find((r) => r.id === roleId);
-  const isManager = selectedRole?.code === 'MANAGER';
 
   // Set default roleId เมื่อ roles โหลดแล้ว
   useEffect(() => {
@@ -266,15 +251,9 @@ function CreateInvitationDialog({
         email,
         name: name || undefined,
         roleId,
-        teamId: teamId || undefined,
         channel: 'MANUAL',
         expiresInDays,
       };
-
-      if (isManager) {
-        body.managerLevel = managerLevel;
-        body.approvalLimit = approvalLimit ? Number(approvalLimit) : undefined;
-      }
 
       const res = await api.post<ApiResponse<{ token: string; invitationUrl: string }>>('/invitations', body);
       const url = res.data.data?.invitationUrl || `${window.location.origin}/invite/${res.data.data?.token}`;
@@ -339,49 +318,6 @@ function CreateInvitationDialog({
                 .map((r) => (
                   <option key={r.id} value={r.id}>{r.nameTh} (L{r.level})</option>
                 ))}
-            </select>
-          </div>
-
-          {/* ✅ Manager Level — แสดงเฉพาะเมื่อเลือก MANAGER */}
-          {isManager && (
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200">
-              <div>
-                <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                  ระดับ Manager <span className="text-destructive">*</span>
-                </Label>
-                <select value={managerLevel} onChange={(e) => setManagerLevel(e.target.value as ManagerLevel)}
-                  className="mt-1.5 flex h-10 w-full rounded-md border border-amber-300 bg-white dark:bg-amber-950/30 px-3 text-sm">
-                  <option value="DIVISION">Division Manager</option>
-                  <option value="DEPARTMENT">Department Manager</option>
-                  <option value="SECTION">Section Manager</option>
-                </select>
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                  วงเงินอนุมัติ (฿)
-                </Label>
-                <Input type="number" min="0" step="1000" value={approvalLimit}
-                  onChange={(e) => setApprovalLimit(e.target.value)}
-                  placeholder="ว่าง = ไม่จำกัด"
-                  className="mt-1.5 border-amber-300 focus:ring-amber-400" />
-              </div>
-              <div className="col-span-2 text-[10px] text-amber-700 dark:text-amber-300">
-                Approval flow: Section → Department → Division → CEO
-              </div>
-            </div>
-          )}
-
-          {/* Team */}
-          <div>
-            <Label className="text-xs">Team (optional)</Label>
-            <select value={teamId} onChange={(e) => setTeamId(e.target.value)}
-              className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
-              <option value="">— ไม่ระบุทีม —</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.department?.name ? `${t.department.name} / ` : ''}{t.name}
-                </option>
-              ))}
             </select>
           </div>
 
