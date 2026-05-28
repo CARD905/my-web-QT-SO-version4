@@ -823,14 +823,53 @@ export const adminService = {
   // DOCUMENT COUNTERS
   // ============================================================
   async getDocumentCounters() {
-    const year = new Date().getFullYear();
-    return prisma.documentCounter.findMany({
-      where: { year },
-      orderBy: { type: 'asc' },
+    const [configs, counters] = await Promise.all([
+      prisma.documentCounterConfig.findMany({ orderBy: { type: 'asc' } }),
+      prisma.documentCounter.findMany({ orderBy: [{ type: 'asc' }, { year: 'desc' }] }),
+    ]);
+    // Merge: for each known type (QT, SO), attach config + all year-counters
+    const types = Array.from(new Set([
+      ...configs.map((c) => c.type),
+      ...counters.map((c) => c.type),
+      'QT', 'SO',
+    ]));
+    return types.map((type) => {
+      const config = configs.find((c) => c.type === type);
+      const currentYear = new Date().getFullYear();
+      return {
+        type,
+        prefix: config?.prefix ?? type,
+        activeYear: config?.year ?? currentYear,
+        counters: counters.filter((c) => c.type === type),
+        updatedAt: config?.updatedAt ?? null,
+      };
     });
   },
 
-  // ✅ ตรงกับ routes: resetDocumentCounter(type, year, counter, user, req) — 5 args
+  async updateDocumentCounterConfig(
+    type: string,
+    prefix: string,
+    year: number,
+    currentUser: AdminUser,
+    req?: Request,
+  ) {
+    if (!prefix.trim()) throw new AppError(400, 'BAD_REQUEST', 'prefix is required');
+    if (!year || year < 2000 || year > 2100) throw new AppError(400, 'BAD_REQUEST', 'invalid year');
+
+    const config = await prisma.documentCounterConfig.upsert({
+      where: { type },
+      update: { prefix: prefix.trim().toUpperCase(), year },
+      create: { type, prefix: prefix.trim().toUpperCase(), year },
+    });
+
+    await logActivity(prisma, {
+      userId: currentUser.id, action: 'documentCounter.updateConfig',
+      entityType: 'DocumentCounterConfig', entityId: type,
+      description: `Updated ${type} config: prefix="${config.prefix}", year=${config.year}`, req,
+    });
+    return config;
+  },
+
   async resetDocumentCounter(type: string, year: number, counter: number, currentUser: AdminUser, req?: Request) {
     const updated = await prisma.documentCounter.upsert({
       where: { type_year: { type, year } },

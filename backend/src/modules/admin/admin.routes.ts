@@ -252,6 +252,18 @@ router.patch('/document-counters',
     return success(res, data, 'Counter reset successful');
   }),
 );
+
+router.patch('/document-counter-configs/:type',
+  requireAnyPermission(['user', 'update', 'ALL']),
+  asyncHandler(async (req, res) => {
+    const user = adminOnly(req);
+    const { type } = req.params;
+    const { prefix, year } = req.body as { prefix: string; year: number };
+    if (!prefix || !year) throw new AppError(400, 'BAD_REQUEST', 'prefix and year required');
+    const data = await adminService.updateDocumentCounterConfig(type, prefix, Number(year), user, req);
+    return success(res, data, 'Config updated');
+  }),
+);
 router.patch('/users/:userId/team', requireAnyPermission(['user', 'update', 'ALL']),
   asyncHandler(async (req, res) => {
     const user = adminOnly(req);

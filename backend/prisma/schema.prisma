@@ -699,6 +699,15 @@ model DocumentCounter {
   @@map("document_counters")
 }
 
+model DocumentCounterConfig {
+  type      String   @id
+  prefix    String
+  year      Int
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("document_counter_configs")
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ENUMS
 // ═══════════════════════════════════════════════════════════════════════════
