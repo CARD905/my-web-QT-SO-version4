@@ -26,7 +26,6 @@ const GROUP_LABELS: Record<string, string> = {
   general:   '⚙️ General',
   vat:       '🧾 VAT',
   discount:  '💰 Discount',
-  approval:  '✅ Approval',
   numbering: '🔢 Running Number',
 };
 
@@ -306,7 +305,7 @@ export default function AdminSettingsPage() {
     finally { setSaving(false); }
   };
 
-  const HIDDEN_KEYS = new Set(['normal_discount_max', 'special_discount_max', 'vat_enabled', 'vat_rate']);
+  const HIDDEN_KEYS = new Set(['normal_discount_max', 'special_discount_max', 'vat_enabled', 'vat_rate', 'high_value_threshold']);
   const grouped = settings.reduce((acc, s) => {
     if (HIDDEN_KEYS.has(s.key)) return acc;
     if (!acc[s.group]) acc[s.group] = [];

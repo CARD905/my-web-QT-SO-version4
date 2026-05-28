@@ -328,6 +328,10 @@ export function OfficerDetailPage() {
   const [showToggleActive,  setShowToggleActive]  = useState(false);
   const [togglingActive,    setTogglingActive]    = useState(false);
 
+  // Must be at top level — before any early returns
+  const { hasRole } = usePermissions();
+  const isAdmin = hasRole('ADMIN');
+
   /* ── Data loading ── */
   const load = async () => {
     try {
@@ -464,8 +468,6 @@ export function OfficerDetailPage() {
 
   const { user } = data;
   const isProtected = PROTECTED_ROLES.includes(user.role.code);
-  const { hasRole } = usePermissions();
-  const isAdmin     = hasRole('ADMIN');
   const initials    = user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
   /* ── Render ── */

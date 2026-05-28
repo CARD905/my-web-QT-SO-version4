@@ -257,6 +257,10 @@ export function ManagerDetailPage() {
   const [actionLoading,     setActionLoading]     = useState(false);
   const [logSearch,         setLogSearch]         = useState('');
 
+  // Must be at top level — before any early returns
+  const { hasRole } = usePermissions();
+  const isAdmin = hasRole('ADMIN');
+
   const load = async () => {
     try {
       const [uRes, rRes] = await Promise.all([
@@ -343,8 +347,6 @@ export function ManagerDetailPage() {
 
   const { user } = data;
   const isProtected = PROTECTED_ROLES.includes(user.role.code);
-  const { hasRole } = usePermissions();
-  const isAdmin     = hasRole('ADMIN');
   const isOnline = user.lastLoginAt
     ? (Date.now() - new Date(user.lastLoginAt).getTime()) < 15 * 60 * 1000
     : false;
