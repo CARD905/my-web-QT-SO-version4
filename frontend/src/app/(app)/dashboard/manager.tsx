@@ -1477,7 +1477,9 @@ function DashboardContent({
                   {actionableCount}
                 </span>
               )}
-              <span className="ml-auto text-[11px] text-muted-foreground">รายการที่ต้องดำเนินการ</span>
+              <Link href="/approval-queue" className="ml-auto flex items-center gap-1 text-[11px] text-primary hover:underline">
+                รายการที่ต้องดำเนินการ <ChevronRight className="h-3 w-3" />
+              </Link>
             </div>
 
             <div className="divide-y divide-border/50">
@@ -1508,44 +1510,86 @@ function DashboardContent({
                     </Button>
                   </div>
                   {/* Show top pending QTs from pipeline */}
-                  {(data.pipelineDetail?.stage1Top ?? []).filter((q) =>
-                    !data.recentEscalated.some((e) => e.id === q.id)
-                  ).slice(0, 3).map((q) => (
-                    <Link key={q.id} href={`/quotations/${q.id}`}
-                      className="group flex items-center gap-4 px-5 py-2.5 hover:bg-red-50/60 dark:hover:bg-red-900/10 transition-colors border-t border-border/30"
-                    >
-                      <div className="w-[3px] h-6 rounded-full bg-red-200 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
-                        <div className="text-[11px] text-muted-foreground truncate mt-px">{q.customerCompany}</div>
-                      </div>
-                      <div className="text-[13px] font-bold text-red-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-red-400 transition-colors shrink-0" />
-                    </Link>
-                  ))}
+                  {(() => {
+                    const qtItems = (data.pipelineDetail?.stage1Top ?? []).filter((q) =>
+                      !data.recentEscalated.some((e) => e.id === q.id)
+                    );
+                    return (
+                      <>
+                        {qtItems.slice(0, 4).map((q) => (
+                          <Link key={q.id} href={`/quotations/${q.id}`}
+                            className="group flex items-center gap-4 px-5 py-2.5 hover:bg-red-50/60 dark:hover:bg-red-900/10 transition-colors border-t border-border/30"
+                          >
+                            <div className="w-[3px] h-6 rounded-full bg-red-200 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
+                              <div className="text-[11px] text-muted-foreground truncate mt-px">{q.customerCompany}</div>
+                            </div>
+                            <div className="text-[13px] font-bold text-red-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-red-400 transition-colors shrink-0" />
+                          </Link>
+                        ))}
+                        {qtItems.length > 4 && (
+                          <Link href="/approval-queue"
+                            className="flex items-center justify-center gap-1 px-5 py-2 text-[11px] text-red-600 hover:bg-red-50/60 dark:hover:bg-red-900/10 transition-colors border-t border-border/30"
+                          >
+                            ดูทั้งหมด {qtItems.length} รายการ <ChevronRight className="h-3 w-3" />
+                          </Link>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
               {/* ── ROW 2: PO Validation Pending ── */}
               {poCount > 0 && (
-                <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-amber-500/[0.03] transition-colors">
-                  <div className="w-[3px] h-8 rounded-full bg-amber-500 shrink-0" />
-                  <div className="h-8 w-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="h-4 w-4 text-amber-500" />
+                <div>
+                  <div className="flex items-center gap-3 px-5 py-3.5 bg-amber-500/[0.03]">
+                    <div className="w-[3px] h-8 rounded-full bg-amber-500 shrink-0" />
+                    <div className="h-8 w-8 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-amber-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold">PO รอตรวจสอบ</div>
+                      <div className="text-[11px] text-muted-foreground">PO ที่รออนุมัติความถูกต้อง</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xl font-bold tabular-nums text-amber-600">{poCount}</div>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      MED
+                    </span>
+                    <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-amber-300 hover:text-amber-600">
+                      <Link href="/quotations?status=PO_PENDING">ดูทั้งหมด <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
+                    </Button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold">PO รอตรวจสอบ</div>
-                    <div className="text-[11px] text-muted-foreground">PO ที่รออนุมัติความถูกต้อง</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold tabular-nums text-amber-600">{poCount}</div>
-                  </div>
-                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                    MED
-                  </span>
-                  <Button asChild size="sm" variant="outline" className="h-7 px-3 text-[11px] shrink-0 hover:border-amber-300 hover:text-amber-600">
-                    <Link href="/sale-orders">ดู <ChevronRight className="h-3 w-3 ml-0.5" /></Link>
-                  </Button>
+                  {/* Individual PO items */}
+                  {(data.pipelineDetail?.stage3Top ?? []).slice(0, 4).map((q) => (
+                    <Link key={q.id} href={`/quotations/${q.id}`}
+                      className="group flex items-center gap-4 px-5 py-2.5 hover:bg-amber-50/60 dark:hover:bg-amber-900/10 transition-colors border-t border-border/30"
+                    >
+                      <div className="w-[3px] h-6 rounded-full bg-amber-200 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
+                        <div className="text-[11px] text-muted-foreground truncate mt-px">
+                          {q.customerCompany}
+                          {q.poUploadedAt && (
+                            <span className="ml-2 text-amber-600">· อัปโหลด {formatDate(q.poUploadedAt)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-[13px] font-bold text-amber-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-amber-400 transition-colors shrink-0" />
+                    </Link>
+                  ))}
+                  {(data.pipelineDetail?.stage3Top ?? []).length > 4 && (
+                    <Link href="/quotations?status=PO_PENDING"
+                      className="flex items-center justify-center gap-1 px-5 py-2 text-[11px] text-amber-600 hover:bg-amber-50/60 transition-colors border-t border-border/30"
+                    >
+                      ดูทั้งหมด {data.pipelineDetail!.stage3Top.length} รายการ <ChevronRight className="h-3 w-3" />
+                    </Link>
+                  )}
                 </div>
               )}
 
