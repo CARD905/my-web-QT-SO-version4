@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { api, getApiErrorMessage } from '@/lib/api';
+import { usePermissions } from '@/hooks/use-permissions';
 import { formatDate, formatMoney } from '@/lib/utils';
 import type { ApiResponse } from '@/types/api';
 
@@ -85,13 +86,14 @@ function SectionHeader({ icon: Icon, title, subtitle, action }: {
 
 // ─── Change Request Dialog ─────────────────────────────────────────────────
 function ChangeRequestDialog({
-  user, roles, open, onClose, onSubmitted,
+  user, roles, open, onClose, onSubmitted, isDirectEdit = false,
 }: {
   user: NonNullable<UserDetailData['user']>;
   roles: RoleOption[];
   open: boolean;
   onClose: () => void;
   onSubmitted: () => void;
+  isDirectEdit?: boolean;
 }) {
   const [reason, setReason] = useState('');
   const [name, setName] = useState('');
@@ -109,7 +111,7 @@ function ChangeRequestDialog({
   };
 
   const handleSubmit = async () => {
-    if (!reason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    if (!isDirectEdit && !reason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
     const changes: Record<string, unknown> = {};
     if (name.trim() && name.trim() !== user.name) changes.name = name.trim();
     if (email.trim() && email.trim() !== user.email) changes.email = email.trim().toLowerCase();
@@ -125,12 +127,17 @@ function ChangeRequestDialog({
 
     setSubmitting(true);
     try {
-      await api.post('/admin/change-requests', {
-        targetUserId: user.id,
-        reason: reason.trim(),
-        changes,
-      });
-      toast.success('ส่งคำขอแก้ไขไปยัง Admin เรียบร้อย');
+      if (isDirectEdit) {
+        await api.patch(`/admin/users/${user.id}`, changes);
+        toast.success('แก้ไขข้อมูลเรียบร้อย');
+      } else {
+        await api.post('/admin/change-requests', {
+          targetUserId: user.id,
+          reason: reason.trim(),
+          changes,
+        });
+        toast.success('ส่งคำขอแก้ไขไปยัง Admin เรียบร้อย');
+      }
       handleClose();
       onSubmitted();
     } catch (err) {
@@ -145,25 +152,30 @@ function ChangeRequestDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <SendHorizonal className="h-4 w-4 text-blue-500" />ขอแก้ไขข้อมูลผู้ใช้
+            <SendHorizonal className="h-4 w-4 text-blue-500" />
+            {isDirectEdit ? 'แก้ไขข้อมูลผู้ใช้' : 'ขอแก้ไขข้อมูลผู้ใช้'}
           </DialogTitle>
           <DialogDescription>
-            คำขอจะถูกส่งให้ Admin อนุมัติก่อน — กรอกเฉพาะข้อมูลที่ต้องการเปลี่ยนแปลง
+            {isDirectEdit
+              ? 'แก้ไขข้อมูลได้ทันที — กรอกเฉพาะข้อมูลที่ต้องการเปลี่ยนแปลง'
+              : 'คำขอจะถูกส่งให้ Admin อนุมัติก่อน — กรอกเฉพาะข้อมูลที่ต้องการเปลี่ยนแปลง'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-          {/* Reason — required */}
-          <div>
-            <Label className="text-xs font-semibold">เหตุผลในการขอแก้ไข <span className="text-destructive">*</span></Label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={2}
-              placeholder="ระบุเหตุผลที่ต้องการแก้ไขข้อมูล เช่น เปลี่ยนตำแหน่ง, อีเมลเดิมใช้งานไม่ได้"
-              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          </div>
+          {/* Reason — required only for non-admin */}
+          {!isDirectEdit && (
+            <div>
+              <Label className="text-xs font-semibold">เหตุผลในการขอแก้ไข <span className="text-destructive">*</span></Label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                placeholder="ระบุเหตุผลที่ต้องการแก้ไขข้อมูล เช่น เปลี่ยนตำแหน่ง, อีเมลเดิมใช้งานไม่ได้"
+                className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          )}
 
           <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">ข้อมูลที่ต้องการเปลี่ยน (เว้นว่างหากไม่ต้องการเปลี่ยน)</div>
 
@@ -214,9 +226,9 @@ function ChangeRequestDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={submitting}>ยกเลิก</Button>
-          <Button onClick={handleSubmit} disabled={submitting || !reason.trim()} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={handleSubmit} disabled={submitting || (!isDirectEdit && !reason.trim())} className="bg-blue-600 hover:bg-blue-700">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-4 w-4" />}
-            ส่งคำขอแก้ไข
+            {isDirectEdit ? 'บันทึก' : 'ส่งคำขอแก้ไข'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -241,6 +253,7 @@ export function ManagerDetailPage() {
 
   const [showChangeRequest, setShowChangeRequest] = useState(false);
   const [showForceLogout,   setShowForceLogout]   = useState(false);
+  const [showToggleActive,  setShowToggleActive]  = useState(false);
   const [actionLoading,     setActionLoading]     = useState(false);
   const [logSearch,         setLogSearch]         = useState('');
 
@@ -294,6 +307,19 @@ export function ManagerDetailPage() {
     finally { setActionLoading(false); }
   };
 
+  const handleToggleActive = async () => {
+    if (!user) return;
+    setShowToggleActive(false);
+    setActionLoading(true);
+    try {
+      const endpoint = user.isActive ? 'deactivate' : 'activate';
+      await api.post(`/admin/users/${userId}/${endpoint}`);
+      toast.success(user.isActive ? 'ปิดบัญชีเรียบร้อย — user ไม่สามารถเข้าสู่ระบบได้' : 'เปิดบัญชีเรียบร้อย');
+      await load();
+    } catch (err) { toast.error(getApiErrorMessage(err)); }
+    finally { setActionLoading(false); }
+  };
+
   if (loading) return (
     <div className="flex gap-6 max-w-[1400px] p-6">
       <div className="w-64 space-y-3 shrink-0">
@@ -317,6 +343,8 @@ export function ManagerDetailPage() {
 
   const { user } = data;
   const isProtected = PROTECTED_ROLES.includes(user.role.code);
+  const { hasRole } = usePermissions();
+  const isAdmin     = hasRole('ADMIN');
   const isOnline = user.lastLoginAt
     ? (Date.now() - new Date(user.lastLoginAt).getTime()) < 15 * 60 * 1000
     : false;
@@ -385,12 +413,12 @@ export function ManagerDetailPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {!isProtected && (
+                {(!isProtected || isAdmin) && (
                   <button
                     onClick={() => setShowChangeRequest(true)}
                     className="h-8 px-3 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium border border-white/20 flex items-center gap-1.5"
                   >
-                    <SendHorizonal className="h-3.5 w-3.5" />ขอแก้ไขข้อมูล
+                    <SendHorizonal className="h-3.5 w-3.5" />{isAdmin ? 'แก้ไขข้อมูล' : 'ขอแก้ไขข้อมูล'}
                   </button>
                 )}
                 <button
@@ -469,15 +497,20 @@ export function ManagerDetailPage() {
             <div className="p-3">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-2">Quick Actions</p>
               <div className="space-y-0.5">
-                {!isProtected && (
+                {(!isProtected || isAdmin) && (
                   <button onClick={() => setShowChangeRequest(true)}
                     className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-blue-600 hover:bg-blue-50">
-                    <SendHorizonal className="h-3 w-3 shrink-0" />ขอแก้ไขข้อมูล
+                    <SendHorizonal className="h-3 w-3 shrink-0" />{isAdmin ? 'แก้ไขข้อมูล' : 'ขอแก้ไขข้อมูล'}
                   </button>
                 )}
                 <button onClick={() => setShowForceLogout(true)} disabled={actionLoading}
                   className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-amber-600 hover:bg-amber-50">
                   <LogOut className="h-3 w-3 shrink-0" />Force Logout
+                </button>
+                <button onClick={() => setShowToggleActive(true)} disabled={actionLoading}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${user.isActive ? 'text-red-600 hover:bg-red-50' : 'text-emerald-600 hover:bg-emerald-50'}`}>
+                  {user.isActive ? <UserX className="h-3 w-3 shrink-0" /> : <UserCheck className="h-3 w-3 shrink-0" />}
+                  {user.isActive ? 'ปิดบัญชี' : 'เปิดบัญชี'}
                 </button>
               </div>
             </div>
@@ -662,10 +695,10 @@ export function ManagerDetailPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {!isProtected && (
+                  {(!isProtected || isAdmin) && (
                     <button onClick={() => setShowChangeRequest(true)}
                       className="h-8 px-3 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 text-xs font-medium flex items-center gap-1.5 transition-all">
-                      <SendHorizonal className="h-3.5 w-3.5" />ขอแก้ไขข้อมูล / สถานะ
+                      <SendHorizonal className="h-3.5 w-3.5" />{isAdmin ? 'แก้ไขข้อมูล' : 'ขอแก้ไขข้อมูล / สถานะ'}
                     </button>
                   )}
                   <button onClick={() => setShowForceLogout(true)} disabled={actionLoading}
@@ -727,14 +760,15 @@ export function ManagerDetailPage() {
         </div>
       </div>
 
-      {/* Change Request Dialog */}
-      {!isProtected && (
+      {/* Change Request / Direct Edit Dialog */}
+      {(!isProtected || isAdmin) && (
         <ChangeRequestDialog
           user={user}
           roles={roles}
           open={showChangeRequest}
           onClose={() => setShowChangeRequest(false)}
           onSubmitted={load}
+          isDirectEdit={isAdmin}
         />
       )}
 
@@ -749,6 +783,36 @@ export function ManagerDetailPage() {
             <Button variant="outline" onClick={() => setShowForceLogout(false)}>ยกเลิก</Button>
             <Button variant="destructive" onClick={handleForceLogout} disabled={actionLoading}>
               {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}Force Logout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Activate / Deactivate */}
+      <Dialog open={showToggleActive} onOpenChange={setShowToggleActive}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {user.isActive
+                ? <><UserX className="h-4 w-4 text-red-500" />ปิดบัญชี</>
+                : <><UserCheck className="h-4 w-4 text-emerald-500" />เปิดบัญชี</>}
+            </DialogTitle>
+            <DialogDescription>
+              {user.isActive
+                ? <>บัญชีของ <strong>{user.name}</strong> จะถูกปิดทันที — ไม่สามารถเข้าสู่ระบบได้จนกว่า Admin จะเปิดอีกครั้ง</>
+                : <>เปิดการใช้งานบัญชีของ <strong>{user.name}</strong> อีกครั้ง — ผู้ใช้จะเข้าสู่ระบบได้ตามปกติ</>}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowToggleActive(false)}>ยกเลิก</Button>
+            <Button
+              variant={user.isActive ? 'destructive' : 'default'}
+              className={!user.isActive ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+              onClick={handleToggleActive}
+              disabled={actionLoading}
+            >
+              {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : user.isActive ? <UserX className="h-3.5 w-3.5 mr-1" /> : <UserCheck className="h-3.5 w-3.5 mr-1" />}
+              {user.isActive ? 'ปิดบัญชี' : 'เปิดบัญชี'}
             </Button>
           </DialogFooter>
         </DialogContent>

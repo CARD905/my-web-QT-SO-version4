@@ -702,18 +702,18 @@ export function CeoDetailPage() {
                 ))}
               </div>
 
-              {/* Lock account — full-width, most dangerous */}
+              {/* Lock / Unlock account */}
               <button onClick={() => setShowLockAccount(true)}
-                className="w-full mt-3 flex items-center gap-3 p-4 rounded-xl border border-red-200 hover:border-red-400 hover:bg-red-50/60 text-left transition-all group">
-                <div className="h-8 w-8 rounded-lg bg-red-50 group-hover:bg-red-100 flex items-center justify-center shrink-0 transition-colors">
-                  <Lock className="h-4 w-4 text-red-600" />
+                className={`w-full mt-3 flex items-center gap-3 p-4 rounded-xl border text-left transition-all group ${user.isActive ? 'border-red-200 hover:border-red-400 hover:bg-red-50/60' : 'border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50/60'}`}>
+                <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${user.isActive ? 'bg-red-50 group-hover:bg-red-100' : 'bg-emerald-50 group-hover:bg-emerald-100'}`}>
+                  <Lock className={`h-4 w-4 ${user.isActive ? 'text-red-600' : 'text-emerald-600'}`} />
                 </div>
                 <div className="flex-1">
-                  <p className="text-xs font-bold text-red-700">Lock Account</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Immediately block all access. Sessions terminated. Requires supervisor sign-off to unlock.</p>
+                  <p className={`text-xs font-bold ${user.isActive ? 'text-red-700' : 'text-emerald-700'}`}>{user.isActive ? 'Lock Account' : 'Unlock Account'}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{user.isActive ? 'Immediately block all access. Sessions terminated.' : 'Re-enable account access for this user.'}</p>
                 </div>
-                <span className="text-[9px] font-bold px-2 py-1 rounded-lg bg-red-100 text-red-600 uppercase tracking-wider shrink-0">
-                  Restricted
+                <span className={`text-[9px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shrink-0 ${user.isActive ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                  {user.isActive ? 'Restricted' : 'Unlock'}
                 </span>
               </button>
             </div>
@@ -791,8 +791,8 @@ export function CeoDetailPage() {
         title="Lock Executive Account"
         description={`Locking ${user.name}'s account will immediately block all access to the system.`}
         warning="This is a high-impact action. All sessions will be terminated and the account cannot be used until manually unlocked. Ensure this action is authorised at the appropriate level."
-        onConfirm={() => handleGenericAction('lock', 'Account locked successfully', () => setShowLockAccount(false))}
-        confirmLabel="Lock Account" loading={actionLoading}
+        onConfirm={() => handleGenericAction(user.isActive ? 'deactivate' : 'activate', user.isActive ? 'Account locked successfully' : 'Account unlocked successfully', () => setShowLockAccount(false))}
+        confirmLabel={user.isActive ? 'Lock Account' : 'Unlock Account'} loading={actionLoading}
       />
 
       {/* Revoke Session */}

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
-  FileText, ClipboardList, Plus, Upload, ArrowRight,
+  FileText, ClipboardList, Upload, ArrowRight,
   Clock, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
   FileEdit, Bell, ChevronRight, Inbox, Timer, Eye,
   AlertCircle, CircleDot, Hourglass, Ban, Send,
@@ -183,14 +183,6 @@ export default function SalesDashboardPage() {
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Online · {new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" className="gap-1.5">
-            <Link href="/quotations/new"><Plus className="h-4 w-4" />สร้างใบเสนอราคา</Link>
-          </Button>
-          <Button asChild size="sm" variant="outline" className="gap-1.5">
-            <Link href="/quotations/checklist"><Upload className="h-4 w-4" />อัปโหลด PO</Link>
-          </Button>
         </div>
       </div>
 
