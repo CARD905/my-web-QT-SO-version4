@@ -439,8 +439,12 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       insights.push({ type: 'warn', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — ควรลด target margin หรือเพิ่ม value proposition` });
     else if (ratio > 1.02)
       insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — premium positioning ตรวจสอบว่าตลาดยอมรับได้` });
+    else if (ratio > 1.00)
+      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(1)}% — ใกล้เคียงตลาด ตรวจสอบว่าลูกค้ายอมรับได้` });
+    else if (ratio === 1.00)
+      insights.push({ type: 'ok',   text: `ราคาเท่ากับตลาดพอดี — แข่งขันได้` });
     else if (ratio >= 0.88)
-      insights.push({ type: 'ok',   text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(0)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
+      insights.push({ type: 'ok',   text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(1)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
     else
       insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาเพิ่ม target margin` });
   }
