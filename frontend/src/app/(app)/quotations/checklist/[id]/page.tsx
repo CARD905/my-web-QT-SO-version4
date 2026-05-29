@@ -8,6 +8,7 @@ import {
   ArrowLeft, Upload, FileText, Image as ImageIcon,
   Send, CheckCircle2, Loader2, AlertTriangle,
   Download, Clock, History, ChevronDown, ChevronUp, Hash,
+  ZoomIn, ZoomOut, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,7 @@ export default function ChecklistDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [poNumber, setPoNumber] = useState('');
+  const [poZoom, setPoZoom] = useState(1);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userId = session?.user?.id;
@@ -382,12 +384,53 @@ export default function ChecklistDetailPage() {
                     </Button>
                   </div>
 
-                  {isImage && (
-                    <div className="rounded-lg overflow-hidden border">
-                      <img src={q.poFileUrl} alt="PO" className="w-full max-h-64 object-contain bg-muted/20" />
+                  {(isImage || isPdf) && (
+                    <div className="space-y-1.5">
+                      {/* Zoom controls */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-muted-foreground tabular-nums">{Math.round(poZoom * 100)}%</span>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            onClick={() => setPoZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+                            disabled={poZoom <= 0.25}
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                          >
+                            <ZoomOut className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setPoZoom(1)}
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => setPoZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
+                            disabled={poZoom >= 4}
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+                          >
+                            <ZoomIn className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Preview area */}
+                      <div className="rounded-lg border bg-muted/20 overflow-auto" style={{ height: 240 }}>
+                        {isImage && (
+                          <div className="flex justify-center items-start min-h-full">
+                            <img
+                              src={q.poFileUrl!}
+                              alt="PO"
+                              style={{ width: `${poZoom * 100}%`, flexShrink: 0, display: 'block' }}
+                            />
+                          </div>
+                        )}
+                        {isPdf && (
+                          <div style={{ width: `${poZoom * 100}%`, height: '100%', minWidth: '100%', minHeight: 240 }}>
+                            <iframe src={q.poFileUrl!} title="PO PDF" className="w-full h-full" style={{ minHeight: 240 }} />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                  {isPdf && <iframe src={q.poFileUrl} className="w-full h-56 rounded-lg border" title="PO PDF" />}
 
                   {canUpload && (
                     <div className="space-y-2 pt-1">
