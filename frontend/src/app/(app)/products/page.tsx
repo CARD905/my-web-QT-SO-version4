@@ -411,42 +411,42 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
   if (costPrice > 0) {
     minP = Math.round(costPrice / (1 - targetMarginPct / 100));
     sug  = minP;
-    insights.push({ type: 'ok', text: 'คำนวณจากต้นทุน + target margin — ราคาขั้นต่ำที่ยังได้กำไรตามเป้าหมาย' });
+    insights.push({ type: 'ok', text: 'ราคาแนะนำคำนวณจากต้นทุน + target margin — เป็นราคาขั้นต่ำที่ยังคงทำกำไรได้ตามเป้าหมาย' });
 
     if (lastPrice > 0) {
       const ratio = lastPrice / sug;
       if (ratio > 1.1)
-        insights.push({ type: 'ok',   text: `Last price สูงกว่า standard ${((ratio - 1) * 100).toFixed(0)}% — ลูกค้าเคยยอมรับราคาที่สูงกว่า อาจเพิ่ม margin ได้` });
+        insights.push({ type: 'ok',   text: `Last price สูงกว่า standard ${((ratio - 1) * 100).toFixed(0)}% — ลูกค้าเคยยอมรับราคาสูงกว่านี้ได้ มีโอกาสเพิ่ม margin` });
       else if (ratio > 1.02)
-        insights.push({ type: 'info', text: `Last price สูงกว่า standard ${((ratio - 1) * 100).toFixed(0)}% — ราคาที่เคยขายสอดคล้องกับ standard` });
+        insights.push({ type: 'info', text: `Last price สูงกว่า standard เล็กน้อย (${((ratio - 1) * 100).toFixed(0)}%) — ราคาที่เคยขายสอดคล้องกับราคาแนะนำ` });
       else if (ratio >= 0.93)
-        insights.push({ type: 'ok',   text: `Last price ใกล้เคียง standard (${ratio >= 1 ? '+' : ''}${((ratio - 1) * 100).toFixed(0)}%) — ราคาสอดคล้องกับประสบการณ์การขาย` });
+        insights.push({ type: 'ok',   text: `Last price ใกล้เคียง standard (${ratio >= 1 ? '+' : ''}${((ratio - 1) * 100).toFixed(0)}%) — สอดคล้องกับราคาที่เคยขายได้จริง` });
       else
-        insights.push({ type: 'warn', text: `Last price ต่ำกว่า standard ${((1 - ratio) * 100).toFixed(0)}% — เคยขายต่ำกว่าเป้า ตรวจสอบเหตุผล (ส่วนลดพิเศษ / ต้นทุนสูงขึ้น?)` });
+        insights.push({ type: 'warn', text: `Last price ต่ำกว่า standard ${((1 - ratio) * 100).toFixed(0)}% — เคยขายต่ำกว่าราคาแนะนำ ควรตรวจสอบสาเหตุ (ส่วนลดพิเศษ หรือต้นทุนเพิ่มขึ้น?)` });
     }
   } else if (lastPrice > 0) {
     minP = lastPrice;
     sug  = lastPrice;
-    insights.push({ type: 'warn', text: 'ไม่มีต้นทุน — ใช้ Last price เป็นฐานอ้างอิง ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
+    insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุน — ใช้ Last price เป็นราคาอ้างอิงแทน ไม่สามารถยืนยัน margin ได้ กรุณากรอก Cost price' });
   } else {
     sug = Math.round(marketPrice * 0.9);
-    insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุน — ยืนยัน margin ไม่ได้ ควรใส่ Cost price ก่อน' });
+    insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุนและ Last price — ไม่สามารถคำนวณ margin ได้ กรุณากรอก Cost price' });
   }
 
   if (marketPrice > 0 && sug > 0) {
     const ratio = sug / marketPrice;
     if (ratio > 1.15)
-      insights.push({ type: 'warn', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — ควรลด target margin หรือเพิ่ม value proposition` });
+      insights.push({ type: 'warn', text: `ราคาสูงกว่าตลาดมาก (${((ratio - 1) * 100).toFixed(0)}%) — ควรลด target margin หรือเพิ่มจุดขาย เพื่อให้แข่งขันได้` });
     else if (ratio > 1.02)
-      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — premium positioning ตรวจสอบว่าตลาดยอมรับได้` });
+      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(0)}% — เป็นราคาระดับพรีเมียม ควรตรวจสอบว่าตลาดยอมรับได้` });
     else if (ratio > 1.00)
-      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(1)}% — ใกล้เคียงตลาด ตรวจสอบว่าลูกค้ายอมรับได้` });
+      insights.push({ type: 'info', text: `ราคาสูงกว่าตลาด ${((ratio - 1) * 100).toFixed(1)}% — สูงกว่าเล็กน้อย ควรตรวจสอบว่าลูกค้ายอมรับได้` });
     else if (ratio === 1.00)
-      insights.push({ type: 'ok',   text: `ราคาเท่ากับตลาดพอดี — แข่งขันได้` });
+      insights.push({ type: 'ok',   text: `ราคาเท่ากับราคาตลาดพอดี — แข่งขันได้` });
     else if (ratio >= 0.88)
       insights.push({ type: 'ok',   text: `ราคาต่ำกว่าตลาด ${((1 - ratio) * 100).toFixed(1)}% — แข่งขันได้ดี มีโอกาสปิดการขาย` });
     else
-      insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก ${((1 - ratio) * 100).toFixed(0)}% — พิจารณาเพิ่ม target margin` });
+      insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก (${((1 - ratio) * 100).toFixed(0)}%) — ยังมีช่องว่างเพิ่มกำไร ควรพิจารณาเพิ่ม target margin` });
   }
 
   // Margin at last price (real historical margin — most useful metric)
@@ -457,19 +457,19 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
     if (lastPriceMarginPct !== null) {
       const gap = (targetMarginPct - lastPriceMarginPct).toFixed(1);
       if (lastPriceMarginPct >= targetMarginPct)
-        insights.push({ type: 'ok',   text: `margin ที่ last price ${lastPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓ — ราคาเดิมทำกำไรได้ตามเป้า` });
+        insights.push({ type: 'ok',   text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓ — ราคาที่เคยขายทำกำไรได้ตามเป้าหมาย` });
       else if (lastPriceMarginPct > 0)
-        insights.push({ type: 'warn', text: `margin ที่ last price ${lastPriceMarginPct.toFixed(1)}% ต่ำกว่า target ${gap}% — ควรปรับราคาขึ้น หรือลดต้นทุน` });
+        insights.push({ type: 'warn', text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ต่ำกว่า target ${gap}% — ควรปรับราคาขึ้นหรือลดต้นทุน` });
       else
-        insights.push({ type: 'warn', text: `last price ต่ำกว่าต้นทุน (margin ${lastPriceMarginPct.toFixed(1)}%) — ขายแล้วขาดทุน` });
+        insights.push({ type: 'warn', text: `Last price ต่ำกว่าต้นทุน (margin ${lastPriceMarginPct.toFixed(1)}%) — ขายที่ราคานี้จะขาดทุน ต้องปรับราคาขึ้น` });
     }
     if (marketPriceMarginPct !== null) {
       if (marketPriceMarginPct >= targetMarginPct)
-        insights.push({ type: 'ok',   text: `margin ถ้าขาย market price ${marketPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+        insights.push({ type: 'ok',   text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
       else if (marketPriceMarginPct > 0)
-        insights.push({ type: 'info', text: `margin ถ้าขาย market price ${marketPriceMarginPct.toFixed(1)}% — ราคาตลาดยังต่ำกว่า target ${(targetMarginPct - marketPriceMarginPct).toFixed(1)}%` });
+        insights.push({ type: 'info', text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% — ยังต่ำกว่า target ${(targetMarginPct - marketPriceMarginPct).toFixed(1)}%` });
       else
-        insights.push({ type: 'warn', text: `market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดแล้วขาดทุน` });
+        insights.push({ type: 'warn', text: `Market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดจะขาดทุน` });
     }
   }
 
@@ -630,23 +630,22 @@ function PricingAnalyzer({
           {(() => {
             const lastM  = result.lastPriceMarginPct;
             const mktM   = result.marketPriceMarginPct;
-            const col4Label = lastM !== null ? 'margin @ last' : mktM !== null ? 'margin @ ตลาด' : 'margin @ standard';
+            const col4Label = lastM !== null ? 'margin @ last' : mktM !== null ? 'margin @ ตลาด' : 'margin @ target';
             const col4Pct   = lastM !== null ? lastM : mktM !== null ? mktM : result.actualMarginPct;
             const col4Color = col4Pct >= inputs.targetMarginPct
               ? 'text-emerald-600 dark:text-emerald-400'
               : col4Pct > 0 ? 'text-amber-500 dark:text-amber-400' : 'text-red-500';
             return (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: 'ต้นทุน',        value: result.baseCost,       pct: null, color: 'text-foreground',  highlight: false },
-                  { label: 'target price',   value: result.minPrice,       pct: null, color: 'text-violet-600 dark:text-violet-400', highlight: false },
-                  { label: 'standard price', value: result.suggestedPrice, pct: null, color: 'text-primary',     highlight: true  },
-                  { label: col4Label,        value: null,                  pct: col4Pct, color: col4Color,       highlight: false },
+                  { label: 'ต้นทุน',      value: result.baseCost, pct: null,    color: 'text-foreground',  highlight: false },
+                  { label: 'target price', value: result.minPrice, pct: null,    color: 'text-primary',     highlight: true  },
+                  { label: col4Label,      value: null,            pct: col4Pct, color: col4Color,          highlight: false },
                 ].map((m, i) => (
-                  <div key={i} className={cn('rounded-xl p-2.5 text-center transition-all duration-300',
+                  <div key={i} className={cn('rounded-xl p-3 text-center transition-all duration-300',
                     m.highlight ? 'bg-primary/10 ring-1 ring-primary/30 dark:bg-primary/20' : 'bg-muted/60')}>
                     <div className="text-[10px] text-muted-foreground mb-1">{m.label}</div>
-                    <div className={cn('text-sm font-bold tabular-nums', m.color)}>
+                    <div className={cn('text-base font-bold tabular-nums', m.color)}>
                       {m.value !== null ? <AnimatedPrice value={m.value} /> : `${m.pct?.toFixed(1)}%`}
                     </div>
                   </div>
@@ -674,7 +673,7 @@ function PricingAnalyzer({
               <span>{result.minPrice ? formatMoney(result.minPrice) : ''}</span>
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-primary" /> standard
+                  <span className="inline-block w-2 h-2 rounded-full bg-primary" /> target
                 </span>
                 {result.lastBarPct !== null && (
                   <span className="flex items-center gap-1">
@@ -704,7 +703,7 @@ function PricingAnalyzer({
             onClick={() => onUseSuggested(result.suggestedPrice, result.baseCost)}
           >
             <CheckCircle className="h-4 w-4" />
-            ใช้ standard price — {formatMoney(result.suggestedPrice)}
+            ใช้ target price — {formatMoney(result.minPrice)}
             <ChevronRight className="h-4 w-4 ml-auto" />
           </Button>
         </div>
@@ -1022,7 +1021,7 @@ function ProductModal({
                         วิเคราะห์ราคาอัจฉริยะ
                       </div>
                       <div className="text-xs text-violet-600/70 dark:text-violet-400/70 mt-0.5">
-                        ใส่ต้นทุน + ราคาตลาด ให้ระบบแนะนำ standard price ที่เหมาะสม
+                        ใส่ต้นทุน + ราคาตลาด ให้ระบบแนะนำ target price ที่เหมาะสม
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-violet-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />

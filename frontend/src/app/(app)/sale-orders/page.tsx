@@ -26,6 +26,7 @@ export default function SaleOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +47,23 @@ export default function SaleOrdersPage() {
     }, 300);
     return () => { cancelled = true; clearTimeout(handler); };
   }, [search, statusFilter]);
+
+  // Fetch counts (no status filter)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        params.set('limit', '200');
+        const res = await api.get<ApiResponse<SaleOrder[]>>(`/sale-orders?${params}`);
+        const data = res.data.data ?? [];
+        const counts: Record<string, number> = {};
+        data.forEach((so) => { counts[so.status] = (counts[so.status] ?? 0) + 1; });
+        setStatusCounts(counts);
+      } catch { /* counts optional */ }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -68,20 +86,31 @@ export default function SaleOrdersPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-1 flex-wrap">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s.value || 'all'}
-                onClick={() => setStatusFilter(s.value)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === s.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
+          <div className="flex gap-1.5 flex-wrap">
+            {STATUS_FILTERS.map((s) => {
+              const count = s.value === '' ? Object.values(statusCounts).reduce((a, b) => a + b, 0) : (statusCounts[s.value] ?? 0);
+              const active = statusFilter === s.value;
+              return (
+                <button
+                  key={s.value || 'all'}
+                  onClick={() => setStatusFilter(s.value)}
+                  className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    active
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {s.label}
+                  {count > 0 && (
+                    <span className={`absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-0.5 rounded-full text-[9px] font-bold flex items-center justify-center leading-none ${
+                      active ? 'bg-white text-primary' : 'bg-primary/80 text-white'
+                    }`}>
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

@@ -28,6 +28,7 @@ export default function QuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   const [bulkMode,   setBulkMode]   = useState(false);
   const [selected,   setSelected]   = useState<Set<string>>(new Set());
@@ -55,6 +56,19 @@ export default function QuotationsPage() {
     }
   };
 
+  const fetchCounts = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      params.set('limit', '200');
+      const res = await api.get<ApiResponse<Quotation[]>>(`/quotations?${params}`);
+      const data = res.data.data ?? [];
+      const counts: Record<string, number> = {};
+      data.forEach((q) => { counts[q.status] = (counts[q.status] ?? 0) + 1; });
+      setStatusCounts(counts);
+    } catch { /* counts are optional */ }
+  };
+
   useEffect(() => {
     let cancelled = false;
     const handler = setTimeout(async () => {
@@ -68,6 +82,13 @@ export default function QuotationsPage() {
   useEffect(() => {
     if (!bulkMode) setSelected(new Set());
   }, [bulkMode]);
+
+  // Fetch counts separately (no status filter) whenever search changes
+  useEffect(() => {
+    const t = setTimeout(() => { fetchCounts(); }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const toggleSelect = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -212,20 +233,31 @@ export default function QuotationsPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-1 flex-wrap">
-            {statuses.map((s) => (
-              <button
-                key={s || 'all'}
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  statusFilter === s
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80 text-muted-foreground'
-                }`}
-              >
-                {s || t('common.all')}
-              </button>
-            ))}
+          <div className="flex gap-1.5 flex-wrap">
+            {statuses.map((s) => {
+              const count = s === '' ? Object.values(statusCounts).reduce((a, b) => a + b, 0) : (statusCounts[s] ?? 0);
+              const active = statusFilter === s;
+              return (
+                <button
+                  key={s || 'all'}
+                  onClick={() => setStatusFilter(s)}
+                  className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    active
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {s || t('common.all')}
+                  {count > 0 && (
+                    <span className={`absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-0.5 rounded-full text-[9px] font-bold flex items-center justify-center leading-none ${
+                      active ? 'bg-white text-primary' : 'bg-primary/80 text-white'
+                    }`}>
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
