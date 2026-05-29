@@ -388,11 +388,6 @@ export default function EditQuotationPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-semibold">{t('quotation.lineItems')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                <Lock className="h-3 w-3" />
-                ราคาตั้งได้เท่ากับหรือสูงกว่าราคา Master Data เท่านั้น — ส่วนลดสูงสุด
-                <span className="font-semibold text-foreground">{normalDiscountMax}%</span>
-              </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => setItems((p) => [...p, newItem()])}>
               <Plus className="h-4 w-4" />
@@ -527,11 +522,6 @@ export default function EditQuotationPage() {
                     onChange={(e) => updateItem(item.id, { discount: parseFloat(e.target.value) || 0 })}
                     className="h-9 text-right"
                   />
-                  {item.discountType === 'FIXED' && gross > 0 && (
-                    <div className="text-[10px] text-right text-muted-foreground">
-                      สูงสุด {formatNumber((normalDiscountMax / 100) * gross)}
-                    </div>
-                  )}
                 </div>
                 <select
                   value={item.discountType}

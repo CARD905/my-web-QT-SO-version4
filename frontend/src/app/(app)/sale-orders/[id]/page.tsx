@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Printer, FileText, Send, CheckCircle2,
   XCircle, Loader2, Clock, AlertTriangle, Download, Calendar,
+  ZoomIn, ZoomOut, RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -71,6 +72,84 @@ function ActionConfirmDialog({ title, description, confirmLabel, confirmVariant 
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PO File Preview with zoom
+// ════════════════════════════════════════════════════════════════════════════
+function POFilePreview({ url, mimeType, fileName }: { url: string; mimeType?: string | null; fileName?: string | null }) {
+  const [zoom, setZoom] = useState(1);
+  const isImage = mimeType?.startsWith('image/');
+  const isPdf = mimeType === 'application/pdf';
+
+  if (!isImage && !isPdf) {
+    return (
+      <Button asChild variant="outline" size="sm" className="w-full">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
+        </a>
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Zoom controls */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground tabular-nums">{Math.round(zoom * 100)}%</span>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+            disabled={zoom <= 0.25}
+            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
+            disabled={zoom >= 4}
+            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Preview area */}
+      <div
+        className="rounded-lg border bg-muted/20 overflow-auto"
+        style={{ height: 220 }}
+      >
+        {isImage && (
+          <div className="flex justify-center items-start min-h-full">
+            <img
+              src={url}
+              alt={fileName ?? 'PO'}
+              style={{ width: `${zoom * 100}%`, flexShrink: 0, display: 'block' }}
+            />
+          </div>
+        )}
+        {isPdf && (
+          <div style={{ width: `${zoom * 100}%`, height: '100%', minWidth: '100%', minHeight: 220 }}>
+            <iframe src={url} title="PO PDF" className="w-full h-full" style={{ minHeight: 220 }} />
+          </div>
+        )}
+      </div>
+
+      {/* Download button */}
+      <Button asChild variant="outline" size="sm" className="w-full">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          <Download className="h-3.5 w-3.5" />ดาวน์โหลด PO
+        </a>
+      </Button>
     </div>
   );
 }
@@ -358,12 +437,12 @@ export default function SaleOrderDetailPage() {
                 )}
                 {so.quotation?.poFileUrl && (
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">ไฟล์ PO</div>
-                    <Button asChild variant="outline" size="sm" className="w-full">
-                      <a href={so.quotation.poFileUrl as string} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
-                      </a>
-                    </Button>
+                    <div className="text-xs text-muted-foreground mb-2">ไฟล์ PO</div>
+                    <POFilePreview
+                      url={so.quotation.poFileUrl as string}
+                      mimeType={so.quotation.poFileMimeType}
+                      fileName={so.quotation.poFileName}
+                    />
                   </div>
                 )}
                 {so.quotation && (
