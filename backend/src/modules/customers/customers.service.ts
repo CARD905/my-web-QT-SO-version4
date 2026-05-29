@@ -70,6 +70,7 @@ export const customersService = {
         billingAddress: input.billingAddress || null,
         shippingAddress: input.shippingAddress || null,
         notes: input.notes || null,
+        paymentTerm: input.paymentTerm ?? 'Net 30',
       },
     });
 
@@ -99,6 +100,7 @@ export const customersService = {
         ...(input.billingAddress !== undefined && { billingAddress: input.billingAddress || null }),
         ...(input.shippingAddress !== undefined && { shippingAddress: input.shippingAddress || null }),
         ...(input.notes !== undefined && { notes: input.notes || null }),
+        ...(input.paymentTerm !== undefined && { paymentTerm: input.paymentTerm }),
       },
     });
 
