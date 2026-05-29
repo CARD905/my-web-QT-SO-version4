@@ -89,11 +89,29 @@ export default function NewQuotationPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [submitting]);
 
+  // Payment term hierarchy: index 0 = strictest, higher index = more lenient
+  const PAYMENT_TERMS_ORDERED = ['Prepaid', 'COD', 'Net 7', 'Net 15', 'Net 30', 'Net 60', 'Net 90'] as const;
+  type PaymentTerm = typeof PAYMENT_TERMS_ORDERED[number];
+
+  const getAvailableTerms = (customerDefaultTerm: string): PaymentTerm[] => {
+    const maxIdx = PAYMENT_TERMS_ORDERED.indexOf(customerDefaultTerm as PaymentTerm);
+    if (maxIdx === -1) return [...PAYMENT_TERMS_ORDERED];
+    return PAYMENT_TERMS_ORDERED.slice(0, maxIdx + 1); // only terms at or stricter than default
+  };
+
   const handleCustomerChange = (id: string) => {
     setCustomerId(id);
-    if (!id) { setCustomerInfo({ contactName: '', company: '', taxId: '', phone: '', email: '', billingAddress: '', shippingAddress: '' }); return; }
+    if (!id) {
+      setCustomerInfo({ contactName: '', company: '', taxId: '', phone: '', email: '', billingAddress: '', shippingAddress: '' });
+      setPaymentTerms('Net 30');
+      return;
+    }
     const c = customers.find((x) => x.id === id);
-    if (c) setCustomerInfo({ contactName: c.contactName, company: c.company, taxId: c.taxId || '', phone: c.phone || '', email: c.email || '', billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '' });
+    if (c) {
+      setCustomerInfo({ contactName: c.contactName, company: c.company, taxId: c.taxId || '', phone: c.phone || '', email: c.email || '', billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '' });
+      const defaultTerm = (c as any).paymentTerm || 'Net 30';
+      setPaymentTerms(defaultTerm);
+    }
   };
 
   const updateItem = (id: string, patch: Partial<LineItem>) => {
@@ -408,10 +426,32 @@ const submitForm = async (mode: 'draft' | 'submit') => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <Card><CardContent className="pt-6">
           <Label className="text-sm font-semibold">{t('quotation.paymentTerms')}</Label>
-          <select value={paymentTerms} disabled={isFullyDisabled} onChange={(e) => setPaymentTerms(e.target.value)} className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">
-            <option value="Net 30">Net 30</option><option value="Net 60">Net 60</option>
-            <option value="Net 90">Net 90</option><option value="COD">COD</option><option value="Prepaid">Prepaid</option>
-          </select>
+          {(() => {
+            const customerDefault = customerId ? (customers.find((x) => x.id === customerId) as any)?.paymentTerm || 'Net 30' : null;
+            const available = customerDefault ? getAvailableTerms(customerDefault) : [...PAYMENT_TERMS_ORDERED];
+            const isCodOrPrepaid = customerDefault === 'COD' || customerDefault === 'Prepaid';
+            return (
+              <>
+                <select
+                  value={paymentTerms}
+                  disabled={isFullyDisabled}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60"
+                >
+                  {available.map((pt) => (
+                    <option key={pt} value={pt}>{pt}</option>
+                  ))}
+                </select>
+                {customerDefault && (
+                  <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                    เงื่อนไขสูงสุดของลูกค้า: <span className="font-semibold text-foreground">{customerDefault}</span>
+                    {isCodOrPrepaid && <span className="ml-1 text-amber-600">· ไม่สามารถเลือก Net ได้</span>}
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </CardContent></Card>
         <Card><CardContent className="pt-6">
           <Label className="text-sm font-semibold">{t('quotation.conditions')}</Label>

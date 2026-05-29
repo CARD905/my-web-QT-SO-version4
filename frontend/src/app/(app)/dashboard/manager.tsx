@@ -2014,57 +2014,61 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                 isOpen ? 'border-border bg-accent/40' : 'border-transparent hover:border-border/60 hover:bg-accent/20'
               } ${hasAlert ? 'ring-1 ring-amber-400/50' : ''} ${s.isBaseline ? 'ring-1 ring-blue-400/30' : ''}`}>
 
-                {/* ── Main row ── */}
-                <div className="flex items-center gap-2 p-2.5">
-                  {/* Stage number */}
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                {/* ── Main row — fixed-column grid ── */}
+                <div className="grid items-center gap-2 px-3 py-2.5"
+                  style={{ gridTemplateColumns: '20px 120px 52px 1fr 48px 88px 56px 14px' }}>
+
+                  {/* Col 1: Stage number */}
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
                     style={{ background: s.color }}>{i + 1}</div>
 
-                  {/* Labels */}
-                  <div className="w-28 shrink-0">
-                    <div className="text-xs font-semibold leading-tight">{s.label}</div>
-                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 hidden sm:block">{s.sublabel}</div>
+                  {/* Col 2: Labels */}
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold leading-tight truncate">{s.label}</div>
+                    <div className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">{s.sublabel}</div>
                   </div>
 
-                  {/* Bar — shows count inside */}
-                  <div className="flex-1 h-7 bg-muted rounded-lg overflow-hidden">
+                  {/* Col 3: Count badge — always same width */}
+                  <div className="flex items-center justify-center">
+                    <span className="text-xs font-bold text-white rounded-full px-2 py-0.5 tabular-nums whitespace-nowrap"
+                      style={{ background: s.count > 0 ? s.color : '#94a3b8', minWidth: 28, textAlign: 'center' }}>
+                      {s.count}
+                    </span>
+                  </div>
+
+                  {/* Col 4: Bar — same flex container, fill varies */}
+                  <div className="h-6 bg-muted/70 rounded-md overflow-hidden">
                     <div
-                      className={`h-full rounded-lg flex items-center px-2 gap-1.5 transition-all duration-700 bg-gradient-to-r ${s.grad}`}
-                      style={{ width: `${barW}%` }}
-                    >
-                      {s.count > 0 && (
-                        <span className="text-white text-xs font-bold whitespace-nowrap">{s.count} ใบ</span>
-                      )}
-                    </div>
+                      className={`h-full rounded-md transition-all duration-700 bg-gradient-to-r ${s.grad}`}
+                      style={{ width: `${barW}%`, minWidth: s.count > 0 ? 6 : 0 }}
+                    />
                   </div>
 
-                  {/* % of total QT */}
-                  <div className="w-11 text-right shrink-0">
+                  {/* Col 5: % */}
+                  <div className="text-right">
                     <div className="text-sm font-bold tabular-nums" style={{ color: s.color }}>{pct}%</div>
-                    {!s.isBaseline && <div className="text-[9px] text-muted-foreground">of QT</div>}
+                    <div className="text-[9px] text-muted-foreground">{s.isBaseline ? '' : 'of QT'}</div>
                   </div>
 
-                  {/* Value */}
-                  <div className="w-20 text-right shrink-0">
-                    <div className="text-xs font-bold tabular-nums" style={{ color: s.color }}>{formatMoney(s.value)}</div>
+                  {/* Col 6: Value — always present */}
+                  <div className="text-right">
+                    <div className="text-[11px] font-bold tabular-nums leading-tight" style={{ color: s.color }}>{formatMoney(s.value)}</div>
                     <div className="text-[9px] text-muted-foreground">มูลค่า</div>
                   </div>
 
-                  {/* Aging badge */}
-                  {s.avgH != null && s.avgH > 0 && (
-                    <div className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${ageBadge}`}>
-                      avg {fmtAge(s.avgH)}
-                    </div>
-                  )}
+                  {/* Col 7: Aging — fixed width, always rendered */}
+                  <div className="flex items-center justify-center">
+                    {s.avgH != null && s.avgH > 0 ? (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${ageBadge}`}>
+                        avg {fmtAge(s.avgH)}
+                      </span>
+                    ) : hasAlert ? (
+                      <span className={`w-2 h-2 rounded-full animate-pulse ${lvl === 'crit' ? 'bg-red-500' : 'bg-amber-400'}`} />
+                    ) : <span />}
+                  </div>
 
-                  {/* Bottleneck dot */}
-                  {hasAlert && (
-                    <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${
-                      lvl === 'crit' ? 'bg-red-500' : 'bg-amber-400'
-                    }`} />
-                  )}
-
-                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                  {/* Col 8: Chevron */}
+                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
                 </div>
 
                 {/* ── Bottleneck alert (open only) ── */}

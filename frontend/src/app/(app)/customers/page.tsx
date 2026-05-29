@@ -444,6 +444,7 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
   const [form, setForm] = useState({
     contactName: '', company: '', taxId: '',
     email: '', phone: '', billingAddress: '', shippingAddress: '',
+    paymentTerm: 'Net 30' as string,
   });
   const [originalValues, setOriginalValues] = useState<Record<string, string>>({});
   const [loading,         setLoading]        = useState(mode === 'edit');
@@ -466,6 +467,7 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
             contactName: c.contactName, company: c.company, taxId: c.taxId || '',
             email: c.email || '', phone: c.phone || '',
             billingAddress: c.billingAddress || '', shippingAddress: c.shippingAddress || '',
+            paymentTerm: (c as any).paymentTerm || 'Net 30',
           };
           setOriginalValues({ ...base });
           if (prefilledChanges) {
@@ -584,6 +586,21 @@ function CustomerModal({ mode, id, isManager, prefilledChanges, resolveRequestId
                     <div>
                       <Label className="text-xs">{t('customer.phone')}</Label>
                       <Input value={form.phone} onChange={(e) => update('phone', e.target.value)} className="mt-1.5" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">เงื่อนไขการชำระเงิน (Payment Term)</Label>
+                      <select
+                        value={form.paymentTerm}
+                        onChange={(e) => update('paymentTerm', e.target.value)}
+                        className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        {['Prepaid', 'COD', 'Net 7', 'Net 15', 'Net 30', 'Net 60', 'Net 90'].map((pt) => (
+                          <option key={pt} value={pt}>{pt}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        กำหนดเงื่อนไขสูงสุดที่อนุญาต — ตอนสร้างใบเสนอราคาจะเลือกได้เฉพาะค่าที่เข้มงวดกว่าหรือเท่ากัน
+                      </p>
                     </div>
                   </div>
                   <div>

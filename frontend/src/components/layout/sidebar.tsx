@@ -168,7 +168,8 @@ const NAV_ITEMS: NavItem[] = [
     requires: { resource: 'dashboard', action: 'view', scope: 'OWN' },
   },
 
-  // ── BUSINESS SECTION — ไม่แสดงให้ ADMIN ──────────────────────────────────
+  // ── PIPELINE ─────────────────────────────────────────────────────────────
+  { dividerLabel: 'PIPELINE', labelKey: '', icon: FileText, excludeRoles: ['ADMIN'] },
   {
     labelKey: 'nav.quotations',
     icon: FileText,
@@ -213,9 +214,9 @@ const NAV_ITEMS: NavItem[] = [
     excludeRoles: ['ADMIN', 'OFFICER'],
     requires: { resource: 'quotation', action: 'approve', scope: 'TEAM' },
   },
-  
 
-  // ── MASTER DATA — ADMIN + CEO + MANAGER เห็น ─────────────────────────────
+  // ── MASTER DATA ───────────────────────────────────────────────────────────
+  { dividerLabel: 'MASTERDATA', labelKey: '', icon: Package },
   {
     href: '/customers',
     labelKey: 'nav.customers',
@@ -236,7 +237,8 @@ const NAV_ITEMS: NavItem[] = [
     requires: { resource: 'company', action: 'view', scope: 'ALL' },
   },
 
-  // ── MANAGER — ทีมของฉัน ──────────────────────────────────────────────────
+  // ── ORGANIZATION ─────────────────────────────────────────────────────────
+  { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Users, onlyRoles: ['MANAGER'] },
   {
     href: '/team',
     labelKey: 'nav.myTeam',
@@ -244,6 +246,9 @@ const NAV_ITEMS: NavItem[] = [
     onlyRoles: ['MANAGER'],
     requires: { resource: 'user', action: 'invite', scope: 'TEAM' },
   },
+
+  // ── REFERENCE ────────────────────────────────────────────────────────────
+  { dividerLabel: 'REFERENCE', labelKey: '', icon: BookOpen, onlyRoles: ['OFFICER', 'SALES', 'MANAGER'] },
   {
     href: '/manual',
     labelKey: 'nav.manual',
@@ -252,6 +257,7 @@ const NAV_ITEMS: NavItem[] = [
   },
 
   // ── ADMIN PANEL — เฉพาะ ADMIN เห็น ──────────────────────────────────────
+  { dividerLabel: 'ADMIN PANEL', labelKey: '', icon: Shield, onlyRoles: ['ADMIN'] },
   {
     href: '/admin',
     labelKey: 'nav.adminPanel',
@@ -333,12 +339,14 @@ const CEO_NAV_ITEMS: NavItem[] = [
   { href: '/approval-queue', labelKey: 'nav.approvalQueue', icon: CheckSquare, showBadge: true },
 
   // ── GROUP 2: PIPELINE ───────────────────────────────────────────────────
-  // Quotation list (no checklist — officer task), sale orders, customers
   { dividerLabel: 'PIPELINE', labelKey: '', icon: FileText },
   { href: '/quotations',  labelKey: 'nav.quotationList', icon: FileText },
   { href: '/sale-orders', labelKey: 'nav.saleOrders',    icon: ClipboardList },
-  { href: '/customers',   labelKey: 'nav.customers',     icon: Users },
-  { href: '/products', labelKey: 'nav.products', icon: Package },
+
+  // ── GROUP 2b: MASTERDATA ────────────────────────────────────────────────
+  { dividerLabel: 'MASTERDATA', labelKey: '', icon: Package },
+  { href: '/customers', labelKey: 'nav.customers', icon: Users },
+  { href: '/products',  labelKey: 'nav.products',  icon: Package },
 
   // ── GROUP 3: ORGANIZATION ───────────────────────────────────────────────
   { dividerLabel: 'ORGANIZATION', labelKey: '', icon: Building2 },

@@ -433,6 +433,20 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
     insights.push({ type: 'warn', text: 'ไม่มีข้อมูลต้นทุนและ Last price — ไม่สามารถคำนวณ margin ได้ กรุณากรอก Cost price' });
   }
 
+  // Margin @ last price — แสดงก่อนเปรียบตลาด เพราะเป็นข้อมูลจากการขายจริง
+  const lastPriceMarginPct   = costPrice > 0 && lastPrice > 0   ? ((lastPrice   - costPrice) / lastPrice)   * 100 : null;
+  const marketPriceMarginPct = costPrice > 0 && marketPrice > 0 ? ((marketPrice - costPrice) / marketPrice) * 100 : null;
+
+  if (costPrice > 0 && lastPriceMarginPct !== null) {
+    const gap = (targetMarginPct - lastPriceMarginPct).toFixed(1);
+    if (lastPriceMarginPct >= targetMarginPct)
+      insights.push({ type: 'ok',   text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓ — ราคาที่เคยขายทำกำไรได้ตามเป้าหมาย` });
+    else if (lastPriceMarginPct > 0)
+      insights.push({ type: 'warn', text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ต่ำกว่า target ${gap}% — ควรปรับราคาขึ้นหรือลดต้นทุน` });
+    else
+      insights.push({ type: 'warn', text: `Last price ต่ำกว่าต้นทุน (margin ${lastPriceMarginPct.toFixed(1)}%) — ขายที่ราคานี้จะขาดทุน ต้องปรับราคาขึ้น` });
+  }
+
   if (marketPrice > 0 && sug > 0) {
     const ratio = sug / marketPrice;
     if (ratio > 1.15)
@@ -449,28 +463,13 @@ function runPricingEngine(p: PricingInputs): PricingResult | null {
       insights.push({ type: 'info', text: `ราคาต่ำกว่าตลาดมาก (${((1 - ratio) * 100).toFixed(0)}%) — ยังมีช่องว่างเพิ่มกำไร ควรพิจารณาเพิ่ม target margin` });
   }
 
-  // Margin at last price (real historical margin — most useful metric)
-  const lastPriceMarginPct  = costPrice > 0 && lastPrice > 0   ? ((lastPrice   - costPrice) / lastPrice)   * 100 : null;
-  const marketPriceMarginPct = costPrice > 0 && marketPrice > 0 ? ((marketPrice - costPrice) / marketPrice) * 100 : null;
-
-  if (costPrice > 0) {
-    if (lastPriceMarginPct !== null) {
-      const gap = (targetMarginPct - lastPriceMarginPct).toFixed(1);
-      if (lastPriceMarginPct >= targetMarginPct)
-        insights.push({ type: 'ok',   text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓ — ราคาที่เคยขายทำกำไรได้ตามเป้าหมาย` });
-      else if (lastPriceMarginPct > 0)
-        insights.push({ type: 'warn', text: `กำไร (margin) จาก Last price อยู่ที่ ${lastPriceMarginPct.toFixed(1)}% ต่ำกว่า target ${gap}% — ควรปรับราคาขึ้นหรือลดต้นทุน` });
-      else
-        insights.push({ type: 'warn', text: `Last price ต่ำกว่าต้นทุน (margin ${lastPriceMarginPct.toFixed(1)}%) — ขายที่ราคานี้จะขาดทุน ต้องปรับราคาขึ้น` });
-    }
-    if (marketPriceMarginPct !== null) {
-      if (marketPriceMarginPct >= targetMarginPct)
-        insights.push({ type: 'ok',   text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
-      else if (marketPriceMarginPct > 0)
-        insights.push({ type: 'info', text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% — ยังต่ำกว่า target ${(targetMarginPct - marketPriceMarginPct).toFixed(1)}%` });
-      else
-        insights.push({ type: 'warn', text: `Market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดจะขาดทุน` });
-    }
+  if (costPrice > 0 && marketPriceMarginPct !== null) {
+    if (marketPriceMarginPct >= targetMarginPct)
+      insights.push({ type: 'ok',   text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% ≥ target ${targetMarginPct}% ✓` });
+    else if (marketPriceMarginPct > 0)
+      insights.push({ type: 'info', text: `หากขายที่ market price จะได้กำไร ${marketPriceMarginPct.toFixed(1)}% — ยังต่ำกว่า target ${(targetMarginPct - marketPriceMarginPct).toFixed(1)}%` });
+    else
+      insights.push({ type: 'warn', text: `Market price ต่ำกว่าต้นทุน — ขายที่ราคาตลาดจะขาดทุน` });
   }
 
   // actualMarginPct = last price margin if available (meaningful), else standard price margin
