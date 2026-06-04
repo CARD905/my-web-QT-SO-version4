@@ -5,13 +5,15 @@ import { requireRole } from '../../middleware/role';
 import { asyncHandler } from '../../middleware/error';
 
 const router = Router();
-
 router.use(authenticate);
-router.use(requireRole('MANAGER', 'CEO', 'ADMIN'));
 
-router.get('/summary', asyncHandler(forecastController.summary));
-router.get('/targets', asyncHandler(forecastController.getTargets));
-router.post('/targets', asyncHandler(forecastController.upsertTarget));
-router.delete('/targets/:year/:month', asyncHandler(forecastController.deleteTarget));
+// OFFICER sees personal forecast; MANAGER/CEO/ADMIN see team/all
+router.get('/advanced', requireRole('OFFICER', 'MANAGER', 'CEO', 'ADMIN'), asyncHandler(forecastController.advanced));
+
+// Summary + targets: management only
+router.get('/summary',          requireRole('MANAGER', 'CEO', 'ADMIN'), asyncHandler(forecastController.summary));
+router.get('/targets',          requireRole('MANAGER', 'CEO', 'ADMIN'), asyncHandler(forecastController.getTargets));
+router.post('/targets',         requireRole('MANAGER', 'CEO', 'ADMIN'), asyncHandler(forecastController.upsertTarget));
+router.delete('/targets/:year/:month', requireRole('MANAGER', 'CEO', 'ADMIN'), asyncHandler(forecastController.deleteTarget));
 
 export default router;
