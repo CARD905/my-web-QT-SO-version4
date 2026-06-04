@@ -72,7 +72,8 @@
     "staff": "Staff",
     "auditTrail": "Audit Trail",
     "pipeline": "Pipeline",
-    "changeRequests": "Change Requests"
+    "changeRequests": "Change Requests",
+    "forecast": "Sales Forecast"
   },
   "login": {
     "title": "Sign In",

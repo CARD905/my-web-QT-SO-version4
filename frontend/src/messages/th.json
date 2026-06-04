@@ -73,7 +73,8 @@
     "staff": "บุคลากร",
     "auditTrail": "ประวัติการอนุมัติ",
     "pipeline": "Pipeline",
-    "changeRequests": "คำขอแก้ไขข้อมูล"
+    "changeRequests": "คำขอแก้ไขข้อมูล",
+    "forecast": "Sales Forecast"
   },
   "login": {
     "title": "เข้าสู่ระบบ",

@@ -187,6 +187,7 @@ model User {
   changeRequestsReviewed           UserChangeRequest[]         @relation("ChangeRequestReviewer")
   customerChangeRequestsAsRequester CustomerChangeRequest[]    @relation("CustomerChangeRequestSubmitter")
   customerChangeRequestsReviewed    CustomerChangeRequest[]    @relation("CustomerChangeRequestReviewer")
+  forecastTargets                   ForecastTarget[]
   @@unique([email, deletedAt])
   @@index([email])
   @@index([roleId])
@@ -707,6 +708,22 @@ model DocumentCounterConfig {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("document_counter_configs")
+}
+
+model ForecastTarget {
+  id          String   @id @default(uuid())
+  year        Int
+  month       Int
+  target      Decimal  @db.Decimal(15, 2)
+  notes       String?
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@unique([year, month])
+  @@map("forecast_targets")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
