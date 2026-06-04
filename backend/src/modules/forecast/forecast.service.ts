@@ -321,17 +321,19 @@ export const forecastService = {
       }));
 
     // ── 5. Top Sales Performance ──────────────────────────────────────────
-    // Win  = APPROVED, PO_PENDING, PO_APPROVED, SIGNED (quote was accepted)
-    // Loss = REJECTED, CANCELLED, EXPIRED       (quote did NOT proceed)
-    // Pending = DRAFT, PENDING, PENDING_ESCALATED, PENDING_BACKUP (not decided yet)
-    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; wonCount: number; lostCount: number; pendingCount: number; saleOrderCount: number };
+    // Win     = Sale Order ที่ CONFIRMED/COMPLETED (ยอดขายจริง)
+    // Loss    = REJECTED + CANCELLED + EXPIRED (ไม่ปิดดีล)
+    // Pipeline = APPROVED, PO_PENDING, PO_APPROVED, SIGNED (ยังอยู่ในกระบวนการ ≠ Win ยัง)
+    // Pending  = DRAFT, PENDING, PENDING_ESCALATED, PENDING_BACKUP (รอการพิจารณา)
+    // Win Rate = saleOrderCount ÷ (saleOrderCount + lostCount)
+    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number };
     const perfMap = new Map<string, PerfEntry>();
     for (const q of quotations12m) {
       const uid = q.createdBy.id;
-      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, wonCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
       const e = perfMap.get(uid)!;
       e.quotationCount++;
-      if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.wonCount++;
+      if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.pipelineCount++;
       else if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(q.status)) e.lostCount++;
       else e.pendingCount++;
     }
@@ -339,17 +341,17 @@ export const forecastService = {
       if (!so.quotationId) continue;
       const cb = qtCreatedByMap.get(so.quotationId);
       if (!cb) continue;
-      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, wonCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
       const e = perfMap.get(cb.id)!;
       e.actualRevenue += toNum(so.grandTotal);
       e.saleOrderCount++;
     }
     const topSalesPerformance = Array.from(perfMap.values())
       .map((e) => {
-        const closedDeals = e.wonCount + e.lostCount;
-        // Only compute Win Rate when there are enough decided deals (≥ 1)
-        // Flag low-sample: closedDeals < 3
-        const winRate = closedDeals > 0 ? Math.round((e.wonCount / closedDeals) * 100) : null;
+        // Win Rate: SO ที่ปิดสำเร็จ ÷ (SO + ดีลที่ไม่ผ่าน)
+        // ไม่นับ pipeline/pending เพราะยังไม่รู้ผล
+        const closedDeals = e.saleOrderCount + e.lostCount;
+        const winRate = closedDeals > 0 ? Math.round((e.saleOrderCount / closedDeals) * 100) : null;
         return { ...e, closedDeals, winRate, lowSample: closedDeals < 3 };
       })
       .sort((a, b) => b.actualRevenue - a.actualRevenue).slice(0, 10);

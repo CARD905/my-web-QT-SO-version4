@@ -24,7 +24,7 @@ interface FvtYearly { year: number; actual: number; target: number | null; forec
 interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; }
 interface DealRisk { id: string; quotationNo: string; customerCompany: string; grandTotal: number; status: string; expiryDate: string | null; updatedAt: string; createdAt: string; salesName: string; riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number; }
 interface AccuracyMonth { label: string; month: number; year: number; actual: number; target: number | null; forecast: number; accuracy: number | null; }
-interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; wonCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; closedDeals: number; winRate: number | null; lowSample: boolean; }
+interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; closedDeals: number; winRate: number | null; lowSample: boolean; }
 interface TrendMonth { label: string; month: number; year: number; actual: number; prevYearActual: number | null; momGrowth: number | null; yoyGrowth: number | null; trend: 'UP' | 'DOWN' | 'FLAT'; }
 interface PipelineStatus { status: string; count: number; value: number; probability: number; weightedValue: number; }
 interface PipelineSales { userId: string; name: string; count: number; value: number; weightedValue: number; }
@@ -527,13 +527,13 @@ function TopSalesCard({ data }: { data: SalesPerf[] }) {
 
                 {/* Stats chips */}
                 <div className="flex items-center gap-2 pl-9 flex-wrap">
-                  <StatChip label="QT" value={s.quotationCount} color="text-foreground" />
+                  <StatChip label="QT ทั้งหมด" value={s.quotationCount} color="text-foreground" />
                   <span className="text-muted-foreground/40">·</span>
-                  <StatChip label="อนุมัติ" value={s.wonCount} color="text-emerald-600" />
+                  <StatChip label="ปิดสำเร็จ (SO)" value={s.saleOrderCount} color={s.saleOrderCount > 0 ? 'text-emerald-600' : 'text-muted-foreground'} />
                   <StatChip label="ไม่ผ่าน" value={s.lostCount} color={s.lostCount > 0 ? 'text-red-500' : 'text-muted-foreground'} />
-                  <StatChip label="รอผล" value={s.pendingCount} color="text-amber-600" />
                   <span className="text-muted-foreground/40">·</span>
-                  <StatChip label="Sale Order" value={s.saleOrderCount} color="text-indigo-600" />
+                  <StatChip label="กำลังดำเนินการ" value={s.pipelineCount} color="text-blue-600" />
+                  <StatChip label="รอพิจารณา" value={s.pendingCount} color="text-amber-600" />
                 </div>
               </div>
             );
