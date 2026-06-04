@@ -321,26 +321,37 @@ export const forecastService = {
       }));
 
     // ── 5. Top Sales Performance ──────────────────────────────────────────
-    const perfMap = new Map<string, { userId: string; name: string; actualRevenue: number; quotationCount: number; approvedCount: number; rejectedCount: number; saleOrderCount: number }>();
+    // Win  = APPROVED, PO_PENDING, PO_APPROVED, SIGNED (quote was accepted)
+    // Loss = REJECTED, CANCELLED, EXPIRED       (quote did NOT proceed)
+    // Pending = DRAFT, PENDING, PENDING_ESCALATED, PENDING_BACKUP (not decided yet)
+    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; wonCount: number; lostCount: number; pendingCount: number; saleOrderCount: number };
+    const perfMap = new Map<string, PerfEntry>();
     for (const q of quotations12m) {
       const uid = q.createdBy.id;
-      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, approvedCount: 0, rejectedCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, wonCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
       const e = perfMap.get(uid)!;
       e.quotationCount++;
-      if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.approvedCount++;
-      if (q.status === 'REJECTED') e.rejectedCount++;
+      if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.wonCount++;
+      else if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(q.status)) e.lostCount++;
+      else e.pendingCount++;
     }
     for (const so of confirmedSO12m) {
       if (!so.quotationId) continue;
       const cb = qtCreatedByMap.get(so.quotationId);
       if (!cb) continue;
-      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, approvedCount: 0, rejectedCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, wonCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
       const e = perfMap.get(cb.id)!;
       e.actualRevenue += toNum(so.grandTotal);
       e.saleOrderCount++;
     }
     const topSalesPerformance = Array.from(perfMap.values())
-      .map((e) => ({ ...e, winRate: e.approvedCount + e.rejectedCount > 0 ? Math.round((e.approvedCount / (e.approvedCount + e.rejectedCount)) * 100) : null }))
+      .map((e) => {
+        const closedDeals = e.wonCount + e.lostCount;
+        // Only compute Win Rate when there are enough decided deals (≥ 1)
+        // Flag low-sample: closedDeals < 3
+        const winRate = closedDeals > 0 ? Math.round((e.wonCount / closedDeals) * 100) : null;
+        return { ...e, closedDeals, winRate, lowSample: closedDeals < 3 };
+      })
       .sort((a, b) => b.actualRevenue - a.actualRevenue).slice(0, 10);
 
     // ── 6. Revenue Trend (MoM / YoY) ─────────────────────────────────────

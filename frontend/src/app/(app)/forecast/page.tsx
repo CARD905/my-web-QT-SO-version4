@@ -24,7 +24,7 @@ interface FvtYearly { year: number; actual: number; target: number | null; forec
 interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; }
 interface DealRisk { id: string; quotationNo: string; customerCompany: string; grandTotal: number; status: string; expiryDate: string | null; updatedAt: string; createdAt: string; salesName: string; riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number; }
 interface AccuracyMonth { label: string; month: number; year: number; actual: number; target: number | null; forecast: number; accuracy: number | null; }
-interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; approvedCount: number; rejectedCount: number; saleOrderCount: number; winRate: number | null; }
+interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; wonCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; closedDeals: number; winRate: number | null; lowSample: boolean; }
 interface TrendMonth { label: string; month: number; year: number; actual: number; prevYearActual: number | null; momGrowth: number | null; yoyGrowth: number | null; trend: 'UP' | 'DOWN' | 'FLAT'; }
 interface PipelineStatus { status: string; count: number; value: number; probability: number; weightedValue: number; }
 interface PipelineSales { userId: string; name: string; count: number; value: number; weightedValue: number; }
@@ -451,43 +451,111 @@ function ForecastAccuracyCard({ data }: { data: AccuracyMonth[] }) {
   );
 }
 
+const RANK_STYLE = [
+  'bg-amber-400 text-white',   // 1st — gold
+  'bg-slate-400 text-white',   // 2nd — silver
+  'bg-amber-700 text-white',   // 3rd — bronze
+];
+
+function WinRatePill({ winRate, closedDeals, lowSample }: { winRate: number | null; closedDeals: number; lowSample: boolean }) {
+  if (winRate === null || closedDeals === 0) {
+    return <span className="text-[10px] text-muted-foreground italic">ยังไม่มีผล</span>;
+  }
+  const color = lowSample
+    ? 'border-border text-muted-foreground'
+    : winRate >= 70 ? 'border-emerald-400 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+    : winRate >= 50 ? 'border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20'
+    : 'border-red-400 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20';
+
+  return (
+    <span className={cn('inline-flex items-center gap-1 border rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0', color)}>
+      Win {winRate}%
+      {lowSample && (
+        <span className="opacity-60 font-normal">({closedDeals})</span>
+      )}
+    </span>
+  );
+}
+
 function TopSalesCard({ data }: { data: SalesPerf[] }) {
   if (data.length === 0) return null;
-  const maxRev = data[0]?.actualRevenue ?? 1;
+  const maxRev = Math.max(...data.map((s) => s.actualRevenue), 1);
+
   return (
     <Card>
       <CardContent className="pt-5">
-        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
-          <Users className="h-4 w-4 text-blue-500" />Top Sales Performance (12 เดือน)
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-4">
+          <Users className="h-4 w-4 text-blue-500" />Top Sales Performance
+          <span className="text-[10px] font-normal text-muted-foreground">(12 เดือน)</span>
         </h2>
-        <div className="space-y-2.5">
-          {data.map((s, i) => (
-            <div key={s.userId} className="space-y-1">
-              <div className="flex items-center gap-2 text-xs">
-                <span className={cn('h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0', i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-muted-foreground')}>
-                  {i + 1}
-                </span>
-                <span className="font-semibold flex-1 truncate">{s.name}</span>
-                <span className="font-bold shrink-0">{short(s.actualRevenue)}</span>
-                {s.winRate != null && (
-                  <Badge variant="outline" className={cn('text-[10px] h-4 px-1 shrink-0', s.winRate >= 60 ? 'border-emerald-500 text-emerald-600' : 'border-amber-500 text-amber-600')}>
-                    Win {s.winRate}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${(s.actualRevenue / maxRev) * 100}%` }} />
+
+        {/* Column header */}
+        <div className="flex items-center gap-3 pb-2 mb-1 border-b text-[10px] text-muted-foreground uppercase tracking-wider">
+          <span className="w-5 shrink-0" />
+          <span className="flex-1">ชื่อ</span>
+          <span className="w-20 text-right shrink-0">ยอดขาย</span>
+          <span className="w-24 text-right shrink-0">Win Rate</span>
+        </div>
+
+        <div className="divide-y divide-border/50">
+          {data.map((s, i) => {
+            const revPct = maxRev > 0 ? (s.actualRevenue / maxRev) * 100 : 0;
+            return (
+              <div key={s.userId} className="py-3 space-y-2">
+                {/* Main row */}
+                <div className="flex items-center gap-3">
+                  <span className={cn('h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0',
+                    RANK_STYLE[i] ?? 'bg-muted text-muted-foreground')}>
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 font-semibold text-sm truncate">{s.name}</span>
+                  <span className="w-20 text-right font-bold text-sm shrink-0">
+                    {s.actualRevenue > 0 ? formatMoney(s.actualRevenue) : <span className="text-muted-foreground font-normal text-xs">-</span>}
+                  </span>
+                  <span className="w-24 flex justify-end shrink-0">
+                    <WinRatePill winRate={s.winRate} closedDeals={s.closedDeals} lowSample={s.lowSample} />
+                  </span>
                 </div>
-                <span className="text-[10px] text-muted-foreground shrink-0 w-24 text-right">
-                  QT:{s.quotationCount} ✓:{s.approvedCount} SO:{s.saleOrderCount}
-                </span>
+
+                {/* Revenue progress bar */}
+                <div className="flex items-center gap-2 pl-9">
+                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className={cn('h-full rounded-full transition-all duration-700', i === 0 ? 'bg-indigo-500' : 'bg-indigo-400/70')}
+                      style={{ width: `${revPct}%` }} />
+                  </div>
+                </div>
+
+                {/* Stats chips */}
+                <div className="flex items-center gap-2 pl-9 flex-wrap">
+                  <StatChip label="QT" value={s.quotationCount} color="text-foreground" />
+                  <span className="text-muted-foreground/40">·</span>
+                  <StatChip label="อนุมัติ" value={s.wonCount} color="text-emerald-600" />
+                  <StatChip label="ไม่ผ่าน" value={s.lostCount} color={s.lostCount > 0 ? 'text-red-500' : 'text-muted-foreground'} />
+                  <StatChip label="รอผล" value={s.pendingCount} color="text-amber-600" />
+                  <span className="text-muted-foreground/40">·</span>
+                  <StatChip label="Sale Order" value={s.saleOrderCount} color="text-indigo-600" />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+
+        {/* Legend */}
+        <div className="mt-3 pt-3 border-t text-[10px] text-muted-foreground flex items-start gap-1.5">
+          <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
+          Win Rate = อนุมัติ ÷ (อนุมัติ + REJECTED + CANCELLED + EXPIRED) · ตัวเลขในวงเล็บคือจำนวน deal ที่ใช้คำนวณ (น้อยกว่า 3 = ข้อมูลน้อย)
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function StatChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span className="flex items-center gap-0.5 text-[11px]">
+      <span className={cn('font-bold', color)}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
+    </span>
   );
 }
 
