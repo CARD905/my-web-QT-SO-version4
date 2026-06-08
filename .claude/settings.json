@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "PowerShell(Set-Location \"d:\\\\version5.2\\\\frontend\"; $out = npx tsc --noEmit 2>&1; Write-Host \"Exit: $LASTEXITCODE\"; $out | ForEach-Object { if \\($_ -match \"error TS\" -and $_ -notmatch \"special-discount\" -and $_ -notmatch \"validator\"\\) { Write-Host $_ } } | Select-Object -First 20)",
-      "PowerShell(Set-Location \"d:\\\\version5.2\\\\frontend\"; npx tsc --noEmit 2>&1 | Out-File \"C:\\\\Users\\\\HP\\\\tsc2.txt\"; Get-Content \"C:\\\\Users\\\\HP\\\\tsc2.txt\" | Where-Object { $_ -notmatch \"special-discount\" -and $_ -notmatch \"validator\" })"
+      "PowerShell(Set-Location \"d:\\\\version5.2\\\\frontend\"; npx tsc --noEmit 2>&1 | Out-File \"C:\\\\Users\\\\HP\\\\tsc2.txt\"; Get-Content \"C:\\\\Users\\\\HP\\\\tsc2.txt\" | Where-Object { $_ -notmatch \"special-discount\" -and $_ -notmatch \"validator\" })",
+      "PowerShell(cd d:\\\\version5.2\\\\frontend; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"\\\\.next\" } | Select-Object -First 20)"
     ]
   }
 }
