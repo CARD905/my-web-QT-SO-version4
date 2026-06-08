@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, type ElementType } from 'react';
 import Link from 'next/link';
 import {
   TrendingUp, TrendingDown, Target, BarChart3, Users, Loader2,
-  Pencil, Check, X, Info, AlertTriangle, ShieldAlert, Clock,
+  Pencil, Check, X, Info, ShieldAlert, Clock,
   ChevronRight, ArrowUpRight, ArrowDownRight, Minus, Activity,
   Calendar, Zap, Award,
 } from 'lucide-react';
@@ -220,6 +220,12 @@ function QuickStatChip({ icon: Icon, label, value, sub, color }: { icon: Element
 function KpiQuickStatsBar({ kpi, isCeo }: { kpi: KpiSummary; isCeo: boolean }) {
   type Chip = { icon: ElementType; label: string; value: string; sub?: string; color?: string };
   const chips = [
+    kpi.forecastGap !== null && {
+      icon: Target, label: 'Forecast Gap (เดือนหน้า)',
+      color: kpi.forecastGap >= 0 ? 'text-emerald-600' : 'text-red-600',
+      value: `${kpi.forecastGap >= 0 ? '+' : ''}${short(kpi.forecastGap)}`,
+      sub: kpi.forecastGapPct !== null ? `${kpi.forecastGapPct >= 0 ? '+' : ''}${kpi.forecastGapPct}% vs เป้า` : 'vs เป้าเดือนหน้า',
+    },
     kpi.expectedClosingThisMonth > 0 && {
       icon: Calendar, label: 'คาดปิดเดือนนี้', color: 'text-emerald-600',
       value: short(kpi.expectedClosingThisMonth),
@@ -492,7 +498,8 @@ function ForecastAccuracyCard({ data }: { data: AccuracyMonth[] }) {
     ? Math.round(accuracyMonths.reduce((s, m) => s + (m.accuracy ?? 0), 0) / accuracyMonths.length)
     : null;
   const hasData = accuracyMonths.length > 0;
-  const chartData = data.map((m) => ({ label: m.label, value: m.accuracy ?? 0, value2: null }));
+  // ใช้เฉพาะเดือนที่มีข้อมูล ไม่ plot 0 แทน null เพื่อกราฟไม่โค้งลงผิด
+  const chartData = accuracyMonths.map((m) => ({ label: m.label, value: m.accuracy ?? 0, value2: null }));
   return (
     <Card>
       <CardContent className="pt-5">
@@ -858,11 +865,17 @@ function PipelineHealthCard({ data }: { data: PipelineHealth }) {
 function TopOpportunitiesCard({ data }: { data: Opportunity[] }) {
   const [showAll, setShowAll] = useState(false);
   const displayed = showAll ? data : data.slice(0, 6);
+  if (data.length === 0) return (
+    <Card><CardContent className="pt-5">
+      <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3"><TrendingUp className="h-4 w-4 text-amber-500" />Top Opportunities</h2>
+      <div className="text-center py-6 text-sm text-muted-foreground">ไม่มี Active Pipeline ในขณะนี้</div>
+    </CardContent></Card>
+  );
   return (
     <Card>
       <CardContent className="pt-5">
         <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />Top Opportunities
+          <TrendingUp className="h-4 w-4 text-amber-500" />Top Opportunities
         </h2>
         <div className="space-y-1.5">
           {displayed.map((o, i) => (
@@ -995,7 +1008,7 @@ function CustomerConcentrationCard({ data, totalRevenue }: { data: CustomerConce
                 <span className={cn('font-bold w-10 text-right shrink-0', i < 5 && top5Total > 70 ? 'text-red-600' : 'text-foreground')}>{c.pct}%</span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div className={cn('h-full rounded-full', i < 3 ? 'bg-violet-500' : 'bg-violet-300')} style={{ width: `${c.pct}%` }} />
+                <div className={cn('h-full rounded-full', i < 3 ? 'bg-violet-500' : 'bg-violet-300')} style={{ width: `${(c.pct / (data[0]?.pct || 1)) * 100}%` }} />
               </div>
             </div>
           ))}

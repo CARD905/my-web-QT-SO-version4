@@ -275,7 +275,7 @@ export const forecastService = {
         where: { ...soWhere, issueDate: { gte: prevYearStart, lt: start12 } },
         select: { grandTotal: true, issueDate: true },
       }),
-      prisma.saleOrder.count({ where: { deletedAt: null, createdAt: { gte: start12 }, ...(soWhere.quotationId ? { quotationId: soWhere.quotationId } : {}) } }),
+      prisma.saleOrder.count({ where: { ...soWhere, issueDate: { gte: start12 } } }),
       prisma.saleOrder.aggregate({ where: { ...soWhere, issueDate: { gte: start12 } }, _sum: { grandTotal: true } }),
       prisma.saleOrder.groupBy({
         by: ['customerCompany'],
@@ -514,7 +514,8 @@ export const forecastService = {
     // ── 10. Win Rate Trend (per month, 12 months) ─────────────────────────
     const winRateTrend = months12.map((m) => {
       const won = confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).length;
-      const lost = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.createdAt) >= m.start && new Date(q.createdAt) < m.end).length;
+      // ใช้ updatedAt เป็น proxy ของวันที่ status เปลี่ยนเป็น lost (ดีกว่า createdAt ซึ่งเป็นวันสร้าง)
+      const lost = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= m.start && new Date(q.updatedAt) < m.end).length;
       return { label: m.label, month: m.month, year: m.year, won, lost, winRate: won + lost > 0 ? Math.round((won / (won + lost)) * 100) : null };
     });
 
@@ -557,7 +558,7 @@ export const forecastService = {
     // Win Rate 6m
     const last6mStart2 = lastNMonths(6)[0].start;
     const won6m = confirmedSO12m.filter((o) => new Date(o.issueDate!) >= last6mStart2).length;
-    const lost6m = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.createdAt) >= last6mStart2).length;
+    const lost6m = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= last6mStart2).length;
     const winRate6m = won6m + lost6m > 0 ? Math.round((won6m / (won6m + lost6m)) * 100) : null;
 
     // Customer concentration
