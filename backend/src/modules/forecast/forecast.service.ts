@@ -15,7 +15,7 @@ export const PIPELINE_WEIGHTS: Record<string, number> = {
 const ACTIVE_STATUSES: QuotationStatus[] = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'];
 const AT_RISK_STATUSES: QuotationStatus[] = ['DRAFT', 'PENDING', 'PENDING_ESCALATED', 'APPROVED'];
 const CONFIRMED_SO: SaleOrderStatus[] = ['CONFIRMED', 'COMPLETED'];
-const WIN_LOSS: QuotationStatus[] = ['APPROVED', 'REJECTED'];
+const LOST_STATUSES: QuotationStatus[] = ['REJECTED', 'CANCELLED', 'EXPIRED'];
 
 function toNum(v: Decimal | null | undefined): number {
   return v == null ? 0 : Number(v.toString());
@@ -65,21 +65,64 @@ async function buildBaseWhere(userId: string, roleCode: string): Promise<Prisma.
   return base;
 }
 
+// Risk Score 0–100: expiry(40) + staleness(30) + value(20) + status_stall(10)
 function assessRisk(q: {
   expiryDate: Date | null; updatedAt: Date; grandTotal: Decimal | null; status: string; createdAt: Date;
-}): { riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number } {
+}): { riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number; riskScore: number } {
   const now = new Date();
   const daysSinceUpdate = Math.floor((now.getTime() - new Date(q.updatedAt).getTime()) / 86400000);
   const daysUntilExpiry = q.expiryDate ? Math.floor((new Date(q.expiryDate).getTime() - now.getTime()) / 86400000) : null;
   const value = toNum(q.grandTotal);
 
-  if (daysUntilExpiry !== null && daysUntilExpiry <= 3) return { riskType: 'EXPIRING', riskLevel: 'HIGH', daysUntilExpiry, daysSinceUpdate };
-  if (daysUntilExpiry !== null && daysUntilExpiry <= 7) return { riskType: 'EXPIRING', riskLevel: 'MEDIUM', daysUntilExpiry, daysSinceUpdate };
-  if (q.status === 'PENDING' && daysSinceUpdate > 14) return { riskType: 'LONG_PENDING', riskLevel: 'HIGH', daysUntilExpiry, daysSinceUpdate };
-  if (q.status === 'PENDING' && daysSinceUpdate > 7) return { riskType: 'LONG_PENDING', riskLevel: 'MEDIUM', daysUntilExpiry, daysSinceUpdate };
-  if (value > 200000 && daysSinceUpdate > 14) return { riskType: 'HIGH_VALUE_STALE', riskLevel: 'HIGH', daysUntilExpiry, daysSinceUpdate };
-  if (value > 100000 && daysSinceUpdate > 7) return { riskType: 'HIGH_VALUE_STALE', riskLevel: 'MEDIUM', daysUntilExpiry, daysSinceUpdate };
-  return { riskType: 'LOW_ACTIVITY', riskLevel: 'LOW', daysUntilExpiry, daysSinceUpdate };
+  let score = 0;
+
+  // Expiry component (0–40 pts)
+  if (daysUntilExpiry !== null) {
+    if (daysUntilExpiry <= 0) score += 40;
+    else if (daysUntilExpiry <= 3) score += 35;
+    else if (daysUntilExpiry <= 7) score += 25;
+    else if (daysUntilExpiry <= 14) score += 15;
+    else if (daysUntilExpiry <= 30) score += 8;
+  } else {
+    score += 5; // no expiry date is mildly risky
+  }
+
+  // Staleness component (0–30 pts)
+  if (daysSinceUpdate >= 30) score += 30;
+  else if (daysSinceUpdate >= 21) score += 22;
+  else if (daysSinceUpdate >= 14) score += 16;
+  else if (daysSinceUpdate >= 7) score += 8;
+  else if (daysSinceUpdate >= 3) score += 3;
+
+  // Deal value component (0–20 pts)
+  if (value >= 500000) score += 20;
+  else if (value >= 200000) score += 15;
+  else if (value >= 100000) score += 10;
+  else if (value >= 50000) score += 5;
+
+  // Status stall component (0–10 pts)
+  if (['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status)) {
+    if (daysSinceUpdate > 14) score += 10;
+    else if (daysSinceUpdate > 7) score += 6;
+    else if (daysSinceUpdate > 3) score += 3;
+  } else if (q.status === 'APPROVED') {
+    if (daysSinceUpdate > 30) score += 10;
+    else if (daysSinceUpdate > 14) score += 5;
+  }
+
+  const riskScore = Math.min(100, score);
+
+  let riskType: string;
+  let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  if (daysUntilExpiry !== null && daysUntilExpiry <= 3) { riskType = 'EXPIRING'; riskLevel = 'HIGH'; }
+  else if (daysUntilExpiry !== null && daysUntilExpiry <= 7) { riskType = 'EXPIRING'; riskLevel = 'MEDIUM'; }
+  else if (q.status === 'PENDING' && daysSinceUpdate > 14) { riskType = 'LONG_PENDING'; riskLevel = 'HIGH'; }
+  else if (q.status === 'PENDING' && daysSinceUpdate > 7) { riskType = 'LONG_PENDING'; riskLevel = 'MEDIUM'; }
+  else if (value > 200000 && daysSinceUpdate > 14) { riskType = 'HIGH_VALUE_STALE'; riskLevel = 'HIGH'; }
+  else if (value > 100000 && daysSinceUpdate > 7) { riskType = 'HIGH_VALUE_STALE'; riskLevel = 'MEDIUM'; }
+  else { riskType = 'LOW_ACTIVITY'; riskLevel = 'LOW'; }
+
+  return { riskType, riskLevel, daysUntilExpiry, daysSinceUpdate, riskScore };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -98,7 +141,7 @@ export const forecastService = {
       }),
       prisma.forecastTarget.findMany({ where: { OR: months.map((m) => ({ year: m.year, month: m.month })) } }),
       prisma.quotation.findMany({
-        where: { status: { in: WIN_LOSS }, deletedAt: null, createdAt: { gte: firstStart } },
+        where: { status: { in: LOST_STATUSES }, deletedAt: null, createdAt: { gte: firstStart } },
         select: { status: true, createdAt: true },
       }),
       prisma.quotation.findMany({
@@ -116,10 +159,11 @@ export const forecastService = {
     for (const t of targets) targetMap.set(`${t.year}-${t.month}`, toNum(t.target));
 
     const monthlyData = months.map((m) => {
-      const actual = confirmedOrders.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).reduce((s, o) => s + toNum(o.grandTotal), 0);
-      const approved = quotations.filter((q) => q.status === 'APPROVED' && new Date(q.createdAt) >= m.start && new Date(q.createdAt) < m.end).length;
-      const rejected = quotations.filter((q) => q.status === 'REJECTED' && new Date(q.createdAt) >= m.start && new Date(q.createdAt) < m.end).length;
-      return { label: m.label, year: m.year, month: m.month, actual, target: targetMap.get(`${m.year}-${m.month}`) ?? null, winRate: approved + rejected > 0 ? Math.round((approved / (approved + rejected)) * 100) : null, approved, rejected };
+      const soInMonth = confirmedOrders.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; });
+      const actual = soInMonth.reduce((s, o) => s + toNum(o.grandTotal), 0);
+      const soCount = soInMonth.length;
+      const lostCount = quotations.filter((q) => { const d = new Date(q.createdAt); return d >= m.start && d < m.end; }).length;
+      return { label: m.label, year: m.year, month: m.month, actual, target: targetMap.get(`${m.year}-${m.month}`) ?? null, winRate: soCount + lostCount > 0 ? Math.round((soCount / (soCount + lostCount)) * 100) : null, soCount, lostCount };
     });
 
     let pipelineWeighted = 0, pipelineTotal = 0;
@@ -141,14 +185,14 @@ export const forecastService = {
     for (const t of nextTargets) nextTargetMap.set(`${t.year}-${t.month}`, toNum(t.target));
 
     const last6mStart = lastNMonths(6)[0].start;
-    const recentApproved = quotations.filter((q) => q.status === 'APPROVED' && new Date(q.createdAt) >= last6mStart).length;
-    const recentRejected = quotations.filter((q) => q.status === 'REJECTED' && new Date(q.createdAt) >= last6mStart).length;
+    const recentSO = confirmedOrders.filter((o) => new Date(o.issueDate!) >= last6mStart).length;
+    const recentLost = quotations.filter((q) => new Date(q.createdAt) >= last6mStart).length;
 
     return {
       monthlyData,
       forecastMonths: nextMonths.map((m) => ({ label: m.label, year: m.year, month: m.month, forecast: Math.round(movingAvg), target: nextTargetMap.get(`${m.year}-${m.month}`) ?? null })),
       pipeline: { total: pipelineTotal, weighted: Math.round(pipelineWeighted), byStage: pipelineByStage, count: pipelineQuotations.length },
-      winRate6m: recentApproved + recentRejected > 0 ? Math.round((recentApproved / (recentApproved + recentRejected)) * 100) : null,
+      winRate6m: recentSO + recentLost > 0 ? Math.round((recentSO / (recentSO + recentLost)) * 100) : null,
       movingAvg: Math.round(movingAvg),
       currentMonth: monthlyData[monthlyData.length - 1],
       topCustomers: customerRevenue.map((c) => ({ company: c.customerCompany, total: toNum(c._sum?.grandTotal) })),
@@ -173,19 +217,14 @@ export const forecastService = {
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // ADVANCED — role-aware, all 9 analytics sections
+  // ADVANCED — role-aware, all analytics sections
   // ════════════════════════════════════════════════════════════════════════════
   async getAdvancedData(userId: string, roleCode: string) {
     const baseWhere = await buildBaseWhere(userId, roleCode);
     const months12 = lastNMonths(12);
     const start12 = months12[0].start;
 
-    // SaleOrder filter: for OFFICER/MANAGER we filter through quotationId set
-    // We'll compute applicable quotationIds from quotations12m after the fact
-
-    // ── Parallel queries ────────────────────────────────────────────────────
     const [quotations12m, activePipeline, atRiskRaw, forecastTargets] = await Promise.all([
-      // All quotations last 12 months — includes createdBy
       prisma.quotation.findMany({
         where: { ...baseWhere, createdAt: { gte: start12 } },
         select: {
@@ -196,7 +235,6 @@ export const forecastService = {
         },
         orderBy: { grandTotal: 'desc' },
       }),
-      // Active pipeline (all time)
       prisma.quotation.findMany({
         where: { ...baseWhere, status: { in: ACTIVE_STATUSES } },
         select: {
@@ -206,7 +244,6 @@ export const forecastService = {
           createdBy: { select: { id: true, name: true } },
         },
       }),
-      // At-risk quotations
       prisma.quotation.findMany({
         where: { ...baseWhere, status: { in: AT_RISK_STATUSES } },
         select: {
@@ -217,25 +254,19 @@ export const forecastService = {
         },
         orderBy: { grandTotal: 'desc' }, take: 100,
       }),
-      // Forecast targets for 12 months
       prisma.forecastTarget.findMany({ where: { OR: months12.map((m) => ({ year: m.year, month: m.month })) } }),
     ]);
 
-    // SaleOrder queries filtered via quotationId IN scoped set
     const soWhere: Prisma.SaleOrderWhereInput = { deletedAt: null, status: { in: CONFIRMED_SO } };
     if (roleCode !== 'CEO' && roleCode !== 'ADMIN') {
-      // Scope by quotations owned by this user/team
-      const allQuotationIds = await prisma.quotation.findMany({
-        where: { ...baseWhere }, select: { id: true },
-      });
-      const scopedIds = allQuotationIds.map((q) => q.id);
-      soWhere.quotationId = { in: scopedIds };
+      const allQuotationIds = await prisma.quotation.findMany({ where: { ...baseWhere }, select: { id: true } });
+      soWhere.quotationId = { in: allQuotationIds.map((q) => q.id) };
     }
 
     const prevYearStart = new Date(start12);
     prevYearStart.setFullYear(prevYearStart.getFullYear() - 1);
 
-    const [confirmedSO12m, prevYearSO, soCount12m, soValueAgg] = await Promise.all([
+    const [confirmedSO12m, prevYearSO, soCount12m, soValueAgg, customerRevenueGroupBy] = await Promise.all([
       prisma.saleOrder.findMany({
         where: { ...soWhere, issueDate: { gte: start12 } },
         select: { grandTotal: true, issueDate: true, quotationId: true },
@@ -245,15 +276,23 @@ export const forecastService = {
         select: { grandTotal: true, issueDate: true },
       }),
       prisma.saleOrder.count({ where: { deletedAt: null, createdAt: { gte: start12 }, ...(soWhere.quotationId ? { quotationId: soWhere.quotationId } : {}) } }),
-      prisma.saleOrder.aggregate({
+      prisma.saleOrder.aggregate({ where: { ...soWhere, issueDate: { gte: start12 } }, _sum: { grandTotal: true } }),
+      prisma.saleOrder.groupBy({
+        by: ['customerCompany'],
         where: { ...soWhere, issueDate: { gte: start12 } },
         _sum: { grandTotal: true },
+        orderBy: { _sum: { grandTotal: 'desc' } },
+        take: 10,
       }),
     ]);
 
-    // Build quotationId → createdBy map from quotations12m
+    // Build lookup maps from quotations12m
     const qtCreatedByMap = new Map<string, { id: string; name: string }>();
-    for (const q of quotations12m) qtCreatedByMap.set(q.id, q.createdBy);
+    const qtCreatedAtMap = new Map<string, Date>();
+    for (const q of quotations12m) {
+      qtCreatedByMap.set(q.id, q.createdBy);
+      qtCreatedAtMap.set(q.id, new Date(q.createdAt));
+    }
 
     const targetMap = new Map<string, number>();
     for (const t of forecastTargets) targetMap.set(`${t.year}-${t.month}`, toNum(t.target));
@@ -262,6 +301,21 @@ export const forecastService = {
     const movingAvgData = months12.map((m) =>
       confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).reduce((s, o) => s + toNum(o.grandTotal), 0)
     );
+
+    // ── Future forecast (next 3 months, moving avg of last 3 non-zero) ────
+    const last3NonZero = movingAvgData.slice(-3).filter((v) => v > 0);
+    const forecastAvg = last3NonZero.length > 0 ? Math.round(last3NonZero.reduce((a, b) => a + b, 0) / last3NonZero.length) : 0;
+    const nextMonths3 = nextNMonths(3);
+    const nextTargets3 = await prisma.forecastTarget.findMany({
+      where: { OR: nextMonths3.map((m) => ({ year: m.year, month: m.month })) },
+    });
+    const nextTargetMap3 = new Map<string, number | null>();
+    for (const t of nextTargets3) nextTargetMap3.set(`${t.year}-${t.month}`, toNum(t.target));
+    const forecastMonths = nextMonths3.map((m) => ({
+      label: m.label, year: m.year, month: m.month,
+      actual: 0, target: nextTargetMap3.get(`${m.year}-${m.month}`) ?? null,
+      forecast: forecastAvg, achievePct: null, gap: null, isFuture: true,
+    }));
 
     // ── 1. Forecast vs Target ─────────────────────────────────────────────
     const fvtMonthly = months12.map((m, i) => {
@@ -273,7 +327,6 @@ export const forecastService = {
       return { label: m.label, year: m.year, month: m.month, actual, target, forecast, achievePct, gap: target != null ? actual - target : null };
     });
 
-    // Quarterly
     const qMap = new Map<string, { label: string; year: number; quarter: number; actual: number; target: number; forecast: number }>();
     for (const m of fvtMonthly) {
       const q = Math.ceil(m.month / 3);
@@ -305,54 +358,64 @@ export const forecastService = {
       { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0 },
     ];
 
-    // ── 3. Deals At Risk ──────────────────────────────────────────────────
+    // ── 3. Deals At Risk (sorted by riskScore desc) ───────────────────────
+    const now = new Date();
     const dealsAtRisk = atRiskRaw
-      .map((q) => ({ ...assessRisk(q), id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany, grandTotal: toNum(q.grandTotal), status: q.status, expiryDate: q.expiryDate, updatedAt: q.updatedAt, createdAt: q.createdAt, salesName: q.createdBy.name }))
+      .map((q) => ({
+        ...assessRisk(q),
+        id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
+        grandTotal: toNum(q.grandTotal), status: q.status,
+        expiryDate: q.expiryDate, updatedAt: q.updatedAt, createdAt: q.createdAt,
+        salesName: q.createdBy.name,
+        daysOpen: Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000),
+      }))
       .filter((q) => q.riskLevel !== 'LOW')
-      .sort((a, b) => ({ HIGH: 0, MEDIUM: 1, LOW: 2 }[a.riskLevel] - { HIGH: 0, MEDIUM: 1, LOW: 2 }[b.riskLevel]))
+      .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 20);
 
-    // ── 4. Forecast Accuracy ──────────────────────────────────────────────
+    // ── 4. Forecast Accuracy — formula: 1 - |forecast - actual| / actual ─
+    // Uses forecast (moving avg) vs actual, not target vs actual.
+    // Only computed for months where actual > 0.
     const forecastAccuracy = fvtMonthly
-      .filter((m) => m.target !== null)
+      .filter((m) => m.actual > 0)
       .map((m) => ({
-        label: m.label, month: m.month, year: m.year, actual: m.actual, target: m.target, forecast: m.forecast,
-        accuracy: m.target && m.target > 0 ? Math.round(Math.max(0, (1 - Math.abs(m.actual - m.target) / m.target)) * 100) : null,
+        label: m.label, month: m.month, year: m.year,
+        actual: m.actual, target: m.target, forecast: m.forecast,
+        accuracy: m.forecast > 0
+          ? Math.round(Math.max(0, (1 - Math.abs(m.forecast - m.actual) / m.actual)) * 100)
+          : null,
+        targetAchievement: m.target && m.target > 0 ? Math.round((m.actual / m.target) * 100) : null,
       }));
 
     // ── 5. Top Sales Performance ──────────────────────────────────────────
-    // Win     = Sale Order ที่ CONFIRMED/COMPLETED (ยอดขายจริง)
-    // Loss    = REJECTED + CANCELLED + EXPIRED (ไม่ปิดดีล)
-    // Pipeline = APPROVED, PO_PENDING, PO_APPROVED, SIGNED (ยังอยู่ในกระบวนการ ≠ Win ยัง)
-    // Pending  = DRAFT, PENDING, PENDING_ESCALATED, PENDING_BACKUP (รอการพิจารณา)
-    // Win Rate = saleOrderCount ÷ (saleOrderCount + lostCount)
-    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number };
+    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; soValues: number[] };
     const perfMap = new Map<string, PerfEntry>();
     for (const q of quotations12m) {
       const uid = q.createdBy.id;
-      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
       const e = perfMap.get(uid)!;
       e.quotationCount++;
       if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.pipelineCount++;
-      else if (['REJECTED', 'CANCELLED', 'EXPIRED'].includes(q.status)) e.lostCount++;
+      else if (LOST_STATUSES.includes(q.status as QuotationStatus)) e.lostCount++;
       else e.pendingCount++;
     }
     for (const so of confirmedSO12m) {
       if (!so.quotationId) continue;
       const cb = qtCreatedByMap.get(so.quotationId);
       if (!cb) continue;
-      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0 });
+      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
       const e = perfMap.get(cb.id)!;
-      e.actualRevenue += toNum(so.grandTotal);
+      const val = toNum(so.grandTotal);
+      e.actualRevenue += val;
       e.saleOrderCount++;
+      if (val > 0) e.soValues.push(val);
     }
     const topSalesPerformance = Array.from(perfMap.values())
       .map((e) => {
-        // Win Rate: SO ที่ปิดสำเร็จ ÷ (SO + ดีลที่ไม่ผ่าน)
-        // ไม่นับ pipeline/pending เพราะยังไม่รู้ผล
         const closedDeals = e.saleOrderCount + e.lostCount;
         const winRate = closedDeals > 0 ? Math.round((e.saleOrderCount / closedDeals) * 100) : null;
-        return { ...e, closedDeals, winRate, lowSample: closedDeals < 3 };
+        const avgDealSize = e.soValues.length > 0 ? Math.round(e.soValues.reduce((a, b) => a + b, 0) / e.soValues.length) : 0;
+        return { userId: e.userId, name: e.name, actualRevenue: e.actualRevenue, quotationCount: e.quotationCount, pipelineCount: e.pipelineCount, lostCount: e.lostCount, pendingCount: e.pendingCount, saleOrderCount: e.saleOrderCount, closedDeals, winRate, lowSample: closedDeals < 3, avgDealSize };
       })
       .sort((a, b) => b.actualRevenue - a.actualRevenue).slice(0, 10);
 
@@ -369,7 +432,9 @@ export const forecastService = {
       const prevY = prevYearMap.get(`${m.year}-${m.month}`) ?? null;
       const momGrowth = prevM != null && prevM > 0 ? parseFloat(((actual - prevM) / prevM * 100).toFixed(1)) : null;
       const yoyGrowth = prevY != null && prevY > 0 ? parseFloat(((actual - prevY) / prevY * 100).toFixed(1)) : null;
-      return { label: m.label, month: m.month, year: m.year, actual, prevYearActual: prevY, momGrowth, yoyGrowth, trend: momGrowth == null ? 'FLAT' : momGrowth > 2 ? 'UP' : momGrowth < -2 ? 'DOWN' : 'FLAT' };
+      // Flag extreme MoM values (prev month near zero inflates the percentage)
+      const momIsExtreme = momGrowth !== null && Math.abs(momGrowth) > 300;
+      return { label: m.label, month: m.month, year: m.year, actual, prevYearActual: prevY, momGrowth, yoyGrowth, momIsExtreme, trend: momGrowth == null ? 'FLAT' : momGrowth > 2 ? 'UP' : momGrowth < -2 ? 'DOWN' : 'FLAT' };
     });
 
     // ── 7. Pipeline Health ────────────────────────────────────────────────
@@ -393,12 +458,17 @@ export const forecastService = {
       const ce = byCustomerMap.get(co)!; ce.count++; ce.value += val;
     }
 
+    // Coverage Ratio: prefer current-month target as denominator, fallback to avg monthly
+    const curMonthKey = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    const currentMonthTarget = targetMap.get(curMonthKey) ?? null;
     const lastNonZero = movingAvgData.slice(-6).filter((v) => v > 0);
     const avgMonthly = lastNonZero.length > 0 ? lastNonZero.reduce((a, b) => a + b, 0) / lastNonZero.length : 0;
+    const coverageDenominator = currentMonthTarget && currentMonthTarget > 0 ? currentMonthTarget : avgMonthly;
 
     const pipelineHealth = {
       total: pipeTotal, weighted: Math.round(pipeWeighted),
-      coverageRatio: avgMonthly > 0 ? parseFloat((pipeWeighted / avgMonthly).toFixed(2)) : null,
+      coverageRatio: coverageDenominator > 0 ? parseFloat((pipeWeighted / coverageDenominator).toFixed(2)) : null,
+      coverageBase: currentMonthTarget && currentMonthTarget > 0 ? 'target' as const : 'avg_monthly' as const,
       byStatus: Object.entries(byStatus).map(([status, v]) => ({ status, ...v })),
       bySales: Array.from(bySalesMap.values()).sort((a, b) => b.value - a.value).slice(0, 10),
       byCustomer: Array.from(byCustomerMap.values()).sort((a, b) => b.value - a.value).slice(0, 8),
@@ -409,13 +479,25 @@ export const forecastService = {
       .map((q) => {
         const prob = PIPELINE_WEIGHTS[q.status] ?? 0;
         const val = toNum(q.grandTotal);
-        return { id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany, grandTotal: val, status: q.status, probability: Math.round(prob * 100), forecastValue: Math.round(val * prob), expiryDate: q.expiryDate, createdAt: q.createdAt, salesName: q.createdBy.name };
+        const daysOpen = Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000);
+        const risk = assessRisk(q);
+        return {
+          id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
+          grandTotal: val, status: q.status, probability: Math.round(prob * 100),
+          forecastValue: Math.round(val * prob), expiryDate: q.expiryDate, createdAt: q.createdAt,
+          salesName: q.createdBy.name, daysOpen, riskScore: risk.riskScore, riskLevel: risk.riskLevel,
+        };
       })
       .sort((a, b) => b.forecastValue - a.forecastValue).slice(0, 15);
 
     // ── 9. Aging Pipeline ─────────────────────────────────────────────────
-    const now = new Date();
-    const agingItems = activePipeline.map((q) => ({ id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany, grandTotal: toNum(q.grandTotal), status: q.status, ageDays: Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000), salesName: q.createdBy.name }));
+    const agingItems = activePipeline.map((q) => ({
+      id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
+      grandTotal: toNum(q.grandTotal), status: q.status,
+      ageDays: Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000),
+      salesName: q.createdBy.name,
+    }));
+    const totalAgingVal = agingItems.reduce((s, i) => s + i.grandTotal, 0);
     const ageBuckets = [
       { label: '0–30 วัน', min: 0, max: 30 }, { label: '31–60 วัน', min: 31, max: 60 },
       { label: '61–90 วัน', min: 61, max: 90 }, { label: '> 90 วัน', min: 91, max: null },
@@ -423,18 +505,88 @@ export const forecastService = {
     const agingPipeline = {
       buckets: ageBuckets.map((b) => {
         const items = agingItems.filter((i) => i.ageDays >= b.min && (b.max == null || i.ageDays <= b.max));
-        return { label: b.label, minDays: b.min, maxDays: b.max, count: items.length, value: items.reduce((s, i) => s + i.grandTotal, 0) };
+        const value = items.reduce((s, i) => s + i.grandTotal, 0);
+        return { label: b.label, minDays: b.min, maxDays: b.max, count: items.length, value, pct: totalAgingVal > 0 ? Math.round((value / totalAgingVal) * 100) : 0 };
       }),
       items: agingItems.sort((a, b) => b.ageDays - a.ageDays).slice(0, 30),
     };
 
+    // ── 10. Win Rate Trend (per month, 12 months) ─────────────────────────
+    const winRateTrend = months12.map((m) => {
+      const won = confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).length;
+      const lost = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.createdAt) >= m.start && new Date(q.createdAt) < m.end).length;
+      return { label: m.label, month: m.month, year: m.year, won, lost, winRate: won + lost > 0 ? Math.round((won / (won + lost)) * 100) : null };
+    });
+
+    // ── 11. KPI Summary ───────────────────────────────────────────────────
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    // Expected closing this month = active deals with expiryDate in current month
+    const expectedClosingDeals = activePipeline.filter((q) =>
+      q.expiryDate && new Date(q.expiryDate) >= currentMonthStart && new Date(q.expiryDate) < currentMonthEnd
+    );
+
+    // Forecast Gap: forecastAvg vs next month's target (negative = below target)
+    const nextMonthKey = `${nextMonths3[0].year}-${nextMonths3[0].month}`;
+    const nextMonthTarget = nextTargetMap3.get(nextMonthKey) ?? null;
+    const forecastGap = nextMonthTarget != null ? forecastAvg - nextMonthTarget : null;
+    const forecastGapPct = nextMonthTarget && nextMonthTarget > 0 && forecastGap != null
+      ? Math.round((forecastGap / nextMonthTarget) * 100)
+      : null;
+
+    // Avg Deal Size
+    const allSoVals = confirmedSO12m.map((o) => toNum(o.grandTotal)).filter((v) => v > 0);
+    const avgDealSizeSO = allSoVals.length > 0 ? Math.round(allSoVals.reduce((a, b) => a + b, 0) / allSoVals.length) : 0;
+    const activePipelineVals = activePipeline.map((q) => toNum(q.grandTotal)).filter((v) => v > 0);
+    const avgDealSizePipeline = activePipelineVals.length > 0 ? Math.round(activePipelineVals.reduce((a, b) => a + b, 0) / activePipelineVals.length) : 0;
+
+    // Sales Cycle: avg days from quotation createdAt → SO issueDate
+    const salesCycleDays: number[] = [];
+    for (const so of confirmedSO12m) {
+      if (!so.quotationId || !so.issueDate) continue;
+      const qtDate = qtCreatedAtMap.get(so.quotationId);
+      if (!qtDate) continue;
+      const days = Math.floor((new Date(so.issueDate).getTime() - qtDate.getTime()) / 86400000);
+      if (days >= 0 && days < 365) salesCycleDays.push(days);
+    }
+    const avgSalesCycle = salesCycleDays.length > 0
+      ? Math.round(salesCycleDays.reduce((a, b) => a + b, 0) / salesCycleDays.length)
+      : null;
+
+    // Win Rate 6m
+    const last6mStart2 = lastNMonths(6)[0].start;
+    const won6m = confirmedSO12m.filter((o) => new Date(o.issueDate!) >= last6mStart2).length;
+    const lost6m = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.createdAt) >= last6mStart2).length;
+    const winRate6m = won6m + lost6m > 0 ? Math.round((won6m / (won6m + lost6m)) * 100) : null;
+
+    // Customer concentration
+    const totalRev12m = toNum(soValueAgg._sum?.grandTotal);
+    const customerConcentration = customerRevenueGroupBy.map((c) => ({
+      company: c.customerCompany,
+      total: toNum(c._sum?.grandTotal),
+      pct: totalRev12m > 0 ? Math.round((toNum(c._sum?.grandTotal) / totalRev12m) * 100) : 0,
+    }));
+    const top5Pct = customerConcentration.slice(0, 5).reduce((s, c) => s + c.pct, 0);
+
+    const kpiSummary = {
+      forecastGap, forecastGapPct,
+      expectedClosingThisMonth: expectedClosingDeals.reduce((s, q) => s + toNum(q.grandTotal), 0),
+      expectedClosingCount: expectedClosingDeals.length,
+      avgDealSizeSO, avgDealSizePipeline,
+      avgSalesCycle, winRate6m,
+      top5CustomerPct: customerConcentration.length > 0 ? top5Pct : null,
+      totalRevenue12m: totalRev12m,
+    };
+
     return {
       forecastVsTarget: {
-        monthly: fvtMonthly, quarterly: fvtQuarterly,
-        yearly: { year: new Date().getFullYear(), actual: yActual, target: yTarget || null, forecast: yForecast, achievePct: yTarget > 0 ? Math.round((yActual / yTarget) * 100) : null, gap: yTarget > 0 ? yActual - yTarget : null },
+        monthly: fvtMonthly, quarterly: fvtQuarterly, forecastMonths,
+        yearly: { year: now.getFullYear(), actual: yActual, target: yTarget || null, forecast: yForecast, achievePct: yTarget > 0 ? Math.round((yActual / yTarget) * 100) : null, gap: yTarget > 0 ? yActual - yTarget : null },
       },
       conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance,
-      revenueTrend, pipelineHealth, topOpportunities, agingPipeline, roleCode,
+      revenueTrend, pipelineHealth, topOpportunities, agingPipeline,
+      winRateTrend, kpiSummary, customerConcentration, roleCode,
     };
   },
 };
