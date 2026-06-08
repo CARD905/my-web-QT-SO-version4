@@ -174,6 +174,60 @@
            dark:from-orange-900/30 dark:to-red-900/30 dark:text-orange-300
            border border-orange-200/60 dark:border-orange-700/40;
   }
+
+  /* ── Stat card with animated top accent bar on hover ── */
+  .stat-accent-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-accent-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, hsl(var(--primary)), #a855f7, #ec4899);
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    animation: gradient-shift 2s ease infinite;
+  }
+  .stat-accent-card:hover::after { opacity: 1; }
+  .stat-accent-card.kpi-danger::after  { background: linear-gradient(90deg, #ef4444, #dc2626); opacity: 0.7; }
+  .stat-accent-card.kpi-success::after { background: linear-gradient(90deg, #10b981, #059669); opacity: 0; }
+  .stat-accent-card.kpi-success:hover::after { opacity: 1; }
+
+  /* ── Gradient page heading ── */
+  .page-heading {
+    background: linear-gradient(135deg, hsl(var(--foreground)) 0%, hsl(var(--primary)) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+  }
+
+  /* ── Section card header bar ── */
+  .section-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.625rem;
+    border-bottom: 1px solid hsl(var(--border) / 0.6);
+    margin-bottom: 0.75rem;
+  }
+
+  /* ── Animated gradient button ── */
+  .btn-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)), #a855f7);
+    background-size: 200% 200%;
+    color: white;
+    transition: background-position 0.4s ease, box-shadow 0.3s ease;
+  }
+  .btn-gradient:hover {
+    background-position: right center;
+    box-shadow: 0 8px 24px hsl(var(--primary) / 0.35);
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -281,14 +335,71 @@
     opacity: 0;
     animation: fade-in 0.4s ease-out forwards;
   }
-  .animate-stagger > *:nth-child(1) { animation-delay: 0ms; }
-  .animate-stagger > *:nth-child(2) { animation-delay: 60ms; }
-  .animate-stagger > *:nth-child(3) { animation-delay: 120ms; }
-  .animate-stagger > *:nth-child(4) { animation-delay: 180ms; }
-  .animate-stagger > *:nth-child(5) { animation-delay: 240ms; }
-  .animate-stagger > *:nth-child(6) { animation-delay: 300ms; }
-  .animate-stagger > *:nth-child(7) { animation-delay: 360ms; }
-  .animate-stagger > *:nth-child(8) { animation-delay: 420ms; }
+  .animate-stagger > *:nth-child(1)  { animation-delay: 0ms; }
+  .animate-stagger > *:nth-child(2)  { animation-delay: 60ms; }
+  .animate-stagger > *:nth-child(3)  { animation-delay: 120ms; }
+  .animate-stagger > *:nth-child(4)  { animation-delay: 180ms; }
+  .animate-stagger > *:nth-child(5)  { animation-delay: 240ms; }
+  .animate-stagger > *:nth-child(6)  { animation-delay: 300ms; }
+  .animate-stagger > *:nth-child(7)  { animation-delay: 360ms; }
+  .animate-stagger > *:nth-child(8)  { animation-delay: 420ms; }
+  .animate-stagger > *:nth-child(9)  { animation-delay: 480ms; }
+  .animate-stagger > *:nth-child(10) { animation-delay: 540ms; }
+  .animate-stagger > *:nth-child(11) { animation-delay: 600ms; }
+  .animate-stagger > *:nth-child(12) { animation-delay: 660ms; }
+
+  /* Fast stagger — dense grids (45ms apart) */
+  .animate-stagger-fast > * {
+    opacity: 0;
+    animation: fade-in 0.4s ease-out forwards;
+  }
+  .animate-stagger-fast > *:nth-child(1)  { animation-delay: 0ms; }
+  .animate-stagger-fast > *:nth-child(2)  { animation-delay: 45ms; }
+  .animate-stagger-fast > *:nth-child(3)  { animation-delay: 90ms; }
+  .animate-stagger-fast > *:nth-child(4)  { animation-delay: 135ms; }
+  .animate-stagger-fast > *:nth-child(5)  { animation-delay: 180ms; }
+  .animate-stagger-fast > *:nth-child(6)  { animation-delay: 225ms; }
+  .animate-stagger-fast > *:nth-child(7)  { animation-delay: 270ms; }
+  .animate-stagger-fast > *:nth-child(8)  { animation-delay: 315ms; }
+  .animate-stagger-fast > *:nth-child(9)  { animation-delay: 360ms; }
+  .animate-stagger-fast > *:nth-child(10) { animation-delay: 405ms; }
+  .animate-stagger-fast > *:nth-child(11) { animation-delay: 450ms; }
+  .animate-stagger-fast > *:nth-child(12) { animation-delay: 495ms; }
+
+  /* ── New keyframes ── */
+  @keyframes slide-from-bottom {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-bounce {
+    0%   { opacity: 0; transform: scale(0.85); }
+    65%  { transform: scale(1.04); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes number-pop {
+    0%   { opacity: 0; transform: scale(0.72) translateY(6px); }
+    55%  { transform: scale(1.08) translateY(-1px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  @keyframes sweep-in {
+    from { opacity: 0; transform: translateX(-14px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes border-pulse {
+    0%, 100% { border-color: hsl(var(--primary) / 0.3); box-shadow: none; }
+    50%       { border-color: hsl(var(--primary) / 0.65); box-shadow: 0 0 8px hsl(var(--primary) / 0.2); }
+  }
+  @keyframes gradient-x {
+    0%, 100% { background-position: 0% 50%; }
+    50%       { background-position: 100% 50%; }
+  }
+
+  .animate-slide-from-bottom { animation: slide-from-bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-scale-bounce      { animation: scale-bounce 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-number-pop        { animation: number-pop 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-sweep-in          { animation: sweep-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-border-pulse      { animation: border-pulse 2s ease-in-out infinite; }
+  .animate-gradient-x        { animation: gradient-x 3s ease infinite; background-size: 200% 200%; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

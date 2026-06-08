@@ -681,14 +681,14 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
     <div className="space-y-5">
 
       {/* ── KPI Row 1 ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-stagger-fast">
         {[
           { icon: <BarChart2 className="h-5 w-5" />, label: 'Total QT', value: totals.quotations, sub: `เดือนนี้ ${totals.thisMonth} ใบ`, gradient: 'from-slate-600 to-slate-800', isText: false },
           { icon: <CheckCircle2 className="h-5 w-5" />, label: 'Approved Value', value: formatMoney(totals.approvedValue), sub: `${totals.approvedCount} ใบอนุมัติแล้ว`, gradient: 'from-emerald-500 to-teal-700', isText: true },
           { icon: <Activity className="h-5 w-5" />, label: 'Win Rate', value: `${winRate}%`, sub: `ปฏิเสธ ${totals.rejectedCount} ใบ`, gradient: winRate >= 50 ? 'from-green-500 to-emerald-700' : 'from-orange-500 to-red-600', isText: true },
           { icon: <ShoppingCart className="h-5 w-5" />, label: 'SO Confirmed', value: formatMoney(totals.soValue), sub: `${totals.soCount} SO ยืนยันแล้ว`, gradient: 'from-blue-500 to-indigo-700', isText: true },
         ].map((k) => (
-          <div key={k.label} className={`bg-gradient-to-br ${k.gradient} rounded-2xl p-4 text-white shadow`}>
+          <div key={k.label} className={`bg-gradient-to-br ${k.gradient} rounded-2xl p-4 text-white shadow hover-lift`}>
             <div className="flex items-center gap-2 mb-2 opacity-80">{k.icon}<span className="text-xs font-medium uppercase tracking-wide">{k.label}</span></div>
             <div className="text-2xl font-bold">{k.value}</div>
             <div className="text-xs text-white/60 mt-1">{k.sub}</div>
@@ -1195,7 +1195,7 @@ function DashboardContent({
     <div className="space-y-5">
 
       {/* ══ SECTION 2: KPI Cards — Row 1 (Financial) ══ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-stagger-fast">
         <KpiCard
           icon={<DollarSign className="h-5 w-5" />}
           label="Total QT Value"
@@ -1233,7 +1233,7 @@ function DashboardContent({
       </div>
 
       {/* ══ KPI Cards — Row 2 (Pipeline) ══ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-stagger-fast">
         <KpiCard
           icon={<BarChart2 className="h-5 w-5" />}
           label="Total Quotations"
@@ -2375,11 +2375,12 @@ function KpiCard({
   isText?: boolean;
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg bg-gradient-to-br ${gradient} ${
+    <div className={`relative overflow-hidden rounded-2xl p-5 text-white shadow-lg bg-gradient-to-br hover-lift ${gradient} ${
       alertRing && Number(value) > 0 ? 'ring-2 ring-white/50 ring-offset-2 ring-offset-background' : ''
     }`}>
-      {/* Decorative circle */}
+      {/* Decorative circles */}
       <div className="absolute -top-4 -right-4 h-24 w-24 rounded-full bg-white/10" />
+      <div className="absolute -bottom-6 -left-4 h-20 w-20 rounded-full bg-white/5" />
       {/* Icon + label */}
       <div className="relative flex items-center gap-2 mb-3">
         <span className="opacity-90">{icon}</span>

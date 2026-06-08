@@ -158,11 +158,11 @@ export default function QuotationsPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Header */}
-      <div className="flex flex-wrap gap-4 items-center justify-between">
+      <div className="flex flex-wrap gap-4 items-center justify-between animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold">{t('quotation.list')}</h1>
+          <h1 className="text-2xl page-heading">{t('quotation.list')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {loading ? t('common.loading') : `${list.length} items`}
+            {loading ? t('common.loading') : `${list.length} รายการ`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -176,7 +176,7 @@ export default function QuotationsPage() {
             </Button>
           )}
           {canCreate && (
-            <Button asChild>
+            <Button asChild className="btn-gradient shadow-sm">
               <Link href="/quotations/new">
                 <Plus className="h-4 w-4" />
                 {t('quotation.newQuotation')}
@@ -285,7 +285,7 @@ export default function QuotationsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 animate-stagger">
           {list.map((q) => {
             const isEscalated  = q.status === 'PENDING_ESCALATED';
             const isApprovable =
@@ -307,7 +307,7 @@ export default function QuotationsPage() {
                 }
               >
                 <Card
-                  className={`cursor-pointer transition-colors ${
+                  className={`cursor-pointer hover-glow transition-colors ${
                     bulkMode && isApprovable
                       ? isChecked
                         ? 'border-primary bg-primary/5'

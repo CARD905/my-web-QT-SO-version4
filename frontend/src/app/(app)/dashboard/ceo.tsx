@@ -233,7 +233,7 @@ function ExecKpiCard({
     : alertLevel === 'warning' ? 'ring-2 ring-amber-400/40 shadow-amber-400/10'
     : '';
   const inner = (
-    <div className={`relative bg-card border border-border/50 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 ${ringCls} ${href ? 'cursor-pointer hover:border-primary/30' : ''} overflow-hidden`}>
+    <div className={`relative bg-card border border-border/50 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover-lift ${ringCls} ${href ? 'cursor-pointer hover:border-primary/30' : ''} overflow-hidden`}>
       {alertLevel && <div className={`absolute inset-0 pointer-events-none ${alertLevel === 'critical' ? 'bg-red-500/[0.03]' : 'bg-amber-400/[0.03]'}`} />}
       <div className="relative">
         <div className="flex items-start justify-between gap-2 mb-3">
@@ -633,7 +633,7 @@ function CeoDashboardContent({
       </div>
 
       {/* ══ SECTION 2 · EXECUTIVE KPI SUMMARY — 8 cards ════════════════════════ */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 animate-stagger-fast">
         {/* 1. Total Revenue */}
         <ExecKpiCard
           icon={<DollarSign className="h-4 w-4 text-emerald-600" />}

@@ -86,10 +86,11 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-5 max-w-6xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 animate-fade-in">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="h-6 w-6 text-blue-500" />จัดการ Users
+            <Users className="h-6 w-6 text-blue-500 shrink-0" />
+            <span className="page-heading">จัดการ Users</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {meta ? `${meta.total} users ทั้งหมด` : 'รายการผู้ใช้งาน'}

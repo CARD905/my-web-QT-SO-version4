@@ -138,13 +138,13 @@ export default function CustomersPage() {
 
   return (
     <div className="space-y-6 max-w-7xl">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold">{t('customer.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{list.length} customers</p>
+          <h1 className="text-2xl page-heading">{t('customer.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{list.length} ลูกค้า</p>
         </div>
         {canCreate && (
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setShowCreate(true)} className="btn-gradient shadow-sm">
             <Plus className="h-4 w-4" />{t('customer.newCustomer')}
           </Button>
         )}
@@ -176,7 +176,7 @@ export default function CustomersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 animate-stagger">
           {list.map((c) => {
             const requests  = pendingMap[c.id] ?? [];
             const isExpanded = expandedIds.has(c.id);
@@ -184,7 +184,7 @@ export default function CustomersPage() {
             const pendingCount = requests.length;
 
             return (
-              <Card key={c.id} className="group transition-all hover:border-primary/40 overflow-hidden">
+              <Card key={c.id} className="group hover-glow transition-all overflow-hidden">
                 {/* ── Main row ── */}
                 <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">

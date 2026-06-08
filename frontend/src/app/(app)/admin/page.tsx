@@ -75,9 +75,10 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Header */}
-      <div>
+      <div className="animate-fade-in">
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Shield className="h-6 w-6 text-red-500" />Admin Dashboard
+          <Shield className="h-6 w-6 text-red-500 shrink-0" />
+          <span className="page-heading">Admin Dashboard</span>
         </h1>
         <p className="text-sm text-muted-foreground mt-1">System Administration Panel</p>
       </div>
@@ -88,16 +89,16 @@ export default function AdminDashboardPage() {
           {[0,1,2,3].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-stagger-fast">
           {[
             { label: 'Total Users',    value: stats?.totalUsers ?? 0,    icon: Users,         color: 'text-blue-600',   alert: false },
             { label: 'Departments',    value: stats?.totalDepartments ?? 0, icon: Building2,   color: 'text-emerald-600',alert: false },
             { label: 'Teams',          value: stats?.totalTeams ?? 0,    icon: BarChart3,      color: 'text-violet-600', alert: false },
             { label: 'Failed Logins',  value: stats?.failedLogins ?? 0,  icon: AlertTriangle,  color: 'text-red-600',    alert: true },
           ].map((s) => (
-            <Card key={s.label}>
+            <Card key={s.label} className="stat-accent-card hover-glow">
               <CardContent className="p-4">
-                <div className={`text-3xl font-bold ${s.alert && s.value > 0 ? 'text-red-600' : ''}`}>{s.value}</div>
+                <div className={`text-3xl font-bold tabular-nums ${s.alert && s.value > 0 ? 'text-red-600' : ''}`}>{s.value}</div>
                 <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                   <s.icon className={`h-3 w-3 ${s.color}`} />{s.label}
                 </div>
@@ -108,10 +109,10 @@ export default function AdminDashboardPage() {
       )}
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-stagger-fast">
         {QUICK_LINKS.map((link) => (
           <Link key={link.href} href={link.href}>
-            <Card className="hover:border-primary/50 transition-all cursor-pointer h-full">
+            <Card className="hover-glow cursor-pointer h-full">
               <CardContent className="p-4 flex flex-col items-center text-center gap-2">
                 <div className={`h-10 w-10 rounded-xl ${link.bg} flex items-center justify-center`}>
                   <link.icon className={`h-5 w-5 ${link.color}`} />

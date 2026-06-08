@@ -67,10 +67,10 @@ export default function SaleOrdersPage() {
 
   return (
     <div className="space-y-6 max-w-7xl">
-      <div>
-        <h1 className="text-2xl font-bold">{t('nav.saleOrders')}</h1>
+      <div className="animate-fade-in">
+        <h1 className="text-2xl page-heading">{t('nav.saleOrders')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {loading ? t('common.loading') : `${list.length} items`}
+          {loading ? t('common.loading') : `${list.length} รายการ`}
         </p>
       </div>
 
@@ -133,10 +133,10 @@ export default function SaleOrdersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 animate-stagger">
           {list.map((so) => (
             <Link key={so.id} href={`/sale-orders/${so.id}`}>
-              <Card className="cursor-pointer hover:border-primary/50 transition-colors">
+              <Card className="cursor-pointer hover-glow transition-colors">
                 <CardContent className="p-4 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     <div className="h-10 w-10 rounded-lg bg-success/10 text-success flex items-center justify-center shrink-0">

@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { formatMoney, cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { AnimatedCounter } from '@/components/effects/animated-counter';
 import type { ApiResponse } from '@/types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -203,10 +204,12 @@ function AreaLineChart({ data, color = '#10b981', yMax }: { data: Array<{ label:
 
 function QuickStatChip({ icon: Icon, label, value, sub, color }: { icon: ElementType; label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-border/40 hover:bg-muted/60 transition-colors min-w-0">
-      <Icon className={cn('h-3.5 w-3.5 shrink-0', color ?? 'text-muted-foreground')} />
+    <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-muted/50 border border-border/50 hover:bg-muted/70 hover:border-border hover-lift transition-colors min-w-0 group">
+      <div className={cn('p-1.5 rounded-lg bg-background/80 shrink-0', color ? color.replace('text-', 'bg-').replace('-600', '-100').replace('-400', '-100') + ' dark:bg-opacity-20' : 'bg-muted')}>
+        <Icon className={cn('h-3.5 w-3.5', color ?? 'text-muted-foreground')} />
+      </div>
       <div className="min-w-0">
-        <div className="text-[10px] text-muted-foreground leading-tight">{label}</div>
+        <div className="text-[10px] text-muted-foreground leading-tight font-medium">{label}</div>
         <div className="text-xs font-bold leading-tight truncate">{value}</div>
         {sub && <div className="text-[10px] text-muted-foreground leading-tight">{sub}</div>}
       </div>
@@ -243,7 +246,7 @@ function KpiQuickStatsBar({ kpi, isCeo }: { kpi: KpiSummary; isCeo: boolean }) {
 
   if (chips.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2 animate-stagger-fast">
       {chips.map((c, i) => <QuickStatChip key={i} {...c} />)}
     </div>
   );
@@ -1003,14 +1006,18 @@ export default function ForecastPage() {
   const kpiCards = isCeo ? [
     {
       label: 'ยอดจริงเดือนนี้',
-      value: <span className="text-xl font-bold text-primary">{short(currentM?.actual ?? 0)}</span>,
-      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>{currentM.achievePct}% ของเป้า</span> : null,
+      value: <span className="text-xl font-bold text-primary">
+        <AnimatedCounter value={currentM?.actual ?? 0} format={short} />
+      </span>,
+      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>
+        <AnimatedCounter value={currentM.achievePct} format={(n) => `${Math.round(n)}% ของเป้า`} />
+      </span> : null,
     },
     {
       label: `Forecast Gap (${forecastVsTarget.forecastMonths[0]?.label ?? 'เดือนหน้า'})`,
       value: kpiSummary.forecastGap != null
         ? <span className={cn('text-xl font-bold', kpiSummary.forecastGap >= 0 ? 'text-emerald-600' : 'text-red-600')}>
-            {kpiSummary.forecastGap >= 0 ? '+' : ''}{short(kpiSummary.forecastGap)}
+            {kpiSummary.forecastGap >= 0 ? '+' : '-'}<AnimatedCounter value={Math.abs(kpiSummary.forecastGap)} format={short} />
           </span>
         : <span className="text-xl font-bold text-muted-foreground">N/A</span>,
       sub: kpiSummary.forecastGapPct != null
@@ -1022,54 +1029,76 @@ export default function ForecastPage() {
     {
       label: 'Coverage Ratio',
       value: <span className={cn('text-xl font-bold', pipelineHealth.coverageRatio == null ? '' : pipelineHealth.coverageRatio >= 3 ? 'text-emerald-600' : pipelineHealth.coverageRatio >= 1.5 ? 'text-amber-600' : 'text-red-600')}>
-        {pipelineHealth.coverageRatio != null ? `${pipelineHealth.coverageRatio}×` : '-'}
+        {pipelineHealth.coverageRatio != null
+          ? <AnimatedCounter value={pipelineHealth.coverageRatio} decimals={1} format={(n) => `${n.toFixed(1)}×`} />
+          : '-'}
       </span>,
       sub: <span className="text-[11px] text-muted-foreground">Weighted ÷ {pipelineHealth.coverageBase === 'target' ? 'เป้าเดือนนี้' : 'avg 6m'}</span>,
     },
     {
       label: 'Forecast Accuracy',
       value: avgAcc != null
-        ? <span className={cn('text-xl font-bold', avgAcc >= 80 ? 'text-emerald-600' : avgAcc >= 60 ? 'text-amber-600' : 'text-red-600')}>{avgAcc}%</span>
+        ? <span className={cn('text-xl font-bold', avgAcc >= 80 ? 'text-emerald-600' : avgAcc >= 60 ? 'text-amber-600' : 'text-red-600')}>
+            <AnimatedCounter value={avgAcc} format={(n) => `${Math.round(n)}%`} />
+          </span>
         : <span className="text-xl font-bold text-muted-foreground">N/A</span>,
       sub: <span className="text-[11px] text-muted-foreground">{avgAcc != null ? 'avg 12 เดือน' : 'ข้อมูลไม่เพียงพอ'}</span>,
     },
   ] : isManager ? [
     {
       label: 'ยอดจริงเดือนนี้',
-      value: <span className="text-xl font-bold text-primary">{short(currentM?.actual ?? 0)}</span>,
-      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>{currentM.achievePct}% ของเป้า</span> : null,
+      value: <span className="text-xl font-bold text-primary">
+        <AnimatedCounter value={currentM?.actual ?? 0} format={short} />
+      </span>,
+      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>
+        <AnimatedCounter value={currentM.achievePct} format={(n) => `${Math.round(n)}% ของเป้า`} />
+      </span> : null,
     },
     {
       label: 'Pipeline Weighted',
-      value: <span className="text-xl font-bold text-purple-600">{short(pipelineHealth.weighted)}</span>,
+      value: <span className="text-xl font-bold text-purple-600">
+        <AnimatedCounter value={pipelineHealth.weighted} format={short} />
+      </span>,
       sub: pipelineHealth.coverageRatio != null ? <span className="text-[11px] text-muted-foreground">Coverage {pipelineHealth.coverageRatio}×</span> : null,
     },
     {
       label: 'Deals At Risk',
-      value: <span className={cn('text-xl font-bold', dealsAtRisk.length > 0 ? 'text-red-600' : 'text-emerald-600')}>{dealsAtRisk.length}</span>,
+      value: <span className={cn('text-xl font-bold', dealsAtRisk.length > 0 ? 'text-red-600' : 'text-emerald-600')}>
+        <AnimatedCounter value={dealsAtRisk.length} />
+      </span>,
       sub: <span className="text-[11px] text-muted-foreground">{dealsAtRisk.filter((d) => d.riskLevel === 'HIGH').length} HIGH · {dealsAtRisk.filter((d) => d.riskLevel === 'MEDIUM').length} MEDIUM</span>,
     },
     {
       label: 'Win Rate (6m)',
       value: kpiSummary.winRate6m != null
-        ? <span className={cn('text-xl font-bold', kpiSummary.winRate6m >= 60 ? 'text-emerald-600' : kpiSummary.winRate6m >= 40 ? 'text-amber-600' : 'text-red-600')}>{kpiSummary.winRate6m}%</span>
+        ? <span className={cn('text-xl font-bold', kpiSummary.winRate6m >= 60 ? 'text-emerald-600' : kpiSummary.winRate6m >= 40 ? 'text-amber-600' : 'text-red-600')}>
+            <AnimatedCounter value={kpiSummary.winRate6m} format={(n) => `${Math.round(n)}%`} />
+          </span>
         : <span className="text-xl font-bold text-muted-foreground">N/A</span>,
       sub: <span className="text-[11px] text-muted-foreground">SO ÷ (SO + Lost)</span>,
     },
   ] : [
     {
       label: 'ยอดจริงเดือนนี้',
-      value: <span className="text-xl font-bold text-primary">{short(currentM?.actual ?? 0)}</span>,
-      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>{currentM.achievePct}% ของเป้า</span> : null,
+      value: <span className="text-xl font-bold text-primary">
+        <AnimatedCounter value={currentM?.actual ?? 0} format={short} />
+      </span>,
+      sub: currentM?.achievePct != null ? <span className={cn('text-[11px]', currentM.achievePct >= 100 ? 'text-emerald-600' : 'text-amber-600')}>
+        <AnimatedCounter value={currentM.achievePct} format={(n) => `${Math.round(n)}% ของเป้า`} />
+      </span> : null,
     },
     {
       label: 'Pipeline Weighted',
-      value: <span className="text-xl font-bold text-purple-600">{short(pipelineHealth.weighted)}</span>,
+      value: <span className="text-xl font-bold text-purple-600">
+        <AnimatedCounter value={pipelineHealth.weighted} format={short} />
+      </span>,
       sub: null,
     },
     {
       label: 'Deals At Risk',
-      value: <span className={cn('text-xl font-bold', dealsAtRisk.length > 0 ? 'text-red-600' : 'text-emerald-600')}>{dealsAtRisk.length}</span>,
+      value: <span className={cn('text-xl font-bold', dealsAtRisk.length > 0 ? 'text-red-600' : 'text-emerald-600')}>
+        <AnimatedCounter value={dealsAtRisk.length} />
+      </span>,
       sub: <span className="text-[11px] text-muted-foreground">{dealsAtRisk.filter((d) => d.riskLevel === 'HIGH').length} HIGH · {dealsAtRisk.filter((d) => d.riskLevel === 'MEDIUM').length} MEDIUM</span>,
     },
     {
@@ -1085,26 +1114,31 @@ export default function ForecastPage() {
   return (
     <div className="space-y-5 max-w-6xl">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 animate-fade-in">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <BarChart3 className="h-6 w-6 text-primary" />Sales Forecast
+            <BarChart3 className="h-6 w-6 text-primary shrink-0" />
+            <span className="page-heading">Sales Forecast</span>
           </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-1">
             {isOfficer ? 'ยอดขายและ pipeline ของคุณ' : isManager ? 'ภาพรวมทีม · Pipeline · Performance' : 'ภาพรวมบริษัท · Forecast · Accuracy'}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load}><TrendingUp className="h-4 w-4" />รีเฟรช</Button>
+        <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
+          <TrendingUp className="h-4 w-4" />รีเฟรช
+        </Button>
       </div>
 
       {/* ── KPI Cards ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-stagger">
         {kpiCards.map((kpi, i) => (
-          <Card key={i}><CardContent className="pt-4 pb-4">
-            <div className="text-xs text-muted-foreground mb-1">{kpi.label}</div>
-            {kpi.value}
-            {kpi.sub && <div className="mt-0.5">{kpi.sub}</div>}
-          </CardContent></Card>
+          <Card key={i} className="hover-glow stat-accent-card">
+            <CardContent className="pt-4 pb-4">
+              <div className="text-xs text-muted-foreground mb-1.5 font-medium">{kpi.label}</div>
+              {kpi.value}
+              {kpi.sub && <div className="mt-1">{kpi.sub}</div>}
+            </CardContent>
+          </Card>
         ))}
       </div>
 

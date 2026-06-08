@@ -89,10 +89,10 @@ export default function ProductsPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold">{t('product.title')}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{list.length} products</p>
+          <h1 className="text-2xl page-heading">{t('product.title')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{list.length} รายการ</p>
         </div>
         <div className="flex gap-2">
           {canManage && (
@@ -101,7 +101,7 @@ export default function ProductsPage() {
             </Button>
           )}
           {canManage && (
-            <Button onClick={() => setShowCreate(true)}>
+            <Button onClick={() => setShowCreate(true)} className="btn-gradient shadow-sm">
               <Plus className="h-4 w-4" />{t('product.newProduct')}
             </Button>
           )}
@@ -166,7 +166,7 @@ export default function ProductsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 animate-stagger">
           {list.map((p) => (
             <Card key={p.id} className="group transition-all hover:border-primary/40">
               <CardContent className="p-4">

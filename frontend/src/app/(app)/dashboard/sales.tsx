@@ -17,8 +17,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
-import { formatDate, formatMoney, formatRelativeTime, getStatusClass } from '@/lib/utils';
+import { formatDate, formatMoney, formatRelativeTime, getStatusClass, cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
+import { AnimatedCounter } from '@/components/effects/animated-counter';
 import type { ApiResponse, SalesDashboard, Notification, SaleOrder } from '@/types/api';
 
 const MANAGER_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
@@ -176,13 +177,24 @@ export default function SalesDashboardPage() {
     <div className="space-y-6 max-w-7xl">
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 animate-fade-in">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard {firstName}</h1>
-          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <h1 className="text-2xl page-heading">Dashboard {firstName}</h1>
+          <p className="text-sm text-muted-foreground mt-1.5 flex items-center gap-2">
+            <span className="relative inline-flex shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 block" />
+              <span className="absolute inset-0 w-2 h-2 rounded-full bg-emerald-400 animate-ping-slow opacity-60" />
+            </span>
             Online · {new Date().toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {totalTasks > 0 && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-xs font-semibold animate-border-pulse">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {totalTasks} งานรออยู่
+            </span>
+          )}
         </div>
       </div>
 
@@ -192,7 +204,7 @@ export default function SalesDashboardPage() {
           {[0,1,2,3,4,5].map((i) => <Skeleton key={i} className="h-24" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 animate-stagger-fast">
           <SummaryCard label="Draft" value={stats?.byStatus.draft ?? 0} icon={<FileEdit className="h-4 w-4" />} color="text-slate-500" bg="bg-slate-100 dark:bg-slate-800" href="/quotations?status=DRAFT" />
           <SummaryCard label="รออนุมัติ" value={stats?.byStatus.pending ?? 0} icon={<Hourglass className="h-4 w-4" />} color="text-amber-600" bg="bg-amber-50 dark:bg-amber-900/30" href="/quotations?status=PENDING" />
           <SummaryCard label="ต้องแก้ไข" value={stats?.byStatus.needRevision ?? stats?.byStatus.rejected ?? 0} icon={<RefreshCw className="h-4 w-4" />} color="text-red-600" bg="bg-red-50 dark:bg-red-900/30" href="/quotations?status=REJECTED" alert />
@@ -445,13 +457,15 @@ function SectionCard({ title, icon, badge, badgeVariant = 'secondary', urgent = 
   viewAllHref?: string; children: React.ReactNode;
 }) {
   return (
-    <Card className={urgent ? 'border-red-500/40' : ''}>
+    <Card className={cn(urgent ? 'border-red-500/40 bg-red-50/30 dark:bg-red-950/10' : 'hover:border-border/80')}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           {icon}{title}
-          {badge != null && badge > 0 && <Badge variant={badgeVariant} className="text-[10px] ml-1">{badge}</Badge>}
+          {badge != null && badge > 0 && (
+            <Badge variant={badgeVariant} className={cn('text-[10px] ml-1', urgent && 'animate-border-pulse')}>{badge}</Badge>
+          )}
           {viewAllHref && (
-            <Link href={viewAllHref} className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5">
+            <Link href={viewAllHref} className="ml-auto text-[11px] text-primary hover:underline flex items-center gap-0.5 transition-colors">
               ดูทั้งหมด <ArrowRight className="h-3 w-3" />
             </Link>
           )}
@@ -515,9 +529,9 @@ function RejectedRow({ task }: { task: OfficerTask }) {
 
 function WaitingBlock({ label, count, icon, href }: { label: string; count: number; icon: React.ReactNode; href: string }) {
   return (
-    <Link href={href} className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-border bg-muted/30 hover:border-primary/40 hover:bg-accent/30 transition-colors text-center">
-      {icon}
-      <div className="text-2xl font-bold">{count}</div>
+    <Link href={href} className="group flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-border bg-muted/30 hover:border-primary/40 hover:bg-accent/30 hover-lift transition-colors text-center">
+      <div className="transition-transform duration-200 group-hover:scale-110 group-hover:-translate-y-0.5">{icon}</div>
+      <div className="text-2xl font-bold tabular-nums number-ticker"><AnimatedCounter value={count} /></div>
       <div className="text-xs text-muted-foreground leading-snug">{label}</div>
     </Link>
   );
@@ -527,12 +541,17 @@ function SummaryCard({ label, value, icon, color, bg, href, alert = false }: {
   label: string; value: number; icon: React.ReactNode; color: string; bg: string; href: string; alert?: boolean;
 }) {
   return (
-    <Link href={href}>
-      <Card className={`hover:border-primary/40 transition-all cursor-pointer ${alert && value > 0 ? 'border-red-400/50 dark:border-red-600/50' : ''}`}>
-        <CardContent className="p-3">
-          <div className={`inline-flex p-1.5 rounded-lg ${bg} ${color} mb-2`}>{icon}</div>
-          <div className={`text-2xl font-bold ${alert && value > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{value}</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>
+    <Link href={href} className="group">
+      <Card className={cn(
+        'hover-glow stat-accent-card cursor-pointer',
+        alert && value > 0 ? 'border-red-400/50 dark:border-red-600/50 kpi-danger' : 'hover:border-primary/30',
+      )}>
+        <CardContent className="p-3.5">
+          <div className={`inline-flex p-2 rounded-xl ${bg} ${color} mb-2.5 transition-transform duration-200 group-hover:scale-110 group-hover:-translate-y-0.5`}>{icon}</div>
+          <div className={cn('text-2xl font-bold tabular-nums number-ticker', alert && value > 0 ? 'text-red-600 dark:text-red-400' : '')}>
+            <AnimatedCounter value={value} />
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-0.5 font-medium">{label}</div>
         </CardContent>
       </Card>
     </Link>
