@@ -630,84 +630,134 @@ function TrendCard({ revData, winData }: { revData: TrendMonth[]; winData: WinRa
   const wrChartData = winData.map((m) => ({ label: m.label, value: m.winRate ?? 0 }));
   const withWrData = winData.filter((m) => m.winRate !== null);
   const avg = withWrData.length > 0 ? Math.round(withWrData.reduce((s, m) => s + (m.winRate ?? 0), 0) / withWrData.length) : null;
+
+  // Win Rate trend direction: เทียบ avg 3 เดือนล่าสุด vs avg ทั้งหมด
+  const recent3wr = withWrData.slice(-3);
+  const avg3m = recent3wr.length > 0 ? Math.round(recent3wr.reduce((s, m) => s + (m.winRate ?? 0), 0) / recent3wr.length) : null;
+  const wrTrend = avg !== null && avg3m !== null ? (avg3m > avg + 5 ? 'UP' : avg3m < avg - 5 ? 'DOWN' : 'FLAT') : null;
+
   const winMap = new Map(winData.map((m) => [m.label, m]));
+  const tableRows = revData.slice(-6);
 
   return (
     <Card>
       <CardContent className="pt-5">
-        {/* Header — รวม title + stats ทั้ง 2 ชุดไว้แถวเดียว */}
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <h2 className="text-sm font-semibold flex items-center gap-1.5">
-            <BarChart3 className="h-4 w-4 text-blue-500" />Revenue &amp; Win Rate Trend
+            <BarChart3 className="h-4 w-4 text-blue-500" />
+            Revenue &amp; Win Rate Trend
+            <span className="text-[10px] font-normal text-muted-foreground">(12 เดือน)</span>
           </h2>
-          <div className="flex items-center gap-3 text-xs flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {latestMom?.momGrowth != null && (
-              <span className={cn('flex items-center gap-0.5 font-semibold', latestMom.momGrowth >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+              <span className={cn('flex items-center gap-0.5 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/60', latestMom.momGrowth >= 0 ? 'text-emerald-600' : 'text-red-600')}>
                 {latestMom.momGrowth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                MoM {momExtreme ? '↑↑ Very High' : `${latestMom.momGrowth >= 0 ? '+' : ''}${latestMom.momGrowth}%`}
-                {momExtreme && <span className="text-[10px] text-muted-foreground ml-1" title="ยอดเดือนก่อนต่ำมาก ทำให้ % สูงผิดปกติ">(prev≈0)</span>}
+                MoM {momExtreme ? '↑↑' : `${latestMom.momGrowth >= 0 ? '+' : ''}${latestMom.momGrowth}%`}
+                {momExtreme && <span className="text-[9px] ml-0.5 opacity-70" title="ยอดเดือนก่อนต่ำมาก ทำให้ % สูงผิดปกติ">(prev≈0)</span>}
               </span>
             )}
             {latestYoy?.yoyGrowth != null && (
-              <span className={cn('flex items-center gap-0.5 font-semibold', latestYoy.yoyGrowth >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+              <span className={cn('flex items-center gap-0.5 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/60', latestYoy.yoyGrowth >= 0 ? 'text-emerald-600' : 'text-red-600')}>
                 {latestYoy.yoyGrowth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                 YoY {latestYoy.yoyGrowth >= 0 ? '+' : ''}{latestYoy.yoyGrowth}%
               </span>
             )}
             {avg !== null && (
-              <span className={cn('flex items-center gap-0.5 font-semibold', avg >= 60 ? 'text-emerald-600' : avg >= 40 ? 'text-amber-600' : 'text-red-600')}>
-                <Activity className="h-3 w-3" />Win Rate avg {avg}%
+              <span className={cn('flex items-center gap-0.5 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/60', avg >= 60 ? 'text-emerald-600' : avg >= 40 ? 'text-amber-600' : 'text-red-600')}>
+                <Activity className="h-3 w-3" />
+                Win Rate avg {avg}%
+                {wrTrend === 'UP' && <ArrowUpRight className="h-3 w-3" />}
+                {wrTrend === 'DOWN' && <ArrowDownRight className="h-3 w-3" />}
               </span>
             )}
           </div>
         </div>
 
-        {/* Revenue chart */}
-        <div className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-indigo-500 inline-block" />Revenue
-          <span className="flex items-center gap-1 ml-auto">
-            <span className="h-2 w-4 rounded bg-indigo-400 inline-block" />ปีนี้
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-px w-4 border-t-2 border-dashed border-slate-400 inline-block" />ปีที่แล้ว
-          </span>
+        {/* Charts side-by-side — x-axis แสดงครั้งเดียวต่อ chart ไม่ซ้ำ */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+          <div>
+            <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-indigo-500 inline-block" />Revenue
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="flex items-center gap-1"><span className="h-1.5 w-3 rounded bg-indigo-400 inline-block" />ปีนี้</span>
+                <span className="flex items-center gap-1"><span className="h-px w-3 border-t-2 border-dashed border-slate-400 inline-block" />ปีที่แล้ว</span>
+              </span>
+            </div>
+            <AreaLineChart data={revChartData} color="#6366f1" />
+          </div>
+          <div>
+            <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />Win Rate %
+              </span>
+              {avg !== null && (
+                <span className={cn('font-semibold', avg >= 60 ? 'text-emerald-600' : avg >= 40 ? 'text-amber-600' : 'text-red-600')}>
+                  avg {avg}%
+                </span>
+              )}
+            </div>
+            <AreaLineChart data={wrChartData} color="#10b981" yMax={100} />
+          </div>
         </div>
-        <AreaLineChart data={revChartData} color="#6366f1" />
 
-        {/* Win Rate chart */}
-        <div className="text-[10px] text-muted-foreground mt-4 mb-1 flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />Win Rate %
-        </div>
-        <AreaLineChart data={wrChartData} color="#10b981" yMax={100} />
-
-        {/* Summary grid รวม — label เดือนแสดงครั้งเดียว พร้อม Revenue + Win Rate */}
-        <div className="mt-3 pt-3 border-t grid grid-cols-4 gap-2">
-          {revData.slice(-4).map((m) => {
-            const wr = winMap.get(m.label);
-            return (
-              <div key={m.label} className="text-center space-y-0.5">
-                <div className="text-[10px] text-muted-foreground">{m.label}</div>
-                <div className="text-xs font-bold">{short(m.actual)}</div>
-                <div className="flex items-center justify-center gap-0.5 text-[10px]">
-                  {m.trend === 'UP' ? <ArrowUpRight className="h-3 w-3 text-emerald-500" /> : m.trend === 'DOWN' ? <ArrowDownRight className="h-3 w-3 text-red-500" /> : <Minus className="h-3 w-3 text-muted-foreground" />}
-                  <span className={cn(m.trend === 'UP' ? 'text-emerald-600' : m.trend === 'DOWN' ? 'text-red-600' : 'text-muted-foreground')}>
-                    {m.momIsExtreme ? '↑↑' : m.momGrowth != null ? `${m.momGrowth >= 0 ? '+' : ''}${m.momGrowth}%` : '-'}
-                  </span>
-                </div>
-                <div className="border-t border-dashed border-muted pt-0.5">
-                  <div className={cn('text-[10px] font-semibold', wr?.winRate == null ? 'text-muted-foreground' : wr.winRate >= 60 ? 'text-emerald-600' : wr.winRate >= 40 ? 'text-amber-600' : 'text-red-600')}>
-                    {wr?.winRate != null ? `${wr.winRate}%` : '-'}
-                  </div>
-                  <div className="text-[9px] text-muted-foreground">{wr ? `${wr.won}W ${wr.lost}L` : ''}</div>
-                </div>
-              </div>
-            );
-          })}
+        {/* Summary table — label เดือนแสดงครั้งเดียว มี column header ชัดเจน */}
+        <div className="mt-4 pt-3 border-t overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-muted-foreground border-b border-muted/60">
+                <th className="text-left pb-2 font-medium">เดือน</th>
+                <th className="text-right pb-2 font-medium">Revenue</th>
+                <th className="text-right pb-2 font-medium">MoM</th>
+                <th className="text-right pb-2 font-medium">YoY</th>
+                <th className="text-right pb-2 font-medium">Win Rate</th>
+                <th className="text-right pb-2 font-medium">W / L</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-muted/30">
+              {tableRows.map((m) => {
+                const wr = winMap.get(m.label);
+                return (
+                  <tr key={m.label} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-1.5 font-semibold">{m.label}</td>
+                    <td className="py-1.5 text-right font-semibold">
+                      {m.actual > 0 ? short(m.actual) : <span className="text-muted-foreground font-normal">–</span>}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {m.momGrowth != null ? (
+                        <span className={cn('inline-flex items-center justify-end gap-0.5 font-medium', m.trend === 'UP' ? 'text-emerald-600' : m.trend === 'DOWN' ? 'text-red-600' : 'text-muted-foreground')}>
+                          {m.trend === 'UP' ? <ArrowUpRight className="h-3 w-3" /> : m.trend === 'DOWN' ? <ArrowDownRight className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
+                          {m.momIsExtreme ? '↑↑' : `${m.momGrowth >= 0 ? '+' : ''}${m.momGrowth}%`}
+                        </span>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {m.yoyGrowth != null ? (
+                        <span className={cn('font-medium', m.yoyGrowth >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                          {m.yoyGrowth >= 0 ? '+' : ''}{m.yoyGrowth}%
+                        </span>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <span className={cn('font-semibold', wr?.winRate == null ? 'text-muted-foreground' : wr.winRate >= 60 ? 'text-emerald-600' : wr.winRate >= 40 ? 'text-amber-600' : 'text-red-600')}>
+                        {wr?.winRate != null ? `${wr.winRate}%` : '–'}
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right text-muted-foreground">
+                      {wr ? `${wr.won}W ${wr.lost}L` : '–'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
         <div className="mt-2 text-[10px] text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 shrink-0 mt-px" />
-          Win Rate = SO ÷ (SO + REJECTED/CANCELLED/EXPIRED) รายเดือน
+          Win Rate = SO ÷ (SO + REJECTED/CANCELLED/EXPIRED) รายเดือน · Win Rate avg 3m ล่าสุด vs ค่าเฉลี่ย 12m
         </div>
       </CardContent>
     </Card>
