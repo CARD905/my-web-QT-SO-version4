@@ -44,6 +44,19 @@ interface KpiSummary {
   top5CustomerPct: number | null; totalRevenue12m: number;
 }
 interface CustomerConcentration { company: string; total: number; pct: number; }
+interface MonthProgress {
+  daysElapsed: number; daysTotal: number; daysRemaining: number;
+  actual: number; target: number | null;
+  projectedEOM: number; dailyRunRate: number; requiredDailyRate: number | null;
+  onTrack: boolean | null; pctElapsed: number; pctAchieved: number | null;
+}
+interface ScenarioForecast {
+  label: string; target: number | null;
+  conservative: number; expected: number; optimistic: number;
+  pipelineDealsCount: number; pipelineWeighted: number;
+  conservativeVsTarget: number | null; expectedVsTarget: number | null; optimisticVsTarget: number | null;
+  dataMonths: number;
+}
 interface AdvancedData {
   forecastVsTarget: { monthly: FvtMonth[]; quarterly: FvtQuarter[]; yearly: FvtYearly; forecastMonths: FvtMonth[] };
   conversionFunnel: FunnelStep[];
@@ -58,6 +71,8 @@ interface AdvancedData {
   kpiSummary: KpiSummary;
   customerConcentration: CustomerConcentration[];
   roleCode: string;
+  monthProgress: MonthProgress;
+  scenarioForecast: ScenarioForecast;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1086,6 +1101,170 @@ function CustomerConcentrationCard({ data, totalRevenue }: { data: CustomerConce
   );
 }
 
+function MonthProgressCard({ data }: { data: MonthProgress }) {
+  const pctDays = data.pctElapsed;
+  const pctRev = data.pctAchieved ?? 0;
+  const pctProj = data.target && data.target > 0 ? Math.min(Math.round((data.projectedEOM / data.target) * 100), 200) : null;
+  const onTrackColor = data.onTrack === true ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : data.onTrack === false ? 'text-red-600 bg-red-50 dark:bg-red-900/20' : 'text-muted-foreground bg-muted/50';
+  const onTrackLabel = data.onTrack === true ? '✓ On Track' : data.onTrack === false ? '⚠ Behind Target' : 'ยังไม่มีเป้า';
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 text-sky-500" />ความคืบหน้าเดือนนี้
+          </h2>
+          <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', onTrackColor)}>{onTrackLabel}</span>
+        </div>
+
+        {/* Days progress */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">ผ่านมาแล้ว {data.daysElapsed} / {data.daysTotal} วัน</span>
+            <span className="font-semibold">{pctDays}%</span>
+          </div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-sky-400 rounded-full transition-all" style={{ width: `${pctDays}%` }} />
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">เหลืออีก {data.daysRemaining} วัน</div>
+        </div>
+
+        {/* Revenue progress */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">ยอดจริง {short(data.actual)}{data.target ? ` / เป้า ${short(data.target)}` : ''}</span>
+            <span className={cn('font-semibold', pctRev >= 100 ? 'text-emerald-600' : pctRev >= pctDays ? 'text-emerald-600' : 'text-amber-600')}>
+              {data.target ? `${pctRev}%` : '-'}
+            </span>
+          </div>
+          {data.target != null && data.target > 0 && (
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div className={cn('h-full rounded-full transition-all', pctRev >= 100 ? 'bg-emerald-500' : pctRev >= pctDays ? 'bg-emerald-400' : 'bg-amber-400')} style={{ width: `${Math.min(pctRev, 100)}%` }} />
+            </div>
+          )}
+        </div>
+
+        {/* Metrics row */}
+        <div className="grid grid-cols-3 gap-2">
+          <div className="text-center p-2 rounded-lg bg-muted/30">
+            <div className="text-[10px] text-muted-foreground leading-tight mb-0.5">Projected EOM</div>
+            <div className={cn('text-sm font-bold', pctProj != null && pctProj >= 100 ? 'text-emerald-600' : 'text-amber-600')}>
+              {short(data.projectedEOM)}
+            </div>
+            {pctProj != null && <div className="text-[10px] text-muted-foreground">{pctProj}% vs เป้า</div>}
+          </div>
+          <div className="text-center p-2 rounded-lg bg-muted/30">
+            <div className="text-[10px] text-muted-foreground leading-tight mb-0.5">Run Rate / วัน</div>
+            <div className="text-sm font-bold text-indigo-600">{short(data.dailyRunRate)}</div>
+            <div className="text-[10px] text-muted-foreground">avg จนถึงวันนี้</div>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-muted/30">
+            <div className="text-[10px] text-muted-foreground leading-tight mb-0.5">ต้องทำ / วัน</div>
+            {data.requiredDailyRate != null && data.requiredDailyRate > 0 ? (
+              <>
+                <div className={cn('text-sm font-bold', data.requiredDailyRate > data.dailyRunRate * 2 ? 'text-red-600' : 'text-amber-600')}>
+                  {short(data.requiredDailyRate)}
+                </div>
+                <div className="text-[10px] text-muted-foreground">เพื่อถึงเป้า</div>
+              </>
+            ) : (
+              <div className="text-sm font-bold text-emerald-600">✓ ถึงแล้ว</div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScenarioForecastCard({ data }: { data: ScenarioForecast }) {
+  const maxVal = Math.max(data.conservative, data.expected, data.optimistic, data.target ?? 0, 1);
+  const scenarios = [
+    {
+      label: 'Conservative', sublabel: 'Moving avg ประวัติ',
+      value: data.conservative, vsTarget: data.conservativeVsTarget,
+      color: 'bg-slate-400', textColor: 'text-slate-600 dark:text-slate-400',
+    },
+    {
+      label: 'Expected', sublabel: 'ผสม Historical + Pipeline',
+      value: data.expected, vsTarget: data.expectedVsTarget,
+      color: 'bg-indigo-500', textColor: 'text-indigo-600 dark:text-indigo-400',
+    },
+    {
+      label: 'Optimistic', sublabel: 'Pipeline สูงสุด × 1.1',
+      value: data.optimistic, vsTarget: data.optimisticVsTarget,
+      color: 'bg-emerald-500', textColor: 'text-emerald-600 dark:text-emerald-400',
+    },
+  ];
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Target className="h-4 w-4 text-indigo-500" />Scenario Forecast
+            <span className="text-[10px] font-normal text-muted-foreground">({data.label})</span>
+          </h2>
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground', data.dataMonths >= 3 ? 'text-emerald-600' : data.dataMonths >= 1 ? 'text-amber-600' : 'text-red-600')}>
+            ข้อมูล {data.dataMonths} เดือน{data.dataMonths < 3 ? ' (น้อย)' : ''}
+          </span>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          {scenarios.map((s) => (
+            <div key={s.label}>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <div>
+                  <span className={cn('font-semibold', s.textColor)}>{s.label}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1.5">{s.sublabel}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-semibold">{short(s.value)}</span>
+                  {s.vsTarget != null && (
+                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-semibold', s.vsTarget >= 100 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20' : 'bg-amber-50 text-amber-600 dark:bg-amber-900/20')}>
+                      {s.vsTarget}% vs เป้า
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="h-2.5 bg-muted rounded-full overflow-hidden relative">
+                {data.target != null && data.target > 0 && (
+                  <div
+                    className="absolute top-0 bottom-0 w-px bg-yellow-500 z-10"
+                    style={{ left: `${Math.min((data.target / maxVal) * 100, 100)}%` }}
+                    title={`เป้า ${short(data.target)}`}
+                  />
+                )}
+                <div className={cn('h-full rounded-full transition-all', s.color)} style={{ width: `${Math.min((s.value / maxVal) * 100, 100)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Pipeline signal */}
+        <div className="pt-3 border-t space-y-1.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-muted-foreground flex items-center gap-1">
+              <Activity className="h-3 w-3" />Pipeline (เดือนหน้า)
+            </span>
+            <span className="font-semibold">{data.pipelineDealsCount > 0 ? `${data.pipelineDealsCount} ดีล · ${short(data.pipelineWeighted)} weighted` : 'ไม่มีดีลหมดอายุเดือนหน้า'}</span>
+          </div>
+          {data.target != null && (
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">เป้าหมาย</span>
+              <span className="font-semibold text-yellow-600">{short(data.target)}</span>
+            </div>
+          )}
+          <div className="text-[10px] text-muted-foreground mt-1">
+            Conservative = avg ประวัติ · Expected = (Historical + Pipeline) ÷ 2 · Optimistic = max × 1.1
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
@@ -1126,7 +1305,7 @@ export default function ForecastPage() {
 
   if (!data) return <div className="text-center py-20 text-muted-foreground">ไม่สามารถโหลดข้อมูลได้</div>;
 
-  const { forecastVsTarget, conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance, revenueTrend, pipelineHealth, topOpportunities, agingPipeline, winRateTrend, kpiSummary, customerConcentration } = data;
+  const { forecastVsTarget, conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance, revenueTrend, pipelineHealth, topOpportunities, agingPipeline, winRateTrend, kpiSummary, customerConcentration, monthProgress, scenarioForecast } = data;
 
   const currentM = forecastVsTarget.monthly[forecastVsTarget.monthly.length - 1];
   const latestTrend = revenueTrend[revenueTrend.length - 1];
@@ -1281,6 +1460,12 @@ export default function ForecastPage() {
 
       {/* ── Quick Stats Bar ──────────────────────────────────────────────── */}
       <KpiQuickStatsBar kpi={kpiSummary} isCeo={isCeo} />
+
+      {/* ── Month Progress + Scenario Forecast ───────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <MonthProgressCard data={monthProgress} />
+        <ScenarioForecastCard data={scenarioForecast} />
+      </div>
 
       {/* ── Forecast vs Target ──────────────────────────────────────────── */}
       <ForecastVsTargetCard data={forecastVsTarget} period={period} onPeriodChange={setPeriod} onSaveTarget={handleSaveTarget} canEditTarget={!isOfficer} />

@@ -600,6 +600,61 @@ export const forecastService = {
       totalRevenue12m: totalRev12m,
     };
 
+    // ── 12. Month Progress ────────────────────────────────────────────────
+    const daysTotal = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysElapsed = now.getDate();
+    const daysRemaining = daysTotal - daysElapsed;
+    const currentActual = movingAvgData[movingAvgData.length - 1] ?? 0;
+    const dailyRunRate = daysElapsed > 0 ? currentActual / daysElapsed : 0;
+    const projectedEOM = Math.round(dailyRunRate * daysTotal);
+    const requiredDailyRate =
+      daysRemaining > 0 && currentMonthTarget != null && currentMonthTarget > currentActual
+        ? Math.round((currentMonthTarget - currentActual) / daysRemaining)
+        : null;
+    const monthProgress = {
+      daysElapsed, daysTotal, daysRemaining,
+      actual: currentActual,
+      target: currentMonthTarget ?? null,
+      projectedEOM,
+      dailyRunRate: Math.round(dailyRunRate),
+      requiredDailyRate,
+      onTrack: currentMonthTarget != null ? projectedEOM >= currentMonthTarget : null,
+      pctElapsed: Math.round((daysElapsed / daysTotal) * 100),
+      pctAchieved: currentMonthTarget && currentMonthTarget > 0
+        ? Math.round((currentActual / currentMonthTarget) * 100)
+        : null,
+    };
+
+    // ── 13. Scenario Forecast (next month) ────────────────────────────────
+    const nextScenM = nextMonths3[0];
+    const nextMonthPipeDeals = activePipeline.filter(
+      (q) => q.expiryDate && new Date(q.expiryDate) >= nextScenM.start && new Date(q.expiryDate) < nextScenM.end
+    );
+    const nextMonthPipeWeighted = Math.round(
+      nextMonthPipeDeals.reduce((s, q) => s + toNum(q.grandTotal) * (PIPELINE_WEIGHTS[q.status] ?? 0), 0)
+    );
+    const scenNmt = nextMonthTarget ?? null;
+    const conservativeS = forecastAvg;
+    const pipelineS = nextMonthPipeWeighted;
+    const expectedS = pipelineS > 0 ? Math.round((conservativeS + pipelineS) / 2) : conservativeS;
+    const optimisticS = pipelineS > 0
+      ? Math.round(Math.max(conservativeS, pipelineS) * 1.1)
+      : Math.round(conservativeS * 1.3);
+    const pctVsTarget = (v: number) => scenNmt && scenNmt > 0 ? Math.round((v / scenNmt) * 100) : null;
+    const scenarioForecast = {
+      label: nextScenM.label,
+      target: scenNmt,
+      conservative: conservativeS,
+      expected: expectedS,
+      optimistic: optimisticS,
+      pipelineDealsCount: nextMonthPipeDeals.length,
+      pipelineWeighted: pipelineS,
+      conservativeVsTarget: pctVsTarget(conservativeS),
+      expectedVsTarget: pctVsTarget(expectedS),
+      optimisticVsTarget: pctVsTarget(optimisticS),
+      dataMonths: last3NonZero.length,
+    };
+
     return {
       forecastVsTarget: {
         monthly: fvtMonthly, quarterly: fvtQuarterly, forecastMonths,
@@ -608,6 +663,7 @@ export const forecastService = {
       conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance,
       revenueTrend, pipelineHealth, topOpportunities, agingPipeline,
       winRateTrend, kpiSummary, customerConcentration, roleCode,
+      monthProgress, scenarioForecast,
     };
   },
 };
