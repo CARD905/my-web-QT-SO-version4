@@ -23,7 +23,7 @@ import type { ApiResponse } from '@/types/api';
 interface FvtMonth { label: string; year: number; month: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; isFuture?: boolean; }
 interface FvtQuarter { label: string; year: number; quarter: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; }
 interface FvtYearly { year: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; }
-interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; isRejected: boolean; }
+interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; isRejected: boolean; excludedCount: number; }
 interface DealRisk { id: string; quotationNo: string; customerCompany: string; grandTotal: number; status: string; expiryDate: string | null; updatedAt: string; createdAt: string; salesName: string; riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; riskScore: number; daysUntilExpiry: number | null; daysSinceUpdate: number; daysOpen: number; }
 interface AccuracyMonth { label: string; month: number; year: number; actual: number; target: number | null; forecast: number; accuracy: number | null; targetAchievement: number | null; }
 interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; closedDeals: number; winRate: number | null; lowSample: boolean; avgDealSize: number; }
@@ -418,10 +418,15 @@ function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
           {mainSteps.map((step, i) => (
             <div key={i}>
               <div className="flex items-center justify-between text-xs mb-1.5">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[i] }} />
                   <span className="font-semibold">{step.label}</span>
                   <span className="text-muted-foreground">{step.count} รายการ · {short(step.value)}</span>
+                  {i === 0 && step.excludedCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
+                      ไม่รวม {step.excludedCount} Cancelled/Expired
+                    </span>
+                  )}
                 </div>
                 {i > 0 && (
                   <div className="flex items-center gap-1.5">

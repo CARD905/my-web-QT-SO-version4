@@ -347,19 +347,22 @@ export const forecastService = {
     const yForecast = fvtMonthly.reduce((s, m) => s + m.forecast, 0);
 
     // ── 2. Conversion Funnel ──────────────────────────────────────────────
-    const totalQts = quotations12m.length;
-    const totalQtVal = quotations12m.reduce((s, q) => s + toNum(q.grandTotal), 0);
-    const pendingQts = quotations12m.filter((q) => ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status));
-    const approvedQts = quotations12m.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
-    const rejectedQts = quotations12m.filter((q) => q.status === 'REJECTED');
+    // CANCELLED/EXPIRED ถูกตัดออกจาก base — ไม่ใช่ loss จากการขาย แค่ไม่ active
+    const cancelledExpiredQts = quotations12m.filter((q) => q.status === 'CANCELLED' || q.status === 'EXPIRED');
+    const baseQts = quotations12m.filter((q) => q.status !== 'CANCELLED' && q.status !== 'EXPIRED');
+    const totalQts = baseQts.length;
+    const totalQtVal = baseQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
+    const pendingQts = baseQts.filter((q) => ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status));
+    const approvedQts = baseQts.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
+    const rejectedQts = baseQts.filter((q) => q.status === 'REJECTED');
     const soValue = toNum(soValueAgg._sum?.grandTotal);
 
     const conversionFunnel = [
-      { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100, isRejected: false },
-      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false },
-      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((approvedQts.length / pendingQts.length) * 100) : 0, isRejected: false },
-      { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0, isRejected: false },
-      { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true },
+      { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100, isRejected: false, excludedCount: cancelledExpiredQts.length },
+      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((approvedQts.length / pendingQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true, excludedCount: 0 },
     ];
 
     // ── 3. Deals At Risk (sorted by riskScore desc) ───────────────────────
