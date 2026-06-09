@@ -268,7 +268,7 @@ export const forecastService = {
     const prevYearStart = new Date(start12);
     prevYearStart.setFullYear(prevYearStart.getFullYear() - 1);
 
-    const [confirmedSO12m, prevYearSO, soCount12m, soValueAgg, customerRevenueGroupBy] = await Promise.all([
+    const [confirmedSO12m, prevYearSO, soValueAgg, customerRevenueGroupBy] = await Promise.all([
       prisma.saleOrder.findMany({
         where: { ...soWhere, issueDate: { gte: start12 } },
         select: { grandTotal: true, issueDate: true, quotationId: true },
@@ -277,7 +277,6 @@ export const forecastService = {
         where: { ...soWhere, issueDate: { gte: prevYearStart, lt: start12 } },
         select: { grandTotal: true, issueDate: true },
       }),
-      prisma.saleOrder.count({ where: { ...soWhere, issueDate: { gte: start12 } } }),
       prisma.saleOrder.aggregate({ where: { ...soWhere, issueDate: { gte: start12 } }, _sum: { grandTotal: true } }),
       prisma.saleOrder.groupBy({
         by: ['customerCompany'],
@@ -352,16 +351,23 @@ export const forecastService = {
     const baseQts = quotations12m.filter((q) => q.status !== 'CANCELLED' && q.status !== 'EXPIRED');
     const totalQts = baseQts.length;
     const totalQtVal = baseQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
+
+    // ป้องกัน double-count: quotation ที่มี SO แล้ว ต้องอยู่ใน step "Sale Order" เท่านั้น ไม่ใช่ "อนุมัติแล้ว"
+    const soQuotationIdSet = new Set(confirmedSO12m.filter((o) => o.quotationId).map((o) => o.quotationId!));
     const pendingQts = baseQts.filter((q) => ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status));
-    const approvedQts = baseQts.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
+    const allApprovedQts = baseQts.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
+    // อนุมัติแล้วแต่ยังไม่มี SO — ตัด overlap ออก
+    const approvedQts = allApprovedQts.filter((q) => !soQuotationIdSet.has(q.id));
+    // Quotations ที่มี confirmed SO แล้ว (mutually exclusive กับ approvedQts)
+    const soLinkedQts = baseQts.filter((q) => soQuotationIdSet.has(q.id));
     const rejectedQts = baseQts.filter((q) => q.status === 'REJECTED');
-    const soValue = toNum(soValueAgg._sum?.grandTotal);
+    const soLinkedValue = soLinkedQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
 
     const conversionFunnel = [
       { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100, isRejected: false, excludedCount: cancelledExpiredQts.length },
       { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false, excludedCount: 0 },
-      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((approvedQts.length / pendingQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
-      { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((allApprovedQts.length / pendingQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'Sale Order', step: 4, count: soLinkedQts.length, value: soLinkedValue, conversionFromFirst: totalQts > 0 ? Math.round((soLinkedQts.length / totalQts) * 100) : 0, conversionFromPrev: allApprovedQts.length > 0 ? Math.round((soLinkedQts.length / allApprovedQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
       { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true, excludedCount: 0 },
     ];
 
