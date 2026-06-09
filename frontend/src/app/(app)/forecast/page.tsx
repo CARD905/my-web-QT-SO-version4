@@ -1118,6 +1118,186 @@ function CustomerConcentrationCard({ data, totalRevenue }: { data: CustomerConce
   );
 }
 
+function GoalPlannerCard({ monthProgress, kpiSummary }: { monthProgress: MonthProgress; kpiSummary: KpiSummary }) {
+  const dbTarget = monthProgress.target ?? 0;
+  const [targetInput, setTargetInput] = useState<string>(dbTarget > 0 ? String(dbTarget) : '');
+
+  const target = Math.round(parseFloat(targetInput.replace(/[^0-9.]/g, '')) || 0);
+  const actual = monthProgress.actual;
+  const gap = Math.max(0, target - actual);
+  const daysRemaining = monthProgress.daysRemaining;
+  const noWinRateData = kpiSummary.winRate6m == null;
+  const winRate = kpiSummary.winRate6m ?? 50;
+  const avgDealSO = kpiSummary.avgDealSizeSO > 0 ? kpiSummary.avgDealSizeSO : kpiSummary.avgDealSizePipeline;
+  const achieved = target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : 0;
+  const dailyRequired = daysRemaining > 0 && gap > 0 ? Math.round(gap / daysRemaining) : 0;
+  const isComplete = target > 0 && gap === 0;
+
+  // Recommended: n quotations so that expected deal size ≈ avgDealSO
+  // gap = n × (winRate/100) × avgDealSO → n = gap / (winRate/100 × avgDealSO)
+  const recommendedQts = avgDealSO > 0 && winRate > 0 && gap > 0
+    ? Math.ceil(gap / ((winRate / 100) * avgDealSO)) : null;
+
+  // Scenario rows
+  const baseCounts = [2, 3, 5, 8, 10, 15, 20];
+  const scenarioCounts = Array.from(new Set([...baseCounts, ...(recommendedQts != null && recommendedQts > 0 && recommendedQts <= 50 ? [recommendedQts] : [])]))
+    .sort((a, b) => a - b).slice(0, 7);
+
+  const scenarios = scenarioCounts.map((n) => {
+    const dealSize = winRate > 0 ? Math.round(gap / (n * winRate / 100)) : 0;
+    const expectedSOs = parseFloat((n * winRate / 100).toFixed(1));
+    const vsAvg = avgDealSO > 0 ? Math.round((dealSize / avgDealSO - 1) * 100) : null;
+    return { n, dealSize, expectedSOs, vsAvg, isRecommended: n === recommendedQts };
+  });
+
+  const rec = scenarios.find((s) => s.isRecommended);
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Target className="h-4 w-4 text-emerald-500" />แผนบรรลุเป้าหมาย
+          </h2>
+          {noWinRateData && (
+            <span className="text-[10px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 px-1.5 py-0.5 rounded">Win Rate ใช้ค่าเริ่มต้น 50%</span>
+          )}
+        </div>
+
+        {/* Target input */}
+        <div className="mb-4">
+          <div className="text-[10px] text-muted-foreground mb-1">ตั้งเป้าหมายรายได้ (บาท)</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={targetInput}
+              onChange={(e) => setTargetInput(e.target.value)}
+              placeholder="ระบุยอดเป้าหมาย เช่น 8500000"
+              className="flex-1 h-9 px-3 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono"
+            />
+            {dbTarget > 0 && target !== dbTarget && (
+              <button
+                onClick={() => setTargetInput(String(dbTarget))}
+                className="text-[10px] px-2 py-1.5 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground shrink-0 transition-colors"
+              >
+                เป้าเดือนนี้ ({short(dbTarget)})
+              </button>
+            )}
+          </div>
+        </div>
+
+        {target > 0 ? (
+          <>
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-muted-foreground">ทำแล้ว <span className="font-semibold text-foreground">{short(actual)}</span> / เป้า <span className="font-semibold text-foreground">{short(target)}</span></span>
+                <span className={cn('font-bold text-sm', isComplete ? 'text-emerald-600' : achieved >= 70 ? 'text-amber-600' : 'text-red-500')}>{achieved}%</span>
+              </div>
+              <div className="h-3 bg-muted rounded-full overflow-hidden">
+                <div className={cn('h-full rounded-full transition-all', isComplete ? 'bg-emerald-500' : achieved >= 70 ? 'bg-amber-500' : 'bg-red-400')}
+                  style={{ width: `${achieved}%` }} />
+              </div>
+            </div>
+
+            {isComplete ? (
+              <div className="text-center py-4 text-emerald-600 font-semibold text-base">🎉 ถึงเป้าหมายแล้ว!</div>
+            ) : (
+              <>
+                {/* Key metrics row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                  <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-center">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">ยังขาดอีก</div>
+                    <div className="text-base font-bold text-red-600">{short(gap)}</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-muted/30 text-center">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">วันที่เหลือ</div>
+                    <div className="text-base font-bold">{daysRemaining} วัน</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-center">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">ต้องทำ/วัน</div>
+                    <div className="text-base font-bold text-amber-600">{dailyRequired > 0 ? short(dailyRequired) : '—'}</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-center">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Win Rate</div>
+                    <div className="text-base font-bold text-indigo-600">{winRate}%</div>
+                  </div>
+                </div>
+
+                {/* Recommended plan callout */}
+                {rec && avgDealSO > 0 && (
+                  <div className="mb-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                    <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-1 flex items-center gap-1">
+                      <span>★</span> แผนแนะนำ (ตามขนาดดีลเฉลี่ย {short(avgDealSO)})
+                    </div>
+                    <div className="text-sm text-emerald-800 dark:text-emerald-300">
+                      ส่ง Quotation <span className="font-bold text-base">{rec.n} ใบ</span>
+                      {' '}ใบละ <span className="font-bold text-base">{short(rec.dealSize)}</span>
+                      {' '}→ คาดปิด SO <span className="font-bold">{rec.expectedSOs} ดีล</span>
+                      {' '}→ รายได้ {short(Math.round(rec.expectedSOs * rec.dealSize))}
+                    </div>
+                  </div>
+                )}
+                {!avgDealSO && (
+                  <div className="mb-3 text-[11px] text-muted-foreground flex items-start gap-1">
+                    <Info className="h-3 w-3 shrink-0 mt-px" />ยังไม่มีข้อมูล Avg Deal Size — ไม่สามารถแนะนำจำนวน Quotation ได้
+                  </div>
+                )}
+
+                {/* Scenario table */}
+                {gap > 0 && winRate > 0 && (
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1.5">
+                      ตารางสถานการณ์ — ส่ง QT กี่ใบ / ราคาต่อใบต้องเป็นเท่าไหร่ เพื่อปิดช่องว่าง <span className="font-semibold text-foreground">{short(gap)}</span>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden text-xs">
+                      <div className="grid grid-cols-4 font-semibold text-[10px] text-muted-foreground bg-muted/50 px-3 py-2">
+                        <span>QT ที่ต้องส่ง</span>
+                        <span className="text-right">ราคา/ใบ (บาท)</span>
+                        <span className="text-right">SO คาดปิด</span>
+                        <span className="text-right">เทียบ Avg Deal</span>
+                      </div>
+                      {scenarios.map((s, i) => (
+                        <div key={i} className={cn('grid grid-cols-4 px-3 py-2 border-t',
+                          s.isRecommended ? 'bg-emerald-50 dark:bg-emerald-900/15 font-semibold' : i % 2 === 0 ? '' : 'bg-muted/10')}>
+                          <span className="flex items-center gap-1">
+                            {s.isRecommended && <span className="text-emerald-600 text-[11px]">★</span>}
+                            <span className={s.isRecommended ? 'text-emerald-700 dark:text-emerald-300' : ''}>{s.n} ใบ</span>
+                          </span>
+                          <span className={cn('text-right', s.isRecommended ? 'text-emerald-700 dark:text-emerald-300' : '')}>
+                            {short(s.dealSize)}
+                          </span>
+                          <span className="text-right text-muted-foreground">{s.expectedSOs}</span>
+                          <span className={cn('text-right font-semibold',
+                            s.vsAvg == null ? 'text-muted-foreground' :
+                            s.vsAvg > 30 ? 'text-red-600' : s.vsAvg > 0 ? 'text-amber-600' : 'text-emerald-600')}>
+                            {s.vsAvg != null ? `${s.vsAvg > 0 ? '+' : ''}${s.vsAvg}%` : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                      ★ = แนะนำ · "เทียบ Avg Deal" = เทียบกับค่าเฉลี่ย SO จริง ({short(avgDealSO)}) · Win Rate {winRate}%{noWinRateData ? ' (ค่าเริ่มต้น)' : ' (6 เดือน)'}
+                      {' '}· สูตร: SO คาดปิด = QT × {winRate}% · ราคา/ใบ = ช่องว่าง ÷ (QT × {winRate}%)
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground text-sm flex flex-col items-center gap-2">
+            <Target className="h-8 w-8 text-muted-foreground/30" />
+            <span>ใส่ยอดเป้าหมายด้านบนเพื่อดูแผนการขาย</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function RevenueAtRiskCard({ data }: { data: RevenueAtRisk }) {
   const total = data.safeValue + data.totalRiskValue;
   const safePct = total > 0 ? Math.round((data.safeValue / total) * 100) : 100;
@@ -1674,6 +1854,9 @@ export default function ForecastPage() {
         <MonthProgressCard data={monthProgress} />
         <ScenarioForecastCard data={scenarioForecast} />
       </div>
+
+      {/* ── Goal Planner ─────────────────────────────────────────────────── */}
+      <GoalPlannerCard monthProgress={monthProgress} kpiSummary={kpiSummary} />
 
       {/* ── Forecast vs Target ──────────────────────────────────────────── */}
       <ForecastVsTargetCard data={forecastVsTarget} period={period} onPeriodChange={setPeriod} onSaveTarget={handleSaveTarget} canEditTarget={!isOfficer} />
