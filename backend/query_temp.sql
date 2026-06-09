@@ -1,0 +1,1 @@
+SELECT TO_CHAR(DATE_TRUNC('month', "issueDate"), 'Mon YY') as month, COUNT(*) as won FROM "SaleOrder" WHERE status IN ('CONFIRMED', 'COMPLETED') AND "issueDate" >= NOW() - INTERVAL '12 months' GROUP BY DATE_TRUNC('month', "issueDate") ORDER BY DATE_TRUNC('month', "issueDate");

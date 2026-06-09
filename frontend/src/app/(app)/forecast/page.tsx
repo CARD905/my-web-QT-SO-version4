@@ -23,7 +23,7 @@ import type { ApiResponse } from '@/types/api';
 interface FvtMonth { label: string; year: number; month: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; isFuture?: boolean; }
 interface FvtQuarter { label: string; year: number; quarter: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; }
 interface FvtYearly { year: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; }
-interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; }
+interface FunnelStep { label: string; step: number; count: number; value: number; conversionFromFirst: number; conversionFromPrev: number; isRejected: boolean; }
 interface DealRisk { id: string; quotationNo: string; customerCompany: string; grandTotal: number; status: string; expiryDate: string | null; updatedAt: string; createdAt: string; salesName: string; riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; riskScore: number; daysUntilExpiry: number | null; daysSinceUpdate: number; daysOpen: number; }
 interface AccuracyMonth { label: string; month: number; year: number; actual: number; target: number | null; forecast: number; accuracy: number | null; targetAchievement: number | null; }
 interface SalesPerf { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; closedDeals: number; winRate: number | null; lowSample: boolean; avgDealSize: number; }
@@ -145,33 +145,56 @@ function BarComboChart({ data, labelKey, actualKey, targetKey, forecastKey, futu
   );
 }
 
-function AreaLineChart({ data, color = '#10b981', yMax }: { data: Array<{ label: string; value: number; value2?: number | null }>; color?: string; yMax?: number }) {
+function AreaLineChart({ data, color = '#10b981', yMax }: { data: Array<{ label: string; value: number | null; value2?: number | null }>; color?: string; yMax?: number }) {
   const W = 500; const H = 120; const PL = 44; const PR = 12; const PT = 8; const PB = 24;
   const cW = W - PL - PR; const cH = H - PT - PB;
   if (data.length < 2) return <div className="text-xs text-center text-muted-foreground py-4">ข้อมูลไม่เพียงพอ</div>;
-  const maxVal = yMax ?? Math.max(...data.flatMap((d) => [d.value, d.value2 ?? 0]), 1);
+  const allVals = data.flatMap((d) => [d.value, d.value2 ?? null]).filter((v): v is number => v != null);
+  if (allVals.length === 0) return <div className="text-xs text-center text-muted-foreground py-4">ข้อมูลไม่เพียงพอ</div>;
+  const maxVal = yMax ?? Math.max(...allVals, 1);
   const xi = (i: number) => PL + (i / (data.length - 1)) * cW;
   const yv = (v: number) => PT + cH - Math.min(1, Math.max(0, v / maxVal)) * cH;
-  const pts = data.map((d, i) => ({ x: xi(i), y: yv(d.value) }));
-  let path = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length; i++) {
-    const cpx = (pts[i - 1].x + pts[i].x) / 2;
-    path += ` C ${cpx} ${pts[i - 1].y} ${cpx} ${pts[i].y} ${pts[i].x} ${pts[i].y}`;
-  }
-  const area = `${path} L ${pts[pts.length - 1].x} ${PT + cH} L ${pts[0].x} ${PT + cH} Z`;
-  const gradId = `ag-${color.replace('#', '')}`;
-  const pts2 = data.some((d) => d.value2 != null) ? data.map((d, i) => d.value2 != null ? { x: xi(i), y: yv(d.value2) } : null) : [];
-  let path2 = '';
-  if (pts2.length > 0) {
-    const first = pts2.find((p) => p != null);
-    if (first) {
-      path2 = `M ${first.x} ${first.y}`;
-      for (let i = 1; i < pts2.length; i++) {
-        const p = pts2[i]; const pp = pts2[i - 1];
-        if (p && pp) { const cpx = (pp.x + p.x) / 2; path2 += ` C ${cpx} ${pp.y} ${cpx} ${p.y} ${p.x} ${p.y}`; }
-      }
+
+  // Build line path and area segments — null values create a gap instead of drawing through 0
+  type Pt = { x: number; y: number };
+  const pts: (Pt | null)[] = data.map((d, i) => d.value != null ? { x: xi(i), y: yv(d.value) } : null);
+  let linePath = ''; let lastPt: Pt | null = null;
+  const areaSegs: string[] = [];
+  let segLine = ''; let segStart: Pt | null = null; let segEnd: Pt | null = null;
+
+  const flushSeg = () => {
+    if (segLine && segStart && segEnd) areaSegs.push(`${segLine} L ${segEnd.x} ${PT + cH} L ${segStart.x} ${PT + cH} Z`);
+    segLine = ''; segStart = null; segEnd = null;
+  };
+
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (p == null) { flushSeg(); lastPt = null; continue; }
+    if (lastPt == null) {
+      linePath += `${linePath ? ' ' : ''}M ${p.x} ${p.y}`;
+      segLine = `M ${p.x} ${p.y}`; segStart = p;
+    } else {
+      const cpx = (lastPt.x + p.x) / 2;
+      const curve = ` C ${cpx} ${lastPt.y} ${cpx} ${p.y} ${p.x} ${p.y}`;
+      linePath += curve; segLine += curve;
     }
+    lastPt = p; segEnd = p;
   }
+  flushSeg();
+
+  const gradId = `ag-${color.replace('#', '')}`;
+  // value2 (dashed previous-year line) — also null-safe
+  const pts2: (Pt | null)[] = data.some((d) => d.value2 != null)
+    ? data.map((d, i) => d.value2 != null ? { x: xi(i), y: yv(d.value2) } : null) : [];
+  let path2 = ''; let lp2: Pt | null = null;
+  for (let i = 0; i < pts2.length; i++) {
+    const p = pts2[i];
+    if (p == null) { lp2 = null; continue; }
+    if (lp2 == null) { path2 += `${path2 ? ' ' : ''}M ${p.x} ${p.y}`; }
+    else { const cpx = (lp2.x + p.x) / 2; path2 += ` C ${cpx} ${lp2.y} ${cpx} ${p.y} ${p.x} ${p.y}`; }
+    lp2 = p;
+  }
+
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 120 }}>
       <defs>
@@ -187,13 +210,17 @@ function AreaLineChart({ data, color = '#10b981', yMax }: { data: Array<{ label:
           <text x={PL - 4} y={gy + 3} textAnchor="end" fontSize={8} fill="currentColor" fillOpacity={0.35}>{short(maxVal * t)}</text>
         </g>;
       })}
-      <path d={area} fill={`url(#${gradId})`} />
-      <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      {areaSegs.map((d, i) => <path key={i} d={d} fill={`url(#${gradId})`} />)}
+      {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />}
       {path2 && <path d={path2} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 3" strokeLinejoin="round" />}
-      {data.map((d, i) => <g key={i}>
-        <circle cx={xi(i)} cy={yv(d.value)} r={3} fill={color} stroke="white" strokeWidth={1.5}><title>{d.label}: {short(d.value)}</title></circle>
-        <text x={xi(i)} y={H - 5} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.4}>{d.label}</text>
-      </g>)}
+      {data.map((d, i) => d.value != null ? (
+        <g key={i}>
+          <circle cx={xi(i)} cy={yv(d.value)} r={3} fill={color} stroke="white" strokeWidth={1.5}><title>{d.label}: {short(d.value)}</title></circle>
+          <text x={xi(i)} y={H - 5} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.4}>{d.label}</text>
+        </g>
+      ) : (
+        <text key={i} x={xi(i)} y={H - 5} textAnchor="middle" fontSize={8} fill="currentColor" fillOpacity={0.2}>{d.label}</text>
+      ))}
     </svg>
   );
 }
@@ -376,7 +403,9 @@ function ForecastVsTargetCard({ data, period, onPeriodChange, onSaveTarget, canE
 
 // Conversion Funnel — shows both Overall Conversion and Stage-to-Stage Conversion
 function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
-  const maxCount = data[0]?.count ?? 1;
+  const mainSteps = data.filter((s) => !s.isRejected);
+  const rejectedStep = data.find((s) => s.isRejected);
+  const maxCount = mainSteps[0]?.count ?? 1;
   const COLORS = ['#6366f1', '#8b5cf6', '#10b981', '#06b6d4'];
   return (
     <Card>
@@ -384,9 +413,9 @@ function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
         <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-1">
           <TrendingUp className="h-4 w-4 text-purple-500" />Conversion Funnel (12 เดือน)
         </h2>
-        <p className="text-[10px] text-muted-foreground mb-3">Overall = จากขั้นแรก · Stage = จากขั้นก่อนหน้า</p>
+        <p className="text-[10px] text-muted-foreground mb-3">Overall = จากขั้นแรก · Stage = จากขั้นก่อนหน้า · Win Rate นับเฉพาะ Rejected</p>
         <div className="space-y-4">
-          {data.map((step, i) => (
+          {mainSteps.map((step, i) => (
             <div key={i}>
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <div className="flex items-center gap-1.5">
@@ -409,17 +438,47 @@ function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
                   <span className="text-[10px] text-white font-semibold">{step.conversionFromFirst}%</span>
                 </div>
               </div>
-              {i < data.length - 1 && (
+              {i < mainSteps.length - 1 && (
                 <div className="flex items-center gap-1 mt-1 pl-3">
                   <div className="w-px h-3 bg-border mx-1" />
                   <span className="text-[10px] text-muted-foreground">
-                    {data[i].label} → {data[i + 1].label}: <span className="font-semibold">{data[i + 1].conversionFromPrev}%</span>
+                    {mainSteps[i].label} → {mainSteps[i + 1].label}: <span className="font-semibold">{mainSteps[i + 1].conversionFromPrev}%</span>
                   </span>
                 </div>
               )}
             </div>
           ))}
         </div>
+
+        {/* ── Rejected Section ─────────────────────────────────────────── */}
+        {rejectedStep && (
+          <div className="mt-4 pt-4 border-t border-red-200 dark:border-red-900/40">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />
+              <span className="text-xs font-semibold text-red-600 dark:text-red-400">ถูกปฏิเสธ (Rejected)</span>
+              <span className="text-[10px] text-muted-foreground ml-1">— นับใน Win Rate</span>
+            </div>
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span className="text-muted-foreground">{rejectedStep.count} รายการ · {short(rejectedStep.value)}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 font-semibold">
+                  {rejectedStep.conversionFromFirst}% ของ Quotation ทั้งหมด
+                </span>
+              </div>
+            </div>
+            <div className="h-6 bg-red-50 dark:bg-red-900/10 rounded-lg overflow-hidden">
+              <div className="h-full rounded-lg bg-red-400/70 transition-all duration-700 flex items-center justify-end pr-2"
+                style={{ width: `${Math.max(4, (rejectedStep.count / maxCount) * 100)}%` }}>
+                <span className="text-[10px] text-white font-semibold">{rejectedStep.conversionFromFirst}%</span>
+              </div>
+            </div>
+            {rejectedStep.count > 0 && (
+              <p className="text-[10px] text-red-500 dark:text-red-400 mt-1.5">
+                ⚠ มี {rejectedStep.count} รายการที่ลูกค้าปฏิเสธ — ควรวิเคราะห์สาเหตุเพื่อปรับกลยุทธ์การขาย
+              </p>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -499,7 +558,7 @@ function ForecastAccuracyCard({ data }: { data: AccuracyMonth[] }) {
     : null;
   const hasData = accuracyMonths.length > 0;
   // ใช้เฉพาะเดือนที่มีข้อมูล ไม่ plot 0 แทน null เพื่อกราฟไม่โค้งลงผิด
-  const chartData = accuracyMonths.map((m) => ({ label: m.label, value: m.accuracy ?? 0, value2: null }));
+  const chartData = accuracyMonths.map((m) => ({ label: m.label, value: m.accuracy, value2: null }));
   return (
     <Card>
       <CardContent className="pt-5">
@@ -613,7 +672,7 @@ function TopSalesCard({ data }: { data: SalesPerf[] }) {
         </div>
         <div className="mt-3 pt-3 border-t text-[10px] text-muted-foreground flex items-start gap-1.5">
           <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
-          Win Rate = SO ÷ (SO + ไม่ผ่าน) · Avg Deal = มูลค่าเฉลี่ยต่อ SO · ตัวเลขวงเล็บ = จำนวน Deal (น้อยกว่า 3 = ข้อมูลน้อย)
+          Win Rate = SO ÷ (SO + REJECTED) · ไม่ผ่าน = รวม REJECTED/CANCELLED/EXPIRED · Avg Deal = มูลค่าเฉลี่ยต่อ SO · วงเล็บ = Deal น้อยกว่า 3 (ข้อมูลน้อย)
         </div>
       </CardContent>
     </Card>
@@ -634,7 +693,7 @@ function TrendCard({ revData, winData }: { revData: TrendMonth[]; winData: WinRa
   const latestYoy = revData.filter((m) => m.yoyGrowth !== null).slice(-1)[0];
   const momExtreme = latestMom?.momIsExtreme;
   const revChartData = revData.map((m) => ({ label: m.label, value: m.actual, value2: m.prevYearActual }));
-  const wrChartData = winData.map((m) => ({ label: m.label, value: m.winRate ?? 0 }));
+  const wrChartData = winData.map((m) => ({ label: m.label, value: m.winRate }));
   const withWrData = winData.filter((m) => m.winRate !== null);
   const avg = withWrData.length > 0 ? Math.round(withWrData.reduce((s, m) => s + (m.winRate ?? 0), 0) / withWrData.length) : null;
 
@@ -764,7 +823,7 @@ function TrendCard({ revData, winData }: { revData: TrendMonth[]; winData: WinRa
 
         <div className="mt-2 text-[10px] text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 shrink-0 mt-px" />
-          Win Rate = SO ÷ (SO + REJECTED/CANCELLED/EXPIRED) รายเดือน · Win Rate avg 3m ล่าสุด vs ค่าเฉลี่ย 12m
+          Win Rate = SO ÷ (SO + REJECTED) รายเดือน · CANCELLED/EXPIRED ไม่นับเป็น loss · Win Rate avg 3m ล่าสุด vs ค่าเฉลี่ย 12m
         </div>
       </CardContent>
     </Card>
@@ -812,7 +871,7 @@ function PipelineHealthCard({ data }: { data: PipelineHealth }) {
                 <span className="text-[10px] text-muted-foreground w-8 text-right">{s.count}</span>
                 <span className="text-[10px] text-muted-foreground w-8 text-right">{s.probability}%</span>
                 <span className="text-xs font-semibold w-16 text-right">{short(s.value)}</span>
-                <span className="text-[10px] text-muted-foreground w-14 text-right">→{short(s.weightedValue)}</span>
+                <span className="text-[10px] text-muted-foreground w-14 text-right">={short(s.weightedValue)}</span>
               </div>
             ))}
             <div className="mt-2 text-[10px] text-muted-foreground flex items-center gap-1 pt-2 border-t">

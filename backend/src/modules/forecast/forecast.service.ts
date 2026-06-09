@@ -16,6 +16,8 @@ const ACTIVE_STATUSES: QuotationStatus[] = ['APPROVED', 'PO_PENDING', 'PO_APPROV
 const AT_RISK_STATUSES: QuotationStatus[] = ['DRAFT', 'PENDING', 'PENDING_ESCALATED', 'APPROVED'];
 const CONFIRMED_SO: SaleOrderStatus[] = ['CONFIRMED', 'COMPLETED'];
 const LOST_STATUSES: QuotationStatus[] = ['REJECTED', 'CANCELLED', 'EXPIRED'];
+// Win Rate นับเฉพาะ REJECTED = ลูกค้าปฏิเสธ, ไม่นับ CANCELLED/EXPIRED (ยกเลิกหรือหมดอายุ ≠ แพ้การขาย)
+const WIN_LOST_STATUSES: QuotationStatus[] = ['REJECTED'];
 
 function toNum(v: Decimal | null | undefined): number {
   return v == null ? 0 : Number(v.toString());
@@ -349,13 +351,15 @@ export const forecastService = {
     const totalQtVal = quotations12m.reduce((s, q) => s + toNum(q.grandTotal), 0);
     const pendingQts = quotations12m.filter((q) => ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status));
     const approvedQts = quotations12m.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
+    const rejectedQts = quotations12m.filter((q) => q.status === 'REJECTED');
     const soValue = toNum(soValueAgg._sum?.grandTotal);
 
     const conversionFunnel = [
-      { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100 },
-      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0 },
-      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((approvedQts.length / pendingQts.length) * 100) : 0 },
-      { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0 },
+      { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100, isRejected: false },
+      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false },
+      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((approvedQts.length / pendingQts.length) * 100) : 0, isRejected: false },
+      { label: 'Sale Order', step: 4, count: soCount12m, value: soValue, conversionFromFirst: totalQts > 0 ? Math.round((soCount12m / totalQts) * 100) : 0, conversionFromPrev: approvedQts.length > 0 ? Math.round((soCount12m / approvedQts.length) * 100) : 0, isRejected: false },
+      { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true },
     ];
 
     // ── 3. Deals At Risk (sorted by riskScore desc) ───────────────────────
@@ -388,22 +392,27 @@ export const forecastService = {
       }));
 
     // ── 5. Top Sales Performance ──────────────────────────────────────────
-    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; pendingCount: number; saleOrderCount: number; soValues: number[] };
+    // lostCount = REJECTED + CANCELLED + EXPIRED (แสดงใน "ไม่ผ่าน")
+    // rejectedCount = REJECTED only (ใช้คำนวณ Win Rate เหมือน Win Rate Trend)
+    type PerfEntry = { userId: string; name: string; actualRevenue: number; quotationCount: number; pipelineCount: number; lostCount: number; rejectedCount: number; pendingCount: number; saleOrderCount: number; soValues: number[] };
     const perfMap = new Map<string, PerfEntry>();
     for (const q of quotations12m) {
       const uid = q.createdBy.id;
-      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
+      if (!perfMap.has(uid)) perfMap.set(uid, { userId: uid, name: q.createdBy.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, rejectedCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
       const e = perfMap.get(uid)!;
       e.quotationCount++;
       if (['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status)) e.pipelineCount++;
-      else if (LOST_STATUSES.includes(q.status as QuotationStatus)) e.lostCount++;
+      else if (LOST_STATUSES.includes(q.status as QuotationStatus)) {
+        e.lostCount++;
+        if (WIN_LOST_STATUSES.includes(q.status as QuotationStatus)) e.rejectedCount++;
+      }
       else e.pendingCount++;
     }
     for (const so of confirmedSO12m) {
       if (!so.quotationId) continue;
       const cb = qtCreatedByMap.get(so.quotationId);
       if (!cb) continue;
-      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
+      if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, rejectedCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
       const e = perfMap.get(cb.id)!;
       const val = toNum(so.grandTotal);
       e.actualRevenue += val;
@@ -412,7 +421,8 @@ export const forecastService = {
     }
     const topSalesPerformance = Array.from(perfMap.values())
       .map((e) => {
-        const closedDeals = e.saleOrderCount + e.lostCount;
+        // Win Rate นับเฉพาะ REJECTED เป็น loss (เหมือน Win Rate Trend)
+        const closedDeals = e.saleOrderCount + e.rejectedCount;
         const winRate = closedDeals > 0 ? Math.round((e.saleOrderCount / closedDeals) * 100) : null;
         const avgDealSize = e.soValues.length > 0 ? Math.round(e.soValues.reduce((a, b) => a + b, 0) / e.soValues.length) : 0;
         return { userId: e.userId, name: e.name, actualRevenue: e.actualRevenue, quotationCount: e.quotationCount, pipelineCount: e.pipelineCount, lostCount: e.lostCount, pendingCount: e.pendingCount, saleOrderCount: e.saleOrderCount, closedDeals, winRate, lowSample: closedDeals < 3, avgDealSize };
@@ -514,8 +524,8 @@ export const forecastService = {
     // ── 10. Win Rate Trend (per month, 12 months) ─────────────────────────
     const winRateTrend = months12.map((m) => {
       const won = confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).length;
-      // ใช้ updatedAt เป็น proxy ของวันที่ status เปลี่ยนเป็น lost (ดีกว่า createdAt ซึ่งเป็นวันสร้าง)
-      const lost = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= m.start && new Date(q.updatedAt) < m.end).length;
+      // ใช้ updatedAt เป็น proxy ของวันที่ status เปลี่ยน, นับเฉพาะ REJECTED (ไม่นับ CANCELLED/EXPIRED)
+      const lost = quotations12m.filter((q) => WIN_LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= m.start && new Date(q.updatedAt) < m.end).length;
       return { label: m.label, month: m.month, year: m.year, won, lost, winRate: won + lost > 0 ? Math.round((won / (won + lost)) * 100) : null };
     });
 
@@ -558,7 +568,7 @@ export const forecastService = {
     // Win Rate 6m
     const last6mStart2 = lastNMonths(6)[0].start;
     const won6m = confirmedSO12m.filter((o) => new Date(o.issueDate!) >= last6mStart2).length;
-    const lost6m = quotations12m.filter((q) => LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= last6mStart2).length;
+    const lost6m = quotations12m.filter((q) => WIN_LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= last6mStart2).length;
     const winRate6m = won6m + lost6m > 0 ? Math.round((won6m / (won6m + lost6m)) * 100) : null;
 
     // Customer concentration
