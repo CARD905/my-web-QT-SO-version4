@@ -659,7 +659,8 @@ export const forecastService = {
     const mWithTarget = fvtPast.filter((m) => m.target != null && m.target > 0);
     const mHit = mWithTarget.filter((m) => m.actual >= (m.target ?? 0));
     const targetHitRate = mWithTarget.length > 0 ? Math.round((mHit.length / mWithTarget.length) * 100) : null;
-    const accM2 = forecastAccuracy.filter((m) => m.actual > 0);
+    // exclude เดือนที่ forecast=0 (ไม่มีประวัติ) เพื่อไม่ให้ bias เบี้ยว
+    const accM2 = forecastAccuracy.filter((m) => m.actual > 0 && m.forecast > 0);
     const forecastBias = accM2.length > 0
       ? Math.round(accM2.reduce((s, m) => s + (m.forecast - m.actual), 0) / accM2.length)
       : null;
