@@ -424,7 +424,7 @@ function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
                   <span className="text-muted-foreground">{step.count} รายการ · {short(step.value)}</span>
                   {i === 0 && step.excludedCount > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
-                      ไม่รวม {step.excludedCount} Cancelled/Expired
+                      ไม่รวม {step.excludedCount} Draft/Cancelled/Expired
                     </span>
                   )}
                 </div>

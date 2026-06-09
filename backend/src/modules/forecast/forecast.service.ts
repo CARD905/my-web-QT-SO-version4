@@ -346,9 +346,10 @@ export const forecastService = {
     const yForecast = fvtMonthly.reduce((s, m) => s + m.forecast, 0);
 
     // ── 2. Conversion Funnel ──────────────────────────────────────────────
-    // CANCELLED/EXPIRED ถูกตัดออกจาก base — ไม่ใช่ loss จากการขาย แค่ไม่ active
-    const cancelledExpiredQts = quotations12m.filter((q) => q.status === 'CANCELLED' || q.status === 'EXPIRED');
-    const baseQts = quotations12m.filter((q) => q.status !== 'CANCELLED' && q.status !== 'EXPIRED');
+    // DRAFT/CANCELLED/EXPIRED ตัดออกจาก base — ยังไม่เข้ากระบวนการขาย หรือไม่ใช่ loss จากการขาย
+    const excludedStatuses = ['DRAFT', 'CANCELLED', 'EXPIRED'];
+    const cancelledExpiredQts = quotations12m.filter((q) => excludedStatuses.includes(q.status));
+    const baseQts = quotations12m.filter((q) => !excludedStatuses.includes(q.status));
     const totalQts = baseQts.length;
     const totalQtVal = baseQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
 
