@@ -44,6 +44,20 @@ interface KpiSummary {
   top5CustomerPct: number | null; totalRevenue12m: number;
 }
 interface CustomerConcentration { company: string; total: number; pct: number; }
+interface RevenueAtRisk {
+  highCount: number; highValue: number; highWeighted: number;
+  mediumCount: number; mediumValue: number; mediumWeighted: number;
+  totalRiskValue: number; totalRiskWeighted: number;
+  riskPct: number; safeValue: number;
+}
+interface IntakeTrendItem { label: string; month: number; year: number; count: number; value: number; activeCount: number; }
+interface DealSizeBucket { label: string; count: number; value: number; pct: number; }
+interface PipelineIntake { trend: IntakeTrendItem[]; intakeMoM: number | null; dealSizeBuckets: DealSizeBucket[]; }
+interface ForecastInsights {
+  targetHitRate: number | null; monthsHit: number; monthsTotal: number;
+  forecastBias: number | null; forecastBiasDir: 'OVER' | 'UNDER' | 'BALANCED' | null;
+  customerRetention: { uniqueCustomers: number; repeatCustomers: number; newCustomers: number; repeatRate: number };
+}
 interface MonthProgress {
   daysElapsed: number; daysTotal: number; daysRemaining: number;
   actual: number; target: number | null;
@@ -73,6 +87,9 @@ interface AdvancedData {
   roleCode: string;
   monthProgress: MonthProgress;
   scenarioForecast: ScenarioForecast;
+  revenueAtRisk: RevenueAtRisk;
+  pipelineIntake: PipelineIntake;
+  forecastInsights: ForecastInsights;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1101,6 +1118,197 @@ function CustomerConcentrationCard({ data, totalRevenue }: { data: CustomerConce
   );
 }
 
+function RevenueAtRiskCard({ data }: { data: RevenueAtRisk }) {
+  const total = data.safeValue + data.totalRiskValue;
+  const safePct = total > 0 ? Math.round((data.safeValue / total) * 100) : 100;
+  const medPct = total > 0 ? Math.round((data.mediumValue / total) * 100) : 0;
+  const highPct = total > 0 ? Math.round((data.highValue / total) * 100) : 0;
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <ShieldAlert className="h-4 w-4 text-red-500" />Revenue at Risk
+          </h2>
+          <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full',
+            data.riskPct > 50 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : data.riskPct > 25 ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20')}>
+            {data.riskPct}% ของ Pipeline
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20">
+            <div className="text-[10px] font-semibold text-red-600 mb-1 flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />HIGH Risk · {data.highCount} ดีล
+            </div>
+            <div className="text-lg font-bold text-red-600">{short(data.highValue)}</div>
+            <div className="text-[10px] text-red-500/80">weighted {short(data.highWeighted)}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+            <div className="text-[10px] font-semibold text-amber-600 mb-1 flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />MEDIUM Risk · {data.mediumCount} ดีล
+            </div>
+            <div className="text-lg font-bold text-amber-600">{short(data.mediumValue)}</div>
+            <div className="text-[10px] text-amber-500/80">weighted {short(data.mediumWeighted)}</div>
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+            <span>Pipeline ทั้งหมด: {short(total)}</span>
+            <span className="text-emerald-600 font-medium">ปลอดภัย {safePct}%</span>
+          </div>
+          <div className="h-3 bg-muted rounded-full overflow-hidden flex gap-px">
+            {safePct > 0 && <div className="h-full bg-emerald-400 rounded-l-full" style={{ width: `${safePct}%` }} />}
+            {medPct > 0 && <div className="h-full bg-amber-400" style={{ width: `${medPct}%` }} />}
+            {highPct > 0 && <div className="h-full bg-red-400 rounded-r-full" style={{ width: `${highPct}%` }} />}
+          </div>
+          <div className="flex items-center gap-3 mt-1.5">
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="h-1.5 w-3 rounded bg-emerald-400 shrink-0" />ปลอดภัย</span>
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="h-1.5 w-3 rounded bg-amber-400 shrink-0" />MEDIUM</span>
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="h-1.5 w-3 rounded bg-red-400 shrink-0" />HIGH</span>
+          </div>
+        </div>
+        {data.highCount > 0 && (
+          <div className="mt-3 pt-3 border-t text-[10px] text-red-600 flex items-start gap-1">
+            <Info className="h-3 w-3 shrink-0 mt-px" />
+            {data.highCount} ดีลเสี่ยงสูง — ควรติดตามและอัปเดตสถานะทันที เพื่อป้องกัน {short(data.highValue)} หลุดจาก Pipeline
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PipelineIntakeCard({ data }: { data: PipelineIntake }) {
+  const last6 = data.trend.slice(-6);
+  const maxCount = Math.max(...last6.map((m) => m.count), 1);
+  const BUCKET_COLORS = ['bg-slate-400', 'bg-blue-400', 'bg-indigo-500', 'bg-purple-500'];
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <TrendingUp className="h-4 w-4 text-emerald-500" />Pipeline Intake
+            <span className="text-[10px] font-normal text-muted-foreground">(Quotation ใหม่)</span>
+          </h2>
+          {data.intakeMoM != null && (
+            <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/60 flex items-center gap-0.5',
+              data.intakeMoM >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+              {data.intakeMoM >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+              {data.intakeMoM >= 0 ? '+' : ''}{data.intakeMoM}% MoM
+            </span>
+          )}
+        </div>
+        {/* Bar chart */}
+        <div className="flex items-end gap-1 mb-1" style={{ height: 64 }}>
+          {last6.map((m, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+              {m.count > 0 && <div className="text-[9px] text-muted-foreground leading-none">{m.count}</div>}
+              <div className="w-full bg-emerald-500/75 rounded-t-sm" style={{ height: `${Math.max((m.count / maxCount) * 52, m.count > 0 ? 4 : 0)}px` }} />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1 mb-4">
+          {last6.map((m, i) => (
+            <div key={i} className="flex-1 text-[9px] text-muted-foreground text-center truncate">{m.label}</div>
+          ))}
+        </div>
+        {/* Deal size distribution */}
+        <div className="border-t pt-3">
+          <div className="text-[10px] font-medium text-muted-foreground mb-2">ขนาดดีล (Pipeline ปัจจุบัน)</div>
+          <div className="space-y-1.5">
+            {data.dealSizeBuckets.filter((b) => b.count > 0).map((b, i) => (
+              <div key={i}>
+                <div className="flex items-center gap-2 text-xs mb-0.5">
+                  <span className="text-muted-foreground w-16 shrink-0 text-[10px]">{b.label}</span>
+                  <span className="text-[10px] text-muted-foreground">{b.count} ดีล</span>
+                  <span className="flex-1 text-right font-medium text-[11px]">{short(b.value)}</span>
+                  <span className="font-bold w-8 text-right text-[11px]">{b.pct}%</span>
+                </div>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={cn('h-full rounded-full', BUCKET_COLORS[i % BUCKET_COLORS.length])} style={{ width: `${b.pct}%` }} />
+                </div>
+              </div>
+            ))}
+            {data.dealSizeBuckets.every((b) => b.count === 0) && (
+              <div className="text-xs text-muted-foreground text-center py-2">ไม่มี Pipeline ปัจจุบัน</div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ForecastInsightsCard({ data }: { data: ForecastInsights }) {
+  const { targetHitRate, monthsHit, monthsTotal, forecastBias, forecastBiasDir, customerRetention: cr } = data;
+  const biasColor = forecastBiasDir === 'OVER' ? 'text-amber-600' : forecastBiasDir === 'UNDER' ? 'text-blue-600' : 'text-emerald-600';
+  const biasLabel = forecastBiasDir === 'OVER' ? 'Over-forecast (สูงกว่าจริง)' : forecastBiasDir === 'UNDER' ? 'Under-forecast (ต่ำกว่าจริง)' : 'Balanced ✓';
+  const biasAdvice = forecastBiasDir === 'OVER' ? 'Forecast สูงกว่าจริงเฉลี่ย → ควรปรับลด' : forecastBiasDir === 'UNDER' ? 'Forecast ต่ำกว่าจริง → เพิ่ม Confidence ได้' : 'Forecast แม่นยำสมดุลดี';
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-4">
+          <Zap className="h-4 w-4 text-blue-500" />Forecast Insights
+        </h2>
+        {/* Target Hit Rate */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">Target Hit Rate</span>
+            <span className="font-bold">{monthsHit}/{monthsTotal} เดือน</span>
+          </div>
+          {monthsTotal > 0 ? (
+            <>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className={cn('h-full rounded-full', (targetHitRate ?? 0) >= 60 ? 'bg-emerald-500' : (targetHitRate ?? 0) >= 30 ? 'bg-amber-500' : 'bg-red-500')}
+                  style={{ width: `${targetHitRate ?? 0}%` }} />
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">ทำได้เป้าหมาย {targetHitRate}% ของเดือนที่มีการตั้งเป้า</div>
+            </>
+          ) : (
+            <div className="text-[10px] text-muted-foreground">ยังไม่มีข้อมูลเป้าหมาย</div>
+          )}
+        </div>
+        {/* Forecast Bias */}
+        {forecastBias !== null && (
+          <div className="mb-3 p-2.5 rounded-lg bg-muted/40">
+            <div className="text-[10px] text-muted-foreground mb-0.5">Forecast Bias (avg/เดือน)</div>
+            <div className={cn('text-sm font-bold', biasColor)}>
+              {forecastBias >= 0 ? '+' : ''}{short(Math.abs(forecastBias))} · {biasLabel}
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">{biasAdvice}</div>
+          </div>
+        )}
+        {/* Customer Retention */}
+        <div className="border-t pt-3">
+          <div className="text-[10px] font-medium text-muted-foreground mb-2 flex items-center gap-1">
+            <Users className="h-3 w-3" />ลูกค้า 12 เดือน
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 mb-2">
+            <div className="text-center p-2 rounded-lg bg-muted/30">
+              <div className="text-base font-bold">{cr.uniqueCustomers}</div>
+              <div className="text-[9px] text-muted-foreground">ทั้งหมด</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-muted/30">
+              <div className="text-base font-bold text-emerald-600">{cr.repeatCustomers}</div>
+              <div className="text-[9px] text-muted-foreground">สั่งซ้ำ</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-muted/30">
+              <div className={cn('text-base font-bold', cr.repeatRate >= 50 ? 'text-emerald-600' : cr.repeatRate >= 25 ? 'text-amber-600' : 'text-red-600')}>{cr.repeatRate}%</div>
+              <div className="text-[9px] text-muted-foreground">Repeat Rate</div>
+            </div>
+          </div>
+          {cr.repeatRate < 30 && cr.uniqueCustomers > 0 && (
+            <div className="text-[10px] text-amber-600 flex items-start gap-1">
+              <Info className="h-3 w-3 shrink-0 mt-px" />
+              Repeat Rate ต่ำ — โฟกัสรักษาลูกค้าเดิมให้กลับมาสั่งซ้ำ
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MonthProgressCard({ data }: { data: MonthProgress }) {
   const pctDays = data.pctElapsed;
   const pctRev = data.pctAchieved ?? 0;
@@ -1305,7 +1513,7 @@ export default function ForecastPage() {
 
   if (!data) return <div className="text-center py-20 text-muted-foreground">ไม่สามารถโหลดข้อมูลได้</div>;
 
-  const { forecastVsTarget, conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance, revenueTrend, pipelineHealth, topOpportunities, agingPipeline, winRateTrend, kpiSummary, customerConcentration, monthProgress, scenarioForecast } = data;
+  const { forecastVsTarget, conversionFunnel, dealsAtRisk, forecastAccuracy, topSalesPerformance, revenueTrend, pipelineHealth, topOpportunities, agingPipeline, winRateTrend, kpiSummary, customerConcentration, monthProgress, scenarioForecast, revenueAtRisk, pipelineIntake, forecastInsights } = data;
 
   const currentM = forecastVsTarget.monthly[forecastVsTarget.monthly.length - 1];
   const latestTrend = revenueTrend[revenueTrend.length - 1];
@@ -1476,10 +1684,19 @@ export default function ForecastPage() {
         <PipelineHealthCard data={pipelineHealth} />
       </div>
 
-      {/* ── Deals At Risk + Top Opportunities ───────────────────────────── */}
+      {/* ── Deals At Risk + Revenue at Risk ──────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <DealsAtRiskCard data={dealsAtRisk} />
-        <TopOpportunitiesCard data={topOpportunities} />
+        <RevenueAtRiskCard data={revenueAtRisk} />
+      </div>
+
+      {/* ── Top Opportunities ────────────────────────────────────────────── */}
+      <TopOpportunitiesCard data={topOpportunities} />
+
+      {/* ── Pipeline Intake + Forecast Insights ─────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PipelineIntakeCard data={pipelineIntake} />
+        <ForecastInsightsCard data={forecastInsights} />
       </div>
 
       {/* ── Revenue + Win Rate Trend (Manager/CEO) ───────────────────────── */}

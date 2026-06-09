@@ -600,7 +600,97 @@ export const forecastService = {
       totalRevenue12m: totalRev12m,
     };
 
-    // ── 12. Month Progress ────────────────────────────────────────────────
+    // ── 12. Revenue At Risk (aggregate from full atRiskRaw, not capped list) ─
+    const allAtRiskFull = atRiskRaw
+      .map((q) => ({ ...assessRisk(q), grandTotal: toNum(q.grandTotal), status: q.status }))
+      .filter((r) => r.riskLevel !== 'LOW');
+    const rarByLevel: Record<string, { count: number; value: number; weighted: number }> = {};
+    for (const r of allAtRiskFull) {
+      if (!rarByLevel[r.riskLevel]) rarByLevel[r.riskLevel] = { count: 0, value: 0, weighted: 0 };
+      rarByLevel[r.riskLevel].count++;
+      rarByLevel[r.riskLevel].value += r.grandTotal;
+      rarByLevel[r.riskLevel].weighted += r.grandTotal * (PIPELINE_WEIGHTS[r.status] ?? 0);
+    }
+    const rarH = rarByLevel['HIGH'] ?? { count: 0, value: 0, weighted: 0 };
+    const rarM = rarByLevel['MEDIUM'] ?? { count: 0, value: 0, weighted: 0 };
+    const totalRarVal = rarH.value + rarM.value;
+    const revenueAtRisk = {
+      highCount: rarH.count, highValue: Math.round(rarH.value), highWeighted: Math.round(rarH.weighted),
+      mediumCount: rarM.count, mediumValue: Math.round(rarM.value), mediumWeighted: Math.round(rarM.weighted),
+      totalRiskValue: Math.round(totalRarVal),
+      totalRiskWeighted: Math.round(rarH.weighted + rarM.weighted),
+      riskPct: pipeTotal > 0 ? Math.round((totalRarVal / pipeTotal) * 100) : 0,
+      safeValue: Math.round(Math.max(0, pipeTotal - totalRarVal)),
+    };
+
+    // ── 13. Pipeline Intake Trend + Deal Size Distribution ────────────────
+    const intakeTrend = months12.map((m) => {
+      const newQts = quotations12m.filter((q) => { const d = new Date(q.createdAt); return d >= m.start && d < m.end; });
+      return {
+        label: m.label, month: m.month, year: m.year,
+        count: newQts.length,
+        value: Math.round(newQts.reduce((s, q) => s + toNum(q.grandTotal), 0)),
+        activeCount: newQts.filter((q) => ACTIVE_STATUSES.includes(q.status as QuotationStatus)).length,
+      };
+    });
+    const li = intakeTrend[intakeTrend.length - 1];
+    const pi = intakeTrend[intakeTrend.length - 2];
+    const intakeMoM = li && pi && pi.count > 0 ? Math.round(((li.count - pi.count) / pi.count) * 100) : null;
+
+    const SIZE_BRACKETS = [
+      { label: '< 500K', min: 0, max: 500_000 },
+      { label: '500K–2M', min: 500_000, max: 2_000_000 },
+      { label: '2M–10M', min: 2_000_000, max: 10_000_000 },
+      { label: '> 10M', min: 10_000_000, max: Infinity },
+    ] as const;
+    const totalPipeCount = activePipeline.length;
+    const dealSizeBuckets = SIZE_BRACKETS.map((b) => {
+      const items = activePipeline.filter((q) => { const v = toNum(q.grandTotal); return v >= b.min && v < b.max; });
+      return {
+        label: b.label, count: items.length,
+        value: Math.round(items.reduce((s, q) => s + toNum(q.grandTotal), 0)),
+        pct: totalPipeCount > 0 ? Math.round((items.length / totalPipeCount) * 100) : 0,
+      };
+    });
+    const pipelineIntake = { trend: intakeTrend, intakeMoM, dealSizeBuckets };
+
+    // ── 14. Forecast Insights (Target Hit Rate + Bias + Customer Retention) ─
+    const fvtPast = fvtMonthly.filter((m) => m.actual > 0);
+    const mWithTarget = fvtPast.filter((m) => m.target != null && m.target > 0);
+    const mHit = mWithTarget.filter((m) => m.actual >= (m.target ?? 0));
+    const targetHitRate = mWithTarget.length > 0 ? Math.round((mHit.length / mWithTarget.length) * 100) : null;
+    const accM2 = forecastAccuracy.filter((m) => m.actual > 0);
+    const forecastBias = accM2.length > 0
+      ? Math.round(accM2.reduce((s, m) => s + (m.forecast - m.actual), 0) / accM2.length)
+      : null;
+    const forecastBiasDir: 'OVER' | 'UNDER' | 'BALANCED' | null =
+      forecastBias == null ? null : Math.abs(forecastBias) < 200_000 ? 'BALANCED' : forecastBias > 0 ? 'OVER' : 'UNDER';
+
+    // Customer retention via quotationId → company lookup
+    const qtCompanyMap2 = new Map(quotations12m.map((q) => [q.id, q.customerCompany]));
+    const soCompanyList = confirmedSO12m
+      .filter((o) => o.quotationId)
+      .map((o) => qtCompanyMap2.get(o.quotationId!))
+      .filter((c): c is string => c !== undefined);
+    const custOrderCounts = soCompanyList.reduce(
+      (acc, c) => { acc[c] = (acc[c] ?? 0) + 1; return acc; },
+      {} as Record<string, number>
+    );
+    const uniqueCust12m = Object.keys(custOrderCounts).length;
+    const repeatCust = Object.values(custOrderCounts).filter((n) => n > 1).length;
+
+    const forecastInsights = {
+      targetHitRate, monthsHit: mHit.length, monthsTotal: mWithTarget.length,
+      forecastBias, forecastBiasDir,
+      customerRetention: {
+        uniqueCustomers: uniqueCust12m,
+        repeatCustomers: repeatCust,
+        newCustomers: uniqueCust12m - repeatCust,
+        repeatRate: uniqueCust12m > 0 ? Math.round((repeatCust / uniqueCust12m) * 100) : 0,
+      },
+    };
+
+    // ── 15. Month Progress ────────────────────────────────────────────────
     const daysTotal = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const daysElapsed = now.getDate();
     const daysRemaining = daysTotal - daysElapsed;
@@ -664,6 +754,7 @@ export const forecastService = {
       revenueTrend, pipelineHealth, topOpportunities, agingPipeline,
       winRateTrend, kpiSummary, customerConcentration, roleCode,
       monthProgress, scenarioForecast,
+      revenueAtRisk, pipelineIntake, forecastInsights,
     };
   },
 };
