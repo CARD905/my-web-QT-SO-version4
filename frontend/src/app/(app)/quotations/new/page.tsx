@@ -54,6 +54,7 @@ export default function NewQuotationPage() {
   const [expiryDate, setExpiryDate] = useState(expireDefault);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
+  const [usdExchangeRate, setUsdExchangeRate] = useState(35);
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
   const [normalDiscountMax, setNormalDiscountMax] = useState(20);
@@ -78,6 +79,9 @@ export default function NewQuotationPage() {
         if (sRes.data.data) {
           setNormalDiscountMax(sRes.data.data.normalDiscountMax);
           setVatRate(sRes.data.data.defaultVatRate);
+          if ((sRes.data.data as any).usdExchangeRate) {
+            setUsdExchangeRate(Number((sRes.data.data as any).usdExchangeRate));
+          }
         }
       } catch (err) { toast.error(getApiErrorMessage(err)); }
     })();
@@ -241,6 +245,19 @@ const submitForm = async (mode: 'draft' | 'submit') => {
                 <option value="THB">THB</option><option value="USD">USD</option>
               </select>
             </div>
+            {currency === 'USD' && (
+              <div>
+                <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
+                <Input
+                  type="number" min="1" step="0.01"
+                  value={usdExchangeRate}
+                  onChange={(e) => setUsdExchangeRate(parseFloat(e.target.value) || 35)}
+                  disabled={isFullyDisabled}
+                  className="mt-1.5"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">ใช้เปรียบเทียบกับวงเงินอนุมัติ (THB)</p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -405,8 +422,21 @@ const submitForm = async (mode: 'draft' | 'submit') => {
               </div>
               <div className="border-t pt-3 flex justify-between items-baseline">
                 <span className="font-semibold">{t('quotation.grandTotal')}</span>
-                <span className="text-2xl font-bold text-primary">{formatMoney(calc.grandTotal, currency)}</span>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-primary">{formatMoney(calc.grandTotal, currency)}</div>
+                  {currency === 'USD' && (
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      ≈ {formatMoney(calc.grandTotal * usdExchangeRate, 'THB')}
+                      <span className="ml-1 text-[10px]">(@ {usdExchangeRate} THB/USD)</span>
+                    </div>
+                  )}
+                </div>
               </div>
+              {currency === 'USD' && (
+                <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  วงเงินอนุมัติของ Manager เป็น THB — ระบบจะใช้ <span className="font-semibold">{formatMoney(calc.grandTotal * usdExchangeRate, 'THB')}</span> เปรียบเทียบกับ approval limit
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -457,6 +487,9 @@ const submitForm = async (mode: 'draft' | 'submit') => {
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">รวมสุทธิ:</span>
                 <span className="text-lg font-bold text-primary">{formatMoney(calc.grandTotal, currency)}</span>
+                {currency === 'USD' && (
+                  <span className="text-xs text-muted-foreground">≈ {formatMoney(calc.grandTotal * usdExchangeRate, 'THB')}</span>
+                )}
               </div>
             </div>
             <div className="flex gap-2 ml-auto">

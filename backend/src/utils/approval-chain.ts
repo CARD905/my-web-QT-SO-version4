@@ -11,12 +11,19 @@ export interface ApproverResult {
  * หา approver คนถัดไปจาก userId ที่ส่งมา
  * ไล่ขึ้นไปตาม reportsTo chain
  * ถ้าไม่มี reportsTo → หา CEO
+ *
+ * grandTotal ต้องเป็น THB เสมอ (แปลงก่อนส่งมาถ้า currency=USD)
  */
 export async function findNextApprover(
   prisma: PrismaClient,
   fromUserId: string,
   grandTotal: number,
+  currency: 'THB' | 'USD' = 'THB',
+  usdExchangeRate: number = 35,
 ): Promise<ApproverResult | null> {
+  // แปลงเป็น THB ก่อนเปรียบเทียบกับ approvalLimit (ซึ่งเก็บเป็น THB เสมอ)
+  const grandTotalTHB = currency === 'USD' ? grandTotal * usdExchangeRate : grandTotal;
+
   const fromUser = await prisma.user.findUnique({
     where: { id: fromUserId },
     include: {
@@ -31,7 +38,7 @@ export async function findNextApprover(
   if (fromUser.reportsTo) {
     const manager = fromUser.reportsTo;
     const limit = Number(manager.approvalLimit ?? 0);
-    const exceedsLimit = limit > 0 && grandTotal > limit;
+    const exceedsLimit = limit > 0 && grandTotalTHB > limit;
     return {
       approverId: manager.id,
       approverName: manager.name,
@@ -60,7 +67,8 @@ export async function findEscalationTarget(
   prisma: PrismaClient,
   fromUserId: string,
   grandTotal: number,
+  currency: 'THB' | 'USD' = 'THB',
+  usdExchangeRate: number = 35,
 ): Promise<ApproverResult | null> {
-  // reuse logic เดิม — ไล่ขึ้นไปจาก fromUser
-  return findNextApprover(prisma, fromUserId, grandTotal);
+  return findNextApprover(prisma, fromUserId, grandTotal, currency, usdExchangeRate);
 }

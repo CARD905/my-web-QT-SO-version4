@@ -27,6 +27,7 @@ const GROUP_LABELS: Record<string, string> = {
   vat:       '🧾 VAT',
   discount:  '💰 Discount',
   numbering: '🔢 Running Number',
+  currency:  '💱 Currency',
 };
 
 // ── Role permission types ────────────────────────────────────────────────────

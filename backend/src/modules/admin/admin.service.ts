@@ -775,13 +775,15 @@ export const adminService = {
   },
 
   async getQuotationSettings() {
-    const [normal, vat] = await Promise.all([
+    const [normal, vat, rate] = await Promise.all([
       prisma.systemSetting.findUnique({ where: { key: 'discount.normalMax' } }),
       prisma.systemSetting.findUnique({ where: { key: 'vat.defaultRate' } }),
+      prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } }),
     ]);
     return {
       normalDiscountMax: normal ? (parseFloat(normal.value) || 20) : 20,
       defaultVatRate: vat ? (parseFloat(vat.value) || 7) : 7,
+      usdExchangeRate: rate ? (parseFloat(rate.value) || 35) : 35,
     };
   },
 

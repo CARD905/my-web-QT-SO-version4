@@ -381,6 +381,9 @@ export const quotationsService = {
     }
 
     const grandTotal = Number(existing.grandTotal);
+    const currency = (existing.currency ?? 'THB') as 'THB' | 'USD';
+    const rateSetting = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    const usdExchangeRate = rateSetting ? (parseFloat(rateSetting.value) || 35) : 35;
     const isResubmit = existing.status === 'REJECTED';
 
     // For resubmit: route directly to the manager who rejected (skip Section Manager if already escalated).
@@ -404,7 +407,7 @@ export const quotationsService = {
     }
 
     if (!targetApproverId) {
-      const found = await findNextApprover(prisma as any, userId, grandTotal);
+      const found = await findNextApprover(prisma as any, userId, grandTotal, currency, usdExchangeRate);
       if (!found) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติในสายงาน กรุณาติดต่อ Admin');
       targetApproverId = found.approverId;
       targetApproverName = found.approverName;
@@ -474,9 +477,12 @@ export const quotationsService = {
     }
 
     const grandTotal = Number(existing.grandTotal);
+    const currency = (existing.currency ?? 'THB') as 'THB' | 'USD';
+    const rateSetting = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    const usdExchangeRate = rateSetting ? (parseFloat(rateSetting.value) || 35) : 35;
 
     // หา approver ถัดไปจาก manager คนนี้
-    const next = await findEscalationTarget(prisma as any, managerId, grandTotal);
+    const next = await findEscalationTarget(prisma as any, managerId, grandTotal, currency, usdExchangeRate);
     if (!next) throw new AppError(400, 'NO_APPROVER', 'ไม่พบผู้มีอำนาจอนุมัติถัดไป');
 
     // ดึงข้อมูล manager ที่ escalate
@@ -598,10 +604,17 @@ export const quotationsService = {
     // เช็ค money limit (CEO ไม่มีขีดจำกัด)
     const approverLimit = Number(approverUser.approvalLimit ?? 0);
     const grandTotal = Number(existing.grandTotal);
-    if (!isCeo && approverLimit > 0 && grandTotal > approverLimit) {
+    const qtCurrency = (existing.currency ?? 'THB') as 'THB' | 'USD';
+    const rateRow = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    const usdRate = rateRow ? (parseFloat(rateRow.value) || 35) : 35;
+    const grandTotalTHB = qtCurrency === 'USD' ? grandTotal * usdRate : grandTotal;
+    if (!isCeo && approverLimit > 0 && grandTotalTHB > approverLimit) {
+      const displayAmt = qtCurrency === 'USD'
+        ? `${grandTotal.toLocaleString()} USD (~฿${grandTotalTHB.toLocaleString()})`
+        : `฿${grandTotal.toLocaleString()}`;
       throw new AppError(
         403, 'EXCEEDS_LIMIT',
-        `มูลค่า ${grandTotal.toLocaleString()} เกินวงเงินอนุมัติของคุณ (${approverLimit.toLocaleString()}) — กรุณากด "ส่งต่อ" แทน`,
+        `มูลค่า ${displayAmt} เกินวงเงินอนุมัติของคุณ (฿${approverLimit.toLocaleString()}) — กรุณากด "ส่งต่อ" แทน`,
       );
     }
 
