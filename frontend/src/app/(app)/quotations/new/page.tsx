@@ -94,7 +94,7 @@ export default function NewQuotationPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [submitting]);
 
-  const fetchLiveRate = async (force = false) => {
+  const fetchLiveRate = async (force = false): Promise<number> => {
     const today = new Date().toISOString().slice(0, 10);
     const cacheKey = `usd_thb_rate_${today}`;
     if (!force) {
@@ -102,7 +102,7 @@ export default function NewQuotationPage() {
       if (cached) {
         const { rate } = JSON.parse(cached);
         setUsdExchangeRate(rate);
-        return;
+        return rate;
       }
     }
     setRateLoading(true);
@@ -114,16 +114,26 @@ export default function NewQuotationPage() {
       const rate = Math.round(rawRate * 100) / 100;
       setUsdExchangeRate(rate);
       localStorage.setItem(cacheKey, JSON.stringify({ rate }));
+      return rate;
     } catch {
-      // silently fall back to system setting value
+      return usdExchangeRate;
     } finally {
       setRateLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (currency === 'USD') fetchLiveRate();
-  }, [currency]);
+  const handleCurrencyChange = async (newCurrency: 'THB' | 'USD') => {
+    if (newCurrency === currency) return;
+    let rate = usdExchangeRate;
+    if (newCurrency === 'USD') rate = await fetchLiveRate();
+    const factor = newCurrency === 'USD' ? 1 / rate : rate;
+    setItems((prev) => prev.map((it) => ({
+      ...it,
+      unitPrice: it.unitPrice > 0 ? Math.round(it.unitPrice * factor * 100) / 100 : 0,
+      minUnitPrice: it.minUnitPrice > 0 ? Math.round(it.minUnitPrice * factor * 100) / 100 : 0,
+    })));
+    setCurrency(newCurrency);
+  };
 
   // Payment term hierarchy: index 0 = strictest, higher index = more lenient
   const PAYMENT_TERMS_ORDERED = ['Prepaid', 'COD', 'Net 7', 'Net 15', 'Net 30', 'Net 60', 'Net 90'] as const;
@@ -175,10 +185,14 @@ export default function NewQuotationPage() {
     }
     const p = products.find((x) => x.id === productId);
     if (!p) return;
+    const thbPrice = Number(p.unitPrice);
+    const priceInCurrency = currency === 'USD'
+      ? Math.round((thbPrice / usdExchangeRate) * 100) / 100
+      : thbPrice;
     updateItem(itemId, {
       productId: p.id, productSku: p.sku, productName: p.name,
-      description: p.description || '', unitPrice: Number(p.unitPrice),
-      unit: p.unit, minUnitPrice: Number(p.unitPrice),
+      description: p.description || '', unitPrice: priceInCurrency,
+      unit: p.unit, minUnitPrice: priceInCurrency,
     });
   };
 
@@ -273,7 +287,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
             <div><Label className="text-xs">วันจัดส่ง (ถ้ามี)</Label><Input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className="mt-1.5" disabled={isFullyDisabled} /></div>
             <div>
               <Label className="text-xs">Currency</Label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value as 'THB' | 'USD')} disabled={isFullyDisabled} className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">
+              <select value={currency} onChange={(e) => handleCurrencyChange(e.target.value as 'THB' | 'USD')} disabled={isFullyDisabled || rateLoading} className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm disabled:opacity-60">
                 <option value="THB">THB</option><option value="USD">USD</option>
               </select>
             </div>
@@ -405,7 +419,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
                         const val = parseFloat(e.target.value) || 0;
                         if (item.minUnitPrice > 0 && val < item.minUnitPrice) {
                           updateItem(item.id, { unitPrice: item.minUnitPrice });
-                          toast.warning(`ราคาต้องไม่ต่ำกว่าราคา Master Data (${formatNumber(item.minUnitPrice)})`);
+                          toast.warning(`ราคาต้องไม่ต่ำกว่าราคา Master Data (${formatNumber(item.minUnitPrice)} ${currency})`);
                         }
                       }}
                       className={cn('h-9 text-right', isBelowMin && 'border-destructive ring-1 ring-destructive/40')}
@@ -413,7 +427,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
                     {item.minUnitPrice > 0 && (
                       <div className={cn('text-[10px] text-right flex items-center justify-end gap-1', isBelowMin ? 'text-destructive font-medium' : 'text-muted-foreground')}>
                         <Lock className="h-2.5 w-2.5" />
-                        ≥ {formatNumber(item.minUnitPrice)}
+                        ≥ {formatNumber(item.minUnitPrice)} {currency}
                       </div>
                     )}
                   </div>
