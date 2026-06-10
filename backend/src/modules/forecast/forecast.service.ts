@@ -13,7 +13,7 @@ export const PIPELINE_WEIGHTS: Record<string, number> = {
 };
 
 const ACTIVE_STATUSES: QuotationStatus[] = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'];
-const AT_RISK_STATUSES: QuotationStatus[] = ['DRAFT', 'PENDING', 'PENDING_ESCALATED', 'APPROVED'];
+const AT_RISK_STATUSES: QuotationStatus[] = ['PENDING', 'PENDING_ESCALATED', 'APPROVED'];
 const CONFIRMED_SO: SaleOrderStatus[] = ['CONFIRMED', 'COMPLETED'];
 const LOST_STATUSES: QuotationStatus[] = ['REJECTED', 'CANCELLED', 'EXPIRED'];
 // Win Rate นับเฉพาะ REJECTED = ลูกค้าปฏิเสธ, ไม่นับ CANCELLED/EXPIRED (ยกเลิกหรือหมดอายุ ≠ แพ้การขาย)

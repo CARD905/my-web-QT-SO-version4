@@ -1079,7 +1079,7 @@ function AgingPipelineCard({ data }: { data: AdvancedData['agingPipeline'] }) {
   );
 }
 
-function CustomerConcentrationCard({ data, totalRevenue }: { data: CustomerConcentration[]; totalRevenue: number }) {
+function CustomerConcentrationCard({ data }: { data: CustomerConcentration[] }) {
   if (data.length === 0) return null;
   const top5Total = data.slice(0, 5).reduce((s, c) => s + c.pct, 0);
   const isHighRisk = top5Total > 70;
@@ -1362,6 +1362,9 @@ function PipelineIntakeCard({ data }: { data: PipelineIntake }) {
   const last6 = data.trend.slice(-6);
   const maxCount = Math.max(...last6.map((m) => m.count), 1);
   const BUCKET_COLORS = ['bg-slate-400', 'bg-blue-400', 'bg-indigo-500', 'bg-purple-500'];
+  const now = new Date();
+  const lastBar = last6[last6.length - 1];
+  const isCurrentMonthIncomplete = lastBar && lastBar.month === now.getMonth() + 1 && lastBar.year === now.getFullYear();
   return (
     <Card>
       <CardContent className="pt-5">
@@ -1372,26 +1375,34 @@ function PipelineIntakeCard({ data }: { data: PipelineIntake }) {
           </h2>
           {data.intakeMoM != null && (
             <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full bg-muted/60 flex items-center gap-0.5',
-              data.intakeMoM >= 0 ? 'text-emerald-600' : 'text-red-600')}>
-              {data.intakeMoM >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-              {data.intakeMoM >= 0 ? '+' : ''}{data.intakeMoM}% MoM
+              isCurrentMonthIncomplete ? 'text-muted-foreground' : data.intakeMoM >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+              {!isCurrentMonthIncomplete && (data.intakeMoM >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />)}
+              {data.intakeMoM >= 0 ? '+' : ''}{data.intakeMoM}% MoM{isCurrentMonthIncomplete ? '*' : ''}
             </span>
           )}
         </div>
         {/* Bar chart */}
         <div className="flex items-end gap-1 mb-1" style={{ height: 64 }}>
-          {last6.map((m, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5">
-              {m.count > 0 && <div className="text-[9px] text-muted-foreground leading-none">{m.count}</div>}
-              <div className="w-full bg-emerald-500/75 rounded-t-sm" style={{ height: `${Math.max((m.count / maxCount) * 52, m.count > 0 ? 4 : 0)}px` }} />
-            </div>
-          ))}
+          {last6.map((m, i) => {
+            const isCurrent = isCurrentMonthIncomplete && i === last6.length - 1;
+            return (
+              <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                {m.count > 0 && <div className="text-[9px] text-muted-foreground leading-none">{m.count}{isCurrent ? '*' : ''}</div>}
+                <div className={cn('w-full rounded-t-sm', isCurrent ? 'bg-emerald-500/40 border border-dashed border-emerald-500/60' : 'bg-emerald-500/75')}
+                  style={{ height: `${Math.max((m.count / maxCount) * 52, m.count > 0 ? 4 : 0)}px` }} />
+              </div>
+            );
+          })}
         </div>
-        <div className="flex gap-1 mb-4">
+        <div className="flex gap-1 mb-1">
           {last6.map((m, i) => (
             <div key={i} className="flex-1 text-[9px] text-muted-foreground text-center truncate">{m.label}</div>
           ))}
         </div>
+        {isCurrentMonthIncomplete && (
+          <div className="text-[9px] text-muted-foreground mb-3">* เดือนนี้ยังไม่สิ้นสุด — ตัวเลขจะเพิ่มขึ้นได้</div>
+        )}
+        {!isCurrentMonthIncomplete && <div className="mb-3" />}
         {/* Deal size distribution */}
         <div className="border-t pt-3">
           <div className="text-[10px] font-medium text-muted-foreground mb-2">ขนาดดีล (Pipeline ปัจจุบัน)</div>
@@ -1895,7 +1906,7 @@ export default function ForecastPage() {
       {!isOfficer && topSalesPerformance.length > 0 && <TopSalesCard data={topSalesPerformance} />}
 
       {/* ── Customer Concentration (CEO only) ───────────────────────────── */}
-      {isCeo && <CustomerConcentrationCard data={customerConcentration} totalRevenue={kpiSummary.totalRevenue12m} />}
+      {isCeo && <CustomerConcentrationCard data={customerConcentration} />}
     </div>
   );
 }
