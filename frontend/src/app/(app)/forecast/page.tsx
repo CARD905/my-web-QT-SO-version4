@@ -6,7 +6,7 @@ import {
   TrendingUp, TrendingDown, Target, BarChart3, Users, Loader2,
   Pencil, Check, X, Info, ShieldAlert, Clock,
   ChevronRight, ArrowUpRight, ArrowDownRight, Minus, Activity,
-  Calendar, Zap, Award,
+  Calendar, Zap, Award, AlertTriangle, Lightbulb, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -1665,6 +1665,606 @@ function ScenarioForecastCard({ data }: { data: ScenarioForecast }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// COMMIT FORECAST
+// ════════════════════════════════════════════════════════════════════════════
+
+function CommitForecastCard({ opportunities, target, expectedForecast }: {
+  opportunities: Opportunity[];
+  target: number | null;
+  expectedForecast: number;
+}) {
+  const commitDeals = opportunities.filter((o) => o.probability >= 80);
+  const commitRevenue = commitDeals.reduce((s, o) => s + o.forecastValue, 0);
+  const vsTarget = target && target > 0 ? Math.round((commitRevenue / target) * 100) : null;
+  const vsExpected = expectedForecast > 0 ? Math.round((commitRevenue / expectedForecast) * 100) : null;
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Check className="h-4 w-4 text-emerald-500" />Commit Forecast
+          </h2>
+          <Badge variant="outline" className="text-[10px]">{commitDeals.length} ดีล · prob ≥ 80%</Badge>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="text-center p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+            <div className="text-[10px] text-muted-foreground mb-0.5">Commit Revenue</div>
+            <div className="text-base font-bold text-emerald-600">{short(commitRevenue)}</div>
+          </div>
+          <div className="text-center p-3 rounded-xl bg-muted/30">
+            <div className="text-[10px] text-muted-foreground mb-0.5">vs Target</div>
+            <div className={cn('text-base font-bold', vsTarget == null ? 'text-muted-foreground' : vsTarget >= 100 ? 'text-emerald-600' : vsTarget >= 70 ? 'text-amber-600' : 'text-red-600')}>
+              {vsTarget != null ? `${vsTarget}%` : '–'}
+            </div>
+            {target && <div className="text-[10px] text-muted-foreground">เป้า {short(target)}</div>}
+          </div>
+          <div className="text-center p-3 rounded-xl bg-muted/30">
+            <div className="text-[10px] text-muted-foreground mb-0.5">vs Expected</div>
+            <div className={cn('text-base font-bold', vsExpected == null ? 'text-muted-foreground' : vsExpected >= 90 ? 'text-emerald-600' : vsExpected >= 60 ? 'text-amber-600' : 'text-red-600')}>
+              {vsExpected != null ? `${vsExpected}%` : '–'}
+            </div>
+            <div className="text-[10px] text-muted-foreground">Expected {short(expectedForecast)}</div>
+          </div>
+        </div>
+        {commitDeals.length === 0 ? (
+          <div className="text-center py-4 text-sm text-muted-foreground">ยังไม่มีดีลที่มีความมั่นใจสูง (≥ 80%)</div>
+        ) : (
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {commitDeals.slice(0, 8).map((o) => (
+              <Link key={o.id} href={`/quotations/${o.id}`}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border/40 hover:bg-muted/30 transition-all group">
+                <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded min-w-[38px] text-center shrink-0',
+                  o.probability >= 90 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30')}>
+                  {o.probability}%
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold">{o.quotationNo}</span>
+                  <span className="text-[10px] text-muted-foreground ml-1.5 truncate">{o.customerCompany}</span>
+                </div>
+                <span className="text-xs font-bold shrink-0">{short(o.forecastValue)}</span>
+                <ChevronRight className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground shrink-0" />
+              </Link>
+            ))}
+          </div>
+        )}
+        <div className="mt-2 text-[10px] text-muted-foreground flex items-start gap-1 pt-2 border-t">
+          <Info className="h-3 w-3 shrink-0 mt-px" />
+          Commit Revenue = Weighted Value รวมของดีล prob ≥ 80% · ตัวเลขสำหรับการประชุมผู้บริหาร
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FORECAST GAP ANALYSIS
+// ════════════════════════════════════════════════════════════════════════════
+
+function ForecastGapAnalysisCard({ monthProgress, scenarioForecast }: {
+  monthProgress: MonthProgress;
+  scenarioForecast: ScenarioForecast;
+}) {
+  const actual = monthProgress.actual;
+  const target = monthProgress.target;
+  const projEOM = monthProgress.projectedEOM;
+  const expected = scenarioForecast.expected;
+  const gap = target ? Math.max(0, target - actual) : null;
+  const gapPct = target && target > 0 ? Math.round((gap! / target) * 100) : null;
+  const achievePct = target && target > 0 ? Math.min(100, Math.round((actual / target) * 100)) : null;
+  const forecastVsTarget = target && target > 0 ? Math.min(100, Math.round((projEOM / target) * 100)) : null;
+  const status = gapPct == null ? 'none' : gapPct === 0 ? 'ok' : gapPct <= 25 ? 'warn' : 'bad';
+  const statusLabel = { ok: '✓ ถึงเป้าแล้ว', warn: '⚠ ใกล้เคียง', bad: '⚠ ต้องเร่งด่วน', none: '' }[status];
+  const statusClass = { ok: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600', warn: 'bg-amber-50 dark:bg-amber-900/20 text-amber-600', bad: 'bg-red-50 dark:bg-red-900/20 text-red-600', none: 'bg-muted/50 text-muted-foreground' }[status];
+  const barClass = { ok: 'bg-emerald-500', warn: 'bg-amber-500', bad: 'bg-red-400', none: 'bg-indigo-400' }[status];
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Activity className="h-4 w-4 text-blue-500" />Forecast Gap Analysis
+          </h2>
+          {status !== 'none' && <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', statusClass)}>{statusLabel}</span>}
+        </div>
+
+        {/* Gap highlight */}
+        {gap !== null ? (
+          <div className={cn('p-3 rounded-xl mb-4 text-center', statusClass.split(' ').slice(0, 2).join(' '))}>
+            <div className="text-[10px] text-muted-foreground mb-0.5">ยังขาดอีก</div>
+            <div className={cn('text-2xl font-bold', { ok: 'text-emerald-600', warn: 'text-amber-600', bad: 'text-red-600', none: 'text-muted-foreground' }[status])}>
+              {gap === 0 ? '✓ ถึงเป้าแล้ว' : short(gap)}
+            </div>
+            {gapPct !== null && gap > 0 && <div className="text-[11px] text-muted-foreground mt-0.5">{gapPct}% ของ Target</div>}
+          </div>
+        ) : (
+          <div className="p-3 rounded-xl mb-4 text-center bg-muted/30">
+            <div className="text-xs text-muted-foreground">ตั้งเป้าหมายเพื่อดู Gap Analysis</div>
+          </div>
+        )}
+
+        {/* Revenue rows */}
+        <div className="space-y-2 mb-4">
+          {[
+            { label: 'ยอดจริงเดือนนี้', value: actual, bold: false, color: '' },
+            { label: 'Projected EOM (Run Rate)', value: projEOM, bold: false, color: forecastVsTarget != null && forecastVsTarget >= 100 ? 'text-emerald-600' : 'text-amber-600' },
+            { label: 'Expected Forecast', value: expected, bold: false, color: '' },
+            ...(target ? [{ label: 'Target เดือนนี้', value: target, bold: true, color: 'text-amber-600' }] : []),
+          ].map((r, i) => (
+            <div key={i} className="flex items-center">
+              <span className={cn('text-xs flex-1', r.bold ? 'font-semibold text-foreground' : 'text-muted-foreground')}>{r.label}</span>
+              <span className={cn('text-sm font-bold tabular-nums', r.color || 'text-foreground')}>{short(r.value)}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        {target && target > 0 && (
+          <>
+            <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+              <span>ยอดจริง vs เป้า</span>
+              <span className="font-semibold">{achievePct}%</span>
+            </div>
+            <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+              <div className={cn('h-full rounded-full transition-all', barClass)} style={{ width: `${achievePct ?? 0}%` }} />
+            </div>
+            {forecastVsTarget !== null && (
+              <div className="text-[10px] text-muted-foreground mt-1">Projected EOM อยู่ที่ {forecastVsTarget}% ของเป้า</div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FORECAST CONFIDENCE SCORE
+// ════════════════════════════════════════════════════════════════════════════
+
+function computeForecastConfidence(
+  accuracyMonths: AccuracyMonth[],
+  forecastInsights: ForecastInsights,
+  pipelineHealth: PipelineHealth,
+  winRateTrend: WinRateTrendItem[],
+) {
+  const valid = accuracyMonths.filter((m) => m.accuracy !== null);
+  if (valid.length < 2) return null;
+  const avgAcc = valid.reduce((s, m) => s + (m.accuracy ?? 0), 0) / valid.length;
+  const accScore = avgAcc >= 85 ? 100 : avgAcc >= 70 ? 80 : avgAcc >= 55 ? 55 : 25;
+  const dataScore = valid.length >= 9 ? 100 : valid.length >= 6 ? 80 : valid.length >= 3 ? 55 : 30;
+  const biasScore = forecastInsights.forecastBiasDir === 'BALANCED' ? 100
+    : forecastInsights.forecastBias == null ? 65
+    : Math.abs(forecastInsights.forecastBias) < 200000 ? 75
+    : Math.abs(forecastInsights.forecastBias) < 800000 ? 48 : 20;
+  const cov = pipelineHealth.coverageRatio;
+  const pipeScore = cov == null ? 50 : cov >= 3 ? 100 : cov >= 1.5 ? 70 : cov >= 0.8 ? 40 : 15;
+  const wrVals = winRateTrend.filter((m) => m.winRate !== null).map((m) => m.winRate!);
+  let wrScore = 65;
+  if (wrVals.length >= 3) {
+    const avg = wrVals.reduce((a, b) => a + b, 0) / wrVals.length;
+    const sd = Math.sqrt(wrVals.reduce((s, v) => s + (v - avg) ** 2, 0) / wrVals.length);
+    wrScore = sd <= 5 ? 100 : sd <= 12 ? 75 : sd <= 25 ? 45 : 20;
+  }
+  const score = Math.round(accScore * 0.35 + dataScore * 0.20 + biasScore * 0.20 + pipeScore * 0.15 + wrScore * 0.10);
+  const level = score >= 78 ? 'VERY_HIGH' as const : score >= 60 ? 'HIGH' as const : score >= 40 ? 'MEDIUM' as const : 'LOW' as const;
+  return {
+    score, level,
+    factors: [
+      { label: 'Accuracy ย้อนหลัง', score: accScore, w: 35, note: `avg ${Math.round(avgAcc)}%` },
+      { label: 'ข้อมูลเพียงพอ', score: dataScore, w: 20, note: `${valid.length} เดือน` },
+      { label: 'Forecast Bias', score: biasScore, w: 20, note: forecastInsights.forecastBiasDir ?? 'N/A' },
+      { label: 'Pipeline Coverage', score: pipeScore, w: 15, note: cov != null ? `${cov}×` : 'N/A' },
+      { label: 'Win Rate Stability', score: wrScore, w: 10, note: wrVals.length >= 3 ? 'computed' : 'ข้อมูลน้อย' },
+    ],
+  };
+}
+
+function ForecastConfidenceScoreCard({ accuracy, forecastInsights, pipelineHealth, winRateTrend }: {
+  accuracy: AccuracyMonth[];
+  forecastInsights: ForecastInsights;
+  pipelineHealth: PipelineHealth;
+  winRateTrend: WinRateTrendItem[];
+}) {
+  const conf = computeForecastConfidence(accuracy, forecastInsights, pipelineHealth, winRateTrend);
+  const LEVEL = {
+    VERY_HIGH: { label: 'Very High', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', bar: 'bg-emerald-500' },
+    HIGH: { label: 'High', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20', bar: 'bg-blue-500' },
+    MEDIUM: { label: 'Medium', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20', bar: 'bg-amber-400' },
+    LOW: { label: 'Low', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', bar: 'bg-red-400' },
+  };
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-4">
+          <Award className="h-4 w-4 text-purple-500" />Forecast Confidence Score
+        </h2>
+        {conf == null ? (
+          <div className="text-center py-6 space-y-1.5">
+            <Award className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+            <div className="text-sm font-semibold text-muted-foreground">Insufficient Historical Data</div>
+            <div className="text-[11px] text-muted-foreground">ต้องมีข้อมูลยอดขายจริงอย่างน้อย 2 เดือน<br />และตั้งเป้าหมายก่อนจึงจะคำนวณได้</div>
+          </div>
+        ) : (() => {
+          const lc = LEVEL[conf.level];
+          return (
+            <>
+              <div className={cn('flex items-center gap-3 p-3 rounded-xl mb-3', lc.bg)}>
+                <div className="flex-1">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Confidence Level</div>
+                  <div className={cn('text-xl font-bold', lc.color)}>{lc.label}</div>
+                </div>
+                <div className="text-right">
+                  <div className={cn('text-3xl font-bold tabular-nums', lc.color)}>{conf.score}</div>
+                  <div className="text-[10px] text-muted-foreground">/ 100</div>
+                </div>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden mb-4">
+                <div className={cn('h-full rounded-full transition-all', lc.bar)} style={{ width: `${conf.score}%` }} />
+              </div>
+              <div className="space-y-2">
+                {conf.factors.map((f, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs mb-0.5">
+                      <span className="text-muted-foreground">{f.label} <span className="text-[10px] opacity-60">({f.w}%)</span></span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">{f.note}</span>
+                        <span className={cn('font-bold w-7 text-right tabular-nums text-[11px]',
+                          f.score >= 80 ? 'text-emerald-600' : f.score >= 60 ? 'text-blue-600' : f.score >= 40 ? 'text-amber-600' : 'text-red-600')}>
+                          {f.score}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-1 bg-muted rounded-full overflow-hidden">
+                      <div className={cn('h-full rounded-full', f.score >= 80 ? 'bg-emerald-500' : f.score >= 60 ? 'bg-blue-500' : f.score >= 40 ? 'bg-amber-400' : 'bg-red-400')}
+                        style={{ width: `${f.score}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// AI SALES INSIGHTS
+// ════════════════════════════════════════════════════════════════════════════
+
+interface SalesInsight { type: 'critical' | 'warning' | 'positive' | 'info'; title: string; desc: string; icon: ElementType; }
+
+function generateSalesInsights(params: {
+  currentM: FvtMonth | undefined;
+  monthProgress: MonthProgress;
+  kpiSummary: KpiSummary;
+  pipelineHealth: PipelineHealth;
+  dealsAtRisk: DealRisk[];
+  forecastInsights: ForecastInsights;
+  winRateTrend: WinRateTrendItem[];
+  revenueAtRisk: RevenueAtRisk;
+  scenarioForecast: ScenarioForecast;
+}): SalesInsight[] {
+  const { currentM, monthProgress, kpiSummary, pipelineHealth, dealsAtRisk, winRateTrend, revenueAtRisk, scenarioForecast } = params;
+  const out: SalesInsight[] = [];
+
+  // Revenue vs target
+  if (currentM?.achievePct != null) {
+    if (currentM.achievePct >= 100) {
+      out.push({ type: 'positive', title: 'บรรลุเป้าหมายรายได้แล้ว!', desc: `ยอดจริง ${short(currentM.actual)} = ${currentM.achievePct}% ของเป้า ${short(currentM.target!)} ✓`, icon: TrendingUp });
+    } else if (currentM.achievePct < 50 && monthProgress.pctElapsed > 60) {
+      out.push({ type: 'critical', title: 'ยอดขายต่ำกว่าเป้ามาก — ต้องเร่งด่วน', desc: `ผ่านมา ${monthProgress.pctElapsed}% ของเดือนแล้ว แต่ทำได้เพียง ${currentM.achievePct}% ของเป้า (${short(currentM.actual)} / ${short(currentM.target!)})`, icon: AlertTriangle });
+    } else if (currentM.achievePct < 80) {
+      out.push({ type: 'warning', title: 'ยอดขายต่ำกว่าเป้าหมาย', desc: `ทำได้ ${currentM.achievePct}% ของเป้า — ยังต้องเพิ่มอีก ${short(currentM.target! - currentM.actual)} เพื่อถึงเป้า ${short(currentM.target!)}`, icon: TrendingDown });
+    }
+  }
+
+  // Pipeline coverage
+  if (pipelineHealth.coverageRatio != null) {
+    if (pipelineHealth.coverageRatio < 1.5) {
+      out.push({ type: 'critical', title: 'Pipeline Coverage ต่ำกว่ามาตรฐาน', desc: `Coverage Ratio ${pipelineHealth.coverageRatio}× (ต่ำกว่า 1.5× ที่แนะนำ) — ควรสร้าง Quotation ใหม่เพิ่มเติม`, icon: ShieldAlert });
+    } else if (pipelineHealth.coverageRatio >= 3) {
+      out.push({ type: 'positive', title: 'Pipeline แข็งแกร่ง', desc: `Coverage Ratio ${pipelineHealth.coverageRatio}× — มีมูลค่า Pipeline เพียงพอรองรับเป้าหมายอย่างดี`, icon: TrendingUp });
+    }
+  }
+
+  // Win rate trend
+  const wr3 = winRateTrend.filter((m) => m.winRate !== null).slice(-3);
+  const wr6 = winRateTrend.filter((m) => m.winRate !== null).slice(-6);
+  if (wr3.length >= 2 && wr6.length >= 4) {
+    const avg3 = Math.round(wr3.reduce((s, m) => s + (m.winRate ?? 0), 0) / wr3.length);
+    const avg6 = Math.round(wr6.reduce((s, m) => s + (m.winRate ?? 0), 0) / wr6.length);
+    if (avg3 > avg6 + 8) out.push({ type: 'positive', title: 'Win Rate เพิ่มขึ้นต่อเนื่อง', desc: `Win Rate 3 เดือนล่าสุด ${avg3}% สูงกว่า avg 6 เดือน (${avg6}%) — แนวโน้มดีขึ้น`, icon: TrendingUp });
+    else if (avg3 < avg6 - 8) out.push({ type: 'warning', title: 'Win Rate ลดลง', desc: `Win Rate 3 เดือนล่าสุด ${avg3}% ต่ำกว่า avg 6 เดือน (${avg6}%) — ควรทบทวนกลยุทธ์การขาย`, icon: TrendingDown });
+  }
+
+  // High risk deals
+  const highRisk = dealsAtRisk.filter((d) => d.riskLevel === 'HIGH');
+  if (highRisk.length > 0) {
+    out.push({ type: 'critical', title: `${highRisk.length} ดีลความเสี่ยงสูง ต้องดำเนินการด่วน`, desc: `มูลค่ารวม ${short(highRisk.reduce((s, d) => s + d.grandTotal, 0))} — ติดตามและอัปเดตสถานะทันทีเพื่อป้องกัน Pipeline หลุด`, icon: ShieldAlert });
+  }
+
+  // Expiring soon
+  const expiringSoon = dealsAtRisk.filter((d) => d.daysUntilExpiry != null && d.daysUntilExpiry <= 7);
+  if (expiringSoon.length > 0) {
+    out.push({ type: 'critical', title: `${expiringSoon.length} ดีลใกล้หมดอายุภายใน 7 วัน`, desc: expiringSoon.slice(0, 3).map((d) => d.quotationNo).join(', ') + (expiringSoon.length > 3 ? ` และอีก ${expiringSoon.length - 3} รายการ` : '') + ' — ติดต่อลูกค้าเพื่อต่ออายุโดยด่วน', icon: Clock });
+  }
+
+  // Revenue at risk
+  if (revenueAtRisk.riskPct > 40) {
+    out.push({ type: 'warning', title: `Revenue at Risk สูง (${revenueAtRisk.riskPct}%)`, desc: `${short(revenueAtRisk.totalRiskValue)} ใน Pipeline อยู่ในความเสี่ยง — ควรวิเคราะห์และวางแผนรับมือ`, icon: ShieldAlert });
+  }
+
+  // Expected forecast vs target
+  if (scenarioForecast.expectedVsTarget != null && scenarioForecast.expectedVsTarget < 80) {
+    out.push({ type: 'warning', title: 'Expected Forecast ต่ำกว่าเป้าหมาย', desc: `Forecast คาดว่า ${short(scenarioForecast.expected)} (${scenarioForecast.expectedVsTarget}% ของเป้า) — ต้องเพิ่ม Pipeline เพื่อชดเชย`, icon: Target });
+  }
+
+  // Win rate overall
+  if (kpiSummary.winRate6m !== null && kpiSummary.winRate6m < 30) {
+    out.push({ type: 'warning', title: 'Win Rate ต่ำกว่าเกณฑ์', desc: `Win Rate 6 เดือน ${kpiSummary.winRate6m}% ต่ำกว่า 30% — ควรวิเคราะห์สาเหตุที่ลูกค้าไม่ซื้อและปรับกลยุทธ์`, icon: Activity });
+  }
+
+  const order = { critical: 0, warning: 1, positive: 2, info: 3 } as const;
+  return out.sort((a, b) => order[a.type] - order[b.type]).slice(0, 6);
+}
+
+function AISalesInsightsCard(props: Parameters<typeof generateSalesInsights>[0]) {
+  const insights = generateSalesInsights(props);
+  const iconCls = { critical: 'text-red-500', warning: 'text-amber-500', positive: 'text-emerald-500', info: 'text-blue-500' };
+  const bgCls = { critical: 'bg-red-50 border-red-200 dark:bg-red-900/15 dark:border-red-800', warning: 'bg-amber-50 border-amber-200 dark:bg-amber-900/15 dark:border-amber-800', positive: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/15 dark:border-emerald-800', info: 'bg-blue-50 border-blue-200 dark:bg-blue-900/15 dark:border-blue-800' };
+  if (insights.length === 0) return null;
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-4">
+          <Lightbulb className="h-4 w-4 text-yellow-500" />AI Sales Insights
+          <span className="text-[10px] font-normal text-muted-foreground">สรุปสถานการณ์อัตโนมัติ</span>
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {insights.map((ins, i) => {
+            const Icon = ins.icon;
+            return (
+              <div key={i} className={cn('flex items-start gap-2.5 p-3 rounded-lg border', bgCls[ins.type])}>
+                <Icon className={cn('h-4 w-4 shrink-0 mt-0.5', iconCls[ins.type])} />
+                <div className="min-w-0">
+                  <div className={cn('text-xs font-semibold mb-0.5', iconCls[ins.type])}>{ins.title}</div>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed">{ins.desc}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NEXT BEST ACTIONS
+// ════════════════════════════════════════════════════════════════════════════
+
+interface Action { priority: 'urgent' | 'high' | 'medium'; label: string; desc: string; href?: string; icon: ElementType; }
+
+function NextBestActionsCard({ dealsAtRisk, opportunities, agingPipeline, pipelineHealth, kpiSummary }: {
+  dealsAtRisk: DealRisk[];
+  opportunities: Opportunity[];
+  agingPipeline: AdvancedData['agingPipeline'];
+  pipelineHealth: PipelineHealth;
+  kpiSummary: KpiSummary;
+}) {
+  const actions: Action[] = [];
+
+  // Expiring ≤ 7 days
+  dealsAtRisk.filter((d) => d.daysUntilExpiry != null && d.daysUntilExpiry <= 7).slice(0, 3).forEach((d) => {
+    actions.push({ priority: 'urgent', label: `ต่ออายุ ${d.quotationNo}`, desc: `หมดอายุใน ${d.daysUntilExpiry} วัน · ${d.customerCompany} · ${short(d.grandTotal)}`, href: `/quotations/${d.id}`, icon: Clock });
+  });
+
+  // High risk to follow up
+  dealsAtRisk.filter((d) => d.riskLevel === 'HIGH' && (d.daysUntilExpiry == null || d.daysUntilExpiry > 7)).slice(0, 2).forEach((d) => {
+    actions.push({ priority: 'urgent', label: `Follow-up ${d.quotationNo}`, desc: `ความเสี่ยงสูง · ไม่มีการอัปเดต ${d.daysSinceUpdate} วัน · ${d.customerCompany}`, href: `/quotations/${d.id}`, icon: ShieldAlert });
+  });
+
+  // Opportunities near closing — probability ≥ 80%, expiring ≤ 30 days
+  opportunities.filter((o) => o.probability >= 80 && o.expiryDate).slice(0, 2).forEach((o) => {
+    const daysLeft = o.expiryDate ? Math.ceil((new Date(o.expiryDate).getTime() - Date.now()) / 86400000) : null;
+    if (daysLeft !== null && daysLeft <= 30 && daysLeft > 0) {
+      actions.push({ priority: 'high', label: `ปิดดีล ${o.quotationNo}`, desc: `prob ${o.probability}% · หมดอายุใน ${daysLeft} วัน · ${short(o.forecastValue)}`, href: `/quotations/${o.id}`, icon: TrendingUp });
+    }
+  });
+
+  // Long-stale MEDIUM risk deals to escalate
+  dealsAtRisk.filter((d) => d.riskLevel === 'MEDIUM' && d.daysSinceUpdate > 14 && d.riskType === 'LONG_PENDING').slice(0, 2).forEach((d) => {
+    actions.push({ priority: 'high', label: `Escalate ${d.quotationNo}`, desc: `รออนุมัติ ${d.daysSinceUpdate} วัน · ${d.customerCompany} · ${short(d.grandTotal)}`, href: `/quotations/${d.id}`, icon: ArrowUpRight });
+  });
+
+  // Pipeline coverage low
+  if ((pipelineHealth.coverageRatio ?? 99) < 1.5) {
+    actions.push({ priority: 'high', label: 'เพิ่ม Quotation ใหม่', desc: `Coverage Ratio ${pipelineHealth.coverageRatio ?? 0}× ต่ำกว่าเกณฑ์ — ต้องขยาย Pipeline เพื่อรักษา Revenue`, href: '/quotations/new', icon: Activity });
+  }
+
+  // Aging pipeline > 60 days
+  const longAging = agingPipeline.items.filter((i) => i.ageDays > 60).slice(0, 2);
+  longAging.forEach((item) => {
+    actions.push({ priority: 'medium', label: `ทบทวน ${item.quotationNo}`, desc: `เปิดมาแล้ว ${item.ageDays} วัน · ${item.customerCompany} · ${short(item.grandTotal)}`, href: `/quotations/${item.id}`, icon: Clock });
+  });
+
+  // Win rate low — renegotiate
+  if (kpiSummary.winRate6m !== null && kpiSummary.winRate6m < 35) {
+    actions.push({ priority: 'medium', label: 'ทบทวนราคาและข้อเสนอ', desc: `Win Rate ${kpiSummary.winRate6m}% ต่ำมาก — ควรวิเคราะห์ดีลที่แพ้และปรับข้อเสนอให้แข่งขันได้`, icon: Zap });
+  }
+
+  if (actions.length === 0) {
+    return (
+      <Card><CardContent className="pt-5">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-3"><Zap className="h-4 w-4 text-indigo-500" />Next Best Actions</h2>
+        <div className="text-center py-6 text-sm text-muted-foreground">ไม่มีการดำเนินการเร่งด่วน ✅</div>
+      </CardContent></Card>
+    );
+  }
+
+  const priorityStyle = { urgent: 'bg-red-500 text-white', high: 'bg-amber-500 text-white', medium: 'bg-blue-400 text-white' };
+  const priorityLabel = { urgent: 'ด่วน!', high: 'สำคัญ', medium: 'ควรทำ' };
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold flex items-center gap-1.5">
+            <Zap className="h-4 w-4 text-indigo-500" />Next Best Actions
+          </h2>
+          <Badge variant="outline" className="text-[10px]">{actions.length} รายการ</Badge>
+        </div>
+        <div className="space-y-1.5">
+          {actions.slice(0, 8).map((a, i) => {
+            const Icon = a.icon;
+            const inner = (
+              <div className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border/50 hover:bg-muted/30 transition-all group w-full text-left">
+                <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 min-w-[38px] text-center', priorityStyle[a.priority])}>
+                  {priorityLabel[a.priority]}
+                </span>
+                <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold">{a.label}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{a.desc}</div>
+                </div>
+                {a.href && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground shrink-0" />}
+              </div>
+            );
+            return a.href ? <Link key={i} href={a.href}>{inner}</Link> : <div key={i}>{inner}</div>;
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CLOSING PROBABILITY DISTRIBUTION
+// ════════════════════════════════════════════════════════════════════════════
+
+function ClosingProbabilityDistributionCard({ pipelineHealth }: { pipelineHealth: PipelineHealth }) {
+  // Map status → probability bucket
+  const STATUS_PROB: Record<string, number> = {
+    PO_APPROVED: 95, PO_PENDING: 90, APPROVED: 80,
+    PENDING_ESCALATED: 65, PENDING_BACKUP: 60, PENDING: 50, DRAFT: 20,
+  };
+  const buckets = [
+    { label: '90–100%', range: [90, 100], color: '#10b981', bg: 'bg-emerald-500', light: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400' },
+    { label: '70–89%', range: [70, 89], color: '#6366f1', bg: 'bg-indigo-500', light: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-700 dark:text-indigo-400' },
+    { label: '50–69%', range: [50, 69], color: '#f59e0b', bg: 'bg-amber-400', light: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-400' },
+    { label: '< 50%', range: [0, 49], color: '#94a3b8', bg: 'bg-slate-400', light: 'bg-slate-50 dark:bg-slate-900/20', text: 'text-slate-600 dark:text-slate-400' },
+  ];
+
+  const bucketed = buckets.map((b) => {
+    const matched = pipelineHealth.byStatus.filter((s) => {
+      const p = STATUS_PROB[s.status] ?? 0;
+      return p >= b.range[0] && p <= b.range[1];
+    });
+    return { ...b, count: matched.reduce((s, m) => s + m.count, 0), value: matched.reduce((s, m) => s + m.value, 0), weighted: matched.reduce((s, m) => s + m.weightedValue, 0) };
+  });
+
+  const totalVal = bucketed.reduce((s, b) => s + b.value, 0);
+  if (totalVal === 0) return null;
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <h2 className="text-sm font-semibold flex items-center gap-1.5 mb-4">
+          <BarChart3 className="h-4 w-4 text-indigo-500" />Closing Probability Distribution
+        </h2>
+
+        {/* Stacked bar */}
+        <div className="h-4 rounded-full overflow-hidden flex gap-0.5 mb-3">
+          {bucketed.filter((b) => b.value > 0).map((b, i) => (
+            <div key={i} className={cn('h-full first:rounded-l-full last:rounded-r-full transition-all', b.bg)}
+              style={{ width: `${(b.value / totalVal) * 100}%` }}
+              title={`${b.label}: ${short(b.value)} (${Math.round((b.value / totalVal) * 100)}%)`} />
+          ))}
+        </div>
+
+        {/* Legend + detail */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {bucketed.map((b, i) => {
+            const pct = totalVal > 0 ? Math.round((b.value / totalVal) * 100) : 0;
+            return (
+              <div key={i} className={cn('p-2.5 rounded-lg', b.light)}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                  <span className={cn('text-[10px] font-semibold', b.text)}>{b.label}</span>
+                </div>
+                <div className={cn('text-sm font-bold tabular-nums', b.text)}>{short(b.value)}</div>
+                <div className="text-[10px] text-muted-foreground">{b.count} ดีล · {pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="pt-2 border-t text-[10px] text-muted-foreground flex items-start gap-1">
+          <Info className="h-3 w-3 shrink-0 mt-px" />
+          แบ่งตาม Probability ของแต่ละ Status · 90%+ = PO Approved/Pending · 80% = Approved · 50–65% = Pending
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXECUTIVE SUMMARY PANEL (CEO / ADMIN only)
+// ════════════════════════════════════════════════════════════════════════════
+
+function ExecutiveSummaryPanel({ data, currentM, avgAcc, confScore }: {
+  data: AdvancedData;
+  currentM: FvtMonth | undefined;
+  avgAcc: number | null;
+  confScore: ReturnType<typeof computeForecastConfidence>;
+}) {
+  const { kpiSummary, pipelineHealth, dealsAtRisk, monthProgress, scenarioForecast } = data;
+  const gap = monthProgress.target ? monthProgress.target - monthProgress.actual : null;
+  const commitDeals = data.topOpportunities.filter((o) => o.probability >= 80);
+  const commitRev = commitDeals.reduce((s, o) => s + o.forecastValue, 0);
+
+  const metrics = [
+    { label: 'Revenue Actual', value: short(monthProgress.actual), sub: currentM?.achievePct != null ? `${currentM.achievePct}% ของเป้า` : 'เดือนนี้', color: 'text-primary' },
+    { label: 'Revenue Target', value: monthProgress.target ? short(monthProgress.target) : '–', sub: 'เป้าเดือนนี้', color: 'text-amber-600' },
+    { label: 'Revenue Gap', value: gap !== null ? (gap <= 0 ? '✓ ถึงแล้ว' : short(gap)) : '–', sub: gap !== null && gap > 0 ? 'ต้องหาเพิ่ม' : 'vs Target', color: gap !== null && gap <= 0 ? 'text-emerald-600' : 'text-red-600' },
+    { label: 'Forecast (Expected)', value: short(scenarioForecast.expected), sub: scenarioForecast.expectedVsTarget != null ? `${scenarioForecast.expectedVsTarget}% vs เป้า` : 'เดือนหน้า', color: 'text-indigo-600' },
+    { label: 'Commit Forecast', value: short(commitRev), sub: `${commitDeals.length} ดีล prob ≥ 80%`, color: 'text-emerald-600' },
+    { label: 'Win Rate (6m)', value: kpiSummary.winRate6m !== null ? `${kpiSummary.winRate6m}%` : 'N/A', sub: 'SO ÷ (SO + Lost)', color: kpiSummary.winRate6m == null ? '' : kpiSummary.winRate6m >= 60 ? 'text-emerald-600' : kpiSummary.winRate6m >= 40 ? 'text-amber-600' : 'text-red-600' },
+    { label: 'Coverage Ratio', value: pipelineHealth.coverageRatio != null ? `${pipelineHealth.coverageRatio}×` : '–', sub: 'Pipeline ÷ เป้า', color: pipelineHealth.coverageRatio == null ? '' : pipelineHealth.coverageRatio >= 3 ? 'text-emerald-600' : pipelineHealth.coverageRatio >= 1.5 ? 'text-amber-600' : 'text-red-600' },
+    { label: 'Pipeline Value', value: short(pipelineHealth.total), sub: `Weighted ${short(pipelineHealth.weighted)}`, color: 'text-purple-600' },
+    { label: 'Deals at Risk', value: String(dealsAtRisk.length), sub: `${dealsAtRisk.filter((d) => d.riskLevel === 'HIGH').length} HIGH · ${dealsAtRisk.filter((d) => d.riskLevel === 'MEDIUM').length} MEDIUM`, color: dealsAtRisk.length > 0 ? 'text-red-600' : 'text-emerald-600' },
+    { label: 'Forecast Accuracy', value: avgAcc !== null ? `${avgAcc}%` : 'N/A', sub: avgAcc !== null ? 'avg 12 เดือน' : 'ข้อมูลไม่เพียงพอ', color: avgAcc == null ? '' : avgAcc >= 80 ? 'text-emerald-600' : avgAcc >= 60 ? 'text-amber-600' : 'text-red-600' },
+    { label: 'Confidence Score', value: confScore ? `${confScore.score}/100` : 'N/A', sub: confScore ? confScore.level.replace('_', ' ') : 'Insufficient data', color: confScore == null ? '' : confScore.score >= 78 ? 'text-emerald-600' : confScore.score >= 60 ? 'text-blue-600' : confScore.score >= 40 ? 'text-amber-600' : 'text-red-600' },
+    { label: 'Projected EOM', value: short(monthProgress.projectedEOM), sub: monthProgress.onTrack === true ? 'On Track ✓' : monthProgress.onTrack === false ? 'Behind ⚠' : 'No target', color: monthProgress.onTrack === true ? 'text-emerald-600' : monthProgress.onTrack === false ? 'text-red-600' : '' },
+  ];
+
+  return (
+    <Card className="border-primary/20 bg-gradient-to-br from-background to-primary/5">
+      <CardContent className="pt-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold flex items-center gap-1.5">
+            <BarChart3 className="h-4 w-4 text-primary" />Executive Summary
+            <span className="text-[10px] font-normal text-muted-foreground">สรุปสำหรับผู้บริหาร — ณ ปัจจุบัน</span>
+          </h2>
+          <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">CEO View</Badge>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+          {metrics.map((m, i) => (
+            <div key={i} className="p-2.5 rounded-lg bg-background/70 border border-border/40 hover:border-border/70 transition-colors">
+              <div className="text-[10px] text-muted-foreground leading-tight mb-1 font-medium">{m.label}</div>
+              <div className={cn('text-base font-bold tabular-nums leading-tight', m.color)}>{m.value}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{m.sub}</div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
 export default function ForecastPage() {
@@ -1712,6 +2312,7 @@ export default function ForecastPage() {
   const avgAcc = accuracyMonths.length > 0
     ? Math.round(accuracyMonths.reduce((s, m) => s + (m.accuracy ?? 0), 0) / accuracyMonths.length)
     : null;
+  const confScore = computeForecastConfidence(forecastAccuracy, forecastInsights, pipelineHealth, winRateTrend);
 
   const isOfficer = roleCode === 'OFFICER';
   const isManager = roleCode === 'MANAGER';
@@ -1826,6 +2427,8 @@ export default function ForecastPage() {
     },
   ];
 
+  const insightParams = { currentM, monthProgress, kpiSummary, pipelineHealth, dealsAtRisk, forecastInsights, winRateTrend, revenueAtRisk, scenarioForecast };
+
   return (
     <div className="space-y-5 max-w-6xl">
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -1840,9 +2443,15 @@ export default function ForecastPage() {
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
-          <TrendingUp className="h-4 w-4" />รีเฟรช
+          <RefreshCw className="h-4 w-4" />รีเฟรช
         </Button>
       </div>
+
+      {/* ── Executive Summary (CEO / ADMIN only) ────────────────────────── */}
+      {isCeo && <ExecutiveSummaryPanel data={data} currentM={currentM} avgAcc={avgAcc} confScore={confScore} />}
+
+      {/* ── AI Sales Insights (Manager / CEO) ───────────────────────────── */}
+      {!isOfficer && <AISalesInsightsCard {...insightParams} />}
 
       {/* ── KPI Cards ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-stagger">
@@ -1860,11 +2469,20 @@ export default function ForecastPage() {
       {/* ── Quick Stats Bar ──────────────────────────────────────────────── */}
       <KpiQuickStatsBar kpi={kpiSummary} isCeo={isCeo} />
 
-      {/* ── Month Progress + Scenario Forecast ───────────────────────────── */}
+      {/* ── Forecast Gap Analysis + Month Progress ───────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ForecastGapAnalysisCard monthProgress={monthProgress} scenarioForecast={scenarioForecast} />
         <MonthProgressCard data={monthProgress} />
+      </div>
+
+      {/* ── Commit Forecast + Scenario Forecast ──────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <CommitForecastCard opportunities={topOpportunities} target={monthProgress.target} expectedForecast={scenarioForecast.expected} />
         <ScenarioForecastCard data={scenarioForecast} />
       </div>
+
+      {/* ── Next Best Actions ────────────────────────────────────────────── */}
+      <NextBestActionsCard dealsAtRisk={dealsAtRisk} opportunities={topOpportunities} agingPipeline={agingPipeline} pipelineHealth={pipelineHealth} kpiSummary={kpiSummary} />
 
       {/* ── Goal Planner ─────────────────────────────────────────────────── */}
       <GoalPlannerCard monthProgress={monthProgress} kpiSummary={kpiSummary} />
@@ -1872,10 +2490,19 @@ export default function ForecastPage() {
       {/* ── Forecast vs Target ──────────────────────────────────────────── */}
       <ForecastVsTargetCard data={forecastVsTarget} period={period} onPeriodChange={setPeriod} onSaveTarget={handleSaveTarget} canEditTarget={!isOfficer} />
 
-      {/* ── Funnel + Pipeline Health ─────────────────────────────────────── */}
+      {/* ── Closing Probability + Pipeline Health ────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ClosingProbabilityDistributionCard pipelineHealth={pipelineHealth} />
+        <PipelineHealthCard data={pipelineHealth} />
+      </div>
+
+      {/* ── Funnel + Forecast Confidence Score ──────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ConversionFunnelCard data={conversionFunnel} />
-        <PipelineHealthCard data={pipelineHealth} />
+        {(isManager || isCeo) && (
+          <ForecastConfidenceScoreCard accuracy={forecastAccuracy} forecastInsights={forecastInsights} pipelineHealth={pipelineHealth} winRateTrend={winRateTrend} />
+        )}
+        {isOfficer && <PipelineIntakeCard data={pipelineIntake} />}
       </div>
 
       {/* ── Deals At Risk + Revenue at Risk ──────────────────────────────── */}
@@ -1889,8 +2516,9 @@ export default function ForecastPage() {
 
       {/* ── Pipeline Intake + Forecast Insights ─────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PipelineIntakeCard data={pipelineIntake} />
+        {!isOfficer && <PipelineIntakeCard data={pipelineIntake} />}
         <ForecastInsightsCard data={forecastInsights} />
+        {isOfficer && <AgingPipelineCard data={agingPipeline} />}
       </div>
 
       {/* ── Revenue + Win Rate Trend (Manager/CEO) ───────────────────────── */}
@@ -1899,7 +2527,7 @@ export default function ForecastPage() {
       {/* ── Forecast Accuracy + Aging ────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {(isManager || isCeo) && <ForecastAccuracyCard data={forecastAccuracy} />}
-        <AgingPipelineCard data={agingPipeline} />
+        {!isOfficer && <AgingPipelineCard data={agingPipeline} />}
       </div>
 
       {/* ── Top Sales Performance (Manager/CEO) ─────────────────────────── */}
