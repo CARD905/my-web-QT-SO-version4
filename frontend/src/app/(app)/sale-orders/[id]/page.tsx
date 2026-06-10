@@ -527,10 +527,11 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
   const grandTotalNum = Number(so.grandTotal);
   const afterDiscount = Number(so.subtotal) - Number(so.discountTotal);
   const bahtText = so.currency === 'THB' ? toThaiBahtText(grandTotalNum) : '';
-  const minRows = 8;
+  const minRows = 6;
   const padCount = Math.max(0, minRows - (so.items?.length ?? 0));
-  const NAVY = '#1a3557';
-  const NAVY_LIGHT = '#e8eef5';
+  const NAVY = '#1c3a5e';
+  const BORDER = '#dde5ef';
+  const MUTED = '#f4f6fa';
 
   return (
     <>
@@ -543,7 +544,7 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
           @page { size: A4; margin: 10mm; }
         }
         #so-printable { font-family: 'Sarabun', 'TH Sarabun New', sans-serif; }
-        .so-tr-alt:nth-child(even) { background-color: #f8fafc; }
+        .so-row:nth-child(even) { background: #f7f9fc; }
       `}</style>
 
       <div className="max-w-4xl mx-auto">
@@ -570,219 +571,245 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
         </div>
 
         {/* ── Printable Document ── */}
-        <div id="so-printable" className="bg-white text-black" style={{ fontFamily: 'Sarabun, sans-serif', border: `1.5px solid ${NAVY}` }}>
+        <div id="so-printable" style={{ background: '#fff', color: '#111', fontFamily: 'Sarabun, sans-serif', border: `1px solid ${BORDER}`, boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}>
 
-          {/* Accent bar */}
-          <div style={{ height: 6, background: NAVY }} />
+          {/* ── Top strip: OFFICIAL DOCUMENT label ── */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '7px 24px 5px', borderBottom: `1px solid ${BORDER}` }}>
+            <span style={{ fontSize: 9, letterSpacing: 2.5, color: '#aaa', textTransform: 'uppercase', fontWeight: 600 }}>OFFICIAL DOCUMENT</span>
+          </div>
 
-          {/* ── Header: Company + Title ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', borderBottom: `1.5px solid ${NAVY}` }}>
-            {/* Company info */}
-            <div style={{ padding: '14px 16px', borderRight: `1.5px solid ${NAVY}`, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          {/* ── Main header: Logo+Company LEFT | Title+DocNo RIGHT ── */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '18px 24px 16px', borderBottom: `1px solid ${BORDER}` }}>
+            {/* Company block */}
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flex: 1 }}>
               {company?.logoUrl ? (
-                <img src={company.logoUrl} alt="logo" style={{ width: 64, height: 64, objectFit: 'contain', flexShrink: 0 }} />
+                <img src={company.logoUrl} alt="logo" style={{ width: 62, height: 62, objectFit: 'contain', flexShrink: 0, border: `1px solid ${BORDER}`, borderRadius: 4, padding: 3 }} />
               ) : (
-                <div style={{ width: 52, height: 52, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, flexShrink: 0, borderRadius: 4 }}>
-                  {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
+                <div style={{ width: 54, height: 54, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 24, flexShrink: 0, borderRadius: 4 }}>
+                  {(company?.companyName || company?.companyNameTh || 'C')[0]}
                 </div>
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: NAVY }}>{company?.companyNameTh || company?.companyName || 'บริษัท'}</div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: NAVY, lineHeight: 1.15 }}>{company?.companyName || company?.companyNameTh}</div>
                 {company?.companyNameTh && company?.companyName && (
-                  <div style={{ fontSize: 11, color: '#555', marginTop: 1 }}>{company.companyName}</div>
+                  <div style={{ fontSize: 12, color: '#555', marginTop: 1 }}>{company.companyNameTh}</div>
                 )}
-                <div style={{ fontSize: 11, color: '#444', marginTop: 5, lineHeight: 1.7 }}>
+                <div style={{ fontSize: 11, color: '#666', marginTop: 7, lineHeight: 1.85 }}>
                   {(company?.addressTh || company?.address) && <div>{company?.addressTh || company?.address}</div>}
-                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                    {company?.phone && <span>โทร. {company.phone}</span>}
-                    {company?.fax && <span>แฟกซ์ {company.fax}</span>}
+                  <div>
+                    {company?.phone && `โทรศัพท์ ${company.phone}`}
+                    {company?.fax && `  มือถือ ${company.fax}`}
+                    {company?.email && `  อีเมล ${company.email}`}
                   </div>
-                  {company?.email && <div>Email: {company.email}</div>}
-                  {company?.taxId && <div style={{ marginTop: 3 }}>เลขผู้เสียภาษี: <strong>{company.taxId}</strong></div>}
+                  {company?.taxId && <div>เลขประจำตัวผู้เสียภาษี {company.taxId}</div>}
                 </div>
               </div>
             </div>
 
-            {/* Document title + meta */}
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ background: NAVY, color: '#fff', textAlign: 'center', padding: '10px 8px', borderBottom: `1.5px solid ${NAVY}` }}>
-                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 3 }}>SALE ORDER</div>
-                <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>ใบสั่งขาย / ใบยืนยันการสั่งซื้อ</div>
+            {/* Title + doc number */}
+            <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 24 }}>
+              <div style={{ fontSize: 42, fontWeight: 700, fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic', color: NAVY, lineHeight: 1, letterSpacing: -1 }}>Sale Order</div>
+              <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>ใบสั่งขาย / ใบยืนยันการสั่งซื้อ</div>
+              <div style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${BORDER}`, borderRadius: 4, padding: '6px 14px', background: MUTED }}>
+                <span style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase' }}>◆ DOCUMENT</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: NAVY, letterSpacing: 0.5 }}>{so.saleOrderNo}</span>
               </div>
-              <table style={{ width: '100%', fontSize: 11, flex: 1 }}>
-                <tbody>
-                  {[
-                    { label: 'เลขที่', value: so.saleOrderNo, bold: true },
-                    { label: 'วันที่ออก', value: formatDate(so.issueDate) },
-                    { label: 'เลข PO', value: so.poNumber || '—' },
-                    ...(so.deadlineDate ? [{ label: 'กำหนดส่ง', value: formatDate(so.deadlineDate) }] : []),
-                    { label: 'อ้างอิง QT', value: so.quotation?.quotationNo || '—' },
-                  ].map((row, i, arr) => (
-                    <tr key={i} style={{ borderBottom: i < arr.length - 1 ? `1px solid #d0dae8` : undefined }}>
-                      <td style={{ padding: '5px 10px', color: '#555', width: '45%', background: NAVY_LIGHT, borderRight: `1px solid #d0dae8` }}>{row.label}</td>
-                      <td style={{ padding: '5px 10px', fontWeight: row.bold ? 700 : 600, textAlign: 'right', color: row.bold ? NAVY : '#111' }}>{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
 
-          {/* ── Customer + Terms ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: `1.5px solid ${NAVY}` }}>
-            <div style={{ padding: '10px 16px', borderRight: `1px solid #c8d8e8` }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>ข้อมูลลูกค้า · Bill To</div>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#111', marginBottom: 3 }}>{so.customerCompany}</div>
-              <div style={{ fontSize: 11, color: '#444', lineHeight: 1.75 }}>
-                {so.customerContactName && <div>ผู้ติดต่อ: {so.customerContactName}</div>}
-                {so.customerTaxId && <div>เลขผู้เสียภาษี: {so.customerTaxId}</div>}
-                {so.customerPhone && <div>โทร. {so.customerPhone}</div>}
-                {so.customerEmail && <div>{so.customerEmail}</div>}
-                {so.customerBillingAddress && <div style={{ marginTop: 4, color: '#555' }}>{so.customerBillingAddress}</div>}
+          {/* ── Info bar: 4 columns ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', background: MUTED, borderBottom: `1px solid ${BORDER}` }}>
+            {([
+              { en: 'ISSUE DATE', th: 'วันที่ออกเอกสาร', val: formatDate(so.issueDate) },
+              { en: 'PURCHASE ORDER REF.', th: 'อ้างอิงใบสั่งซื้อ', val: so.poNumber || '—' },
+              { en: 'QUOTATION REF.', th: 'อ้างอิงใบเสนอราคา', val: so.quotation?.quotationNo || '—' },
+              { en: 'DELIVERY DATE', th: 'กำหนดส่งสินค้า', val: so.deadlineDate ? formatDate(so.deadlineDate) : '—' },
+            ] as const).map((c, i) => (
+              <div key={i} style={{ padding: '10px 16px', borderRight: i < 3 ? `1px solid ${BORDER}` : undefined }}>
+                <div style={{ fontSize: 8, letterSpacing: 1.5, color: '#999', textTransform: 'uppercase', fontWeight: 700 }}>{c.en}</div>
+                <div style={{ fontSize: 10, color: '#bbb', marginTop: 1 }}>{c.th}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginTop: 5 }}>{c.val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Bill To + Terms ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: `1px solid ${BORDER}` }}>
+            <div style={{ padding: '14px 20px', borderRight: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
+                BILL TO &nbsp;·&nbsp; <span style={{ color: '#ccc' }}>ข้อมูลลูกค้า</span>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: NAVY, marginBottom: 6, lineHeight: 1.3 }}>{so.customerCompany}</div>
+              <div style={{ fontSize: 11, color: '#555', lineHeight: 1.9 }}>
+                {so.customerContactName && <div>ผู้ติดต่อ&emsp;{so.customerContactName}</div>}
+                {so.customerTaxId && <div>เลขผู้เสียภาษี&emsp;{so.customerTaxId}</div>}
+                {(so.customerPhone || so.customerEmail) && (
+                  <div>โทรศัพท์ / อีเมล&emsp;{[so.customerPhone, so.customerEmail].filter(Boolean).join('  ')}</div>
+                )}
+                {so.customerBillingAddress && <div style={{ marginTop: 4 }}>ที่อยู่&emsp;{so.customerBillingAddress}</div>}
               </div>
             </div>
-            <div style={{ padding: '10px 16px', background: '#fafcff' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>เงื่อนไข · Terms</div>
-              <div style={{ fontSize: 11, color: '#444', lineHeight: 2 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>สกุลเงิน</span>
-                  <span style={{ fontWeight: 600 }}>{so.currency}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#666' }}>เงื่อนไขชำระเงิน</span>
-                  <span style={{ fontWeight: 600 }}>{so.paymentTerms || '—'}</span>
-                </div>
-                {so.deadlineDate && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#666' }}>กำหนดส่งสินค้า</span>
-                    <span style={{ fontWeight: 600 }}>{formatDate(so.deadlineDate)}</span>
-                  </div>
-                )}
-                {so.customerShippingAddress && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ color: '#666', fontSize: 10 }}>ที่อยู่จัดส่ง (Ship To)</div>
-                    <div style={{ fontWeight: 600 }}>{so.customerShippingAddress}</div>
-                  </div>
-                )}
+            <div style={{ padding: '14px 20px' }}>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
+                TERMS &nbsp;·&nbsp; <span style={{ color: '#ccc' }}>เงื่อนไขการสั่งซื้อ</span>
               </div>
+              <div style={{ fontSize: 11, color: '#555', lineHeight: 1.9 }}>
+                {[
+                  { label: 'สกุลเงิน · Currency', val: so.currency === 'THB' ? 'THB · Thai Baht' : so.currency },
+                  { label: 'การชำระเงิน · Payment', val: so.paymentTerms || '—' },
+                ].map((r, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ color: '#999', minWidth: 155, flexShrink: 0 }}>{r.label}</span>
+                    <span style={{ fontWeight: 700, color: '#111' }}>{r.val}</span>
+                  </div>
+                ))}
+              </div>
+              {so.customerShippingAddress && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${BORDER}` }}>
+                  <div style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase', fontWeight: 700, marginBottom: 5 }}>SHIP TO · ที่อยู่จัดส่ง</div>
+                  <div style={{ fontSize: 11, color: '#555' }}>{so.customerShippingAddress}</div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* ── Items Table ── */}
-          <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', borderBottom: `1.5px solid ${NAVY}` }}>
+          <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', borderBottom: `1px solid ${BORDER}` }}>
             <thead>
               <tr style={{ background: NAVY, color: '#fff' }}>
-                <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 72 }}>SKU</th>
-                <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)' }}>รายการสินค้า / Description</th>
-                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 56 }}>จำนวน</th>
-                <th style={{ padding: '7px 8px', textAlign: 'center', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 44 }}>หน่วย</th>
-                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 90 }}>ราคา/หน่วย</th>
-                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 60 }}>ส่วนลด</th>
-                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, width: 96 }}>จำนวนเงิน</th>
+                {[
+                  { label: 'N°', w: 30, align: 'center' as const },
+                  { label: 'SKU', w: 78, align: 'left' as const },
+                  { label: 'DESCRIPTION · รายการสินค้า', align: 'left' as const },
+                  { label: 'QTY', w: 54, align: 'right' as const },
+                  { label: 'UNIT', w: 44, align: 'center' as const },
+                  { label: 'UNIT PRICE', w: 92, align: 'right' as const },
+                  { label: 'DISC.', w: 62, align: 'right' as const },
+                  { label: 'AMOUNT', w: 100, align: 'right' as const },
+                ].map((h, i, arr) => (
+                  <th key={i} style={{ padding: '8px 10px', textAlign: h.align, fontWeight: 600, fontSize: 10, letterSpacing: 0.5, width: h.w, borderRight: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.12)' : undefined }}>
+                    {h.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {so.items?.map((it, idx) => (
-                <tr key={it.id || idx} className="so-tr-alt" style={{ borderBottom: '1px solid #dde7f0' }}>
-                  <td style={{ padding: '7px 8px', fontFamily: 'monospace', fontSize: 10, color: '#666', borderRight: '1px solid #dde7f0' }}>{it.productSku || '—'}</td>
-                  <td style={{ padding: '7px 8px', borderRight: '1px solid #dde7f0' }}>
-                    <div style={{ fontWeight: 600 }}>{it.productName}</div>
-                    {it.productDescription && <div style={{ fontSize: 10, color: '#777', marginTop: 1 }}>{it.productDescription}</div>}
+                <tr key={it.id || idx} className="so-row" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  <td style={{ padding: '9px 10px', textAlign: 'center', color: '#ccc', fontSize: 10, borderRight: `1px solid ${BORDER}` }}>{String(idx + 1).padStart(2, '0')}</td>
+                  <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontSize: 10, color: '#888', borderRight: `1px solid ${BORDER}` }}>{it.productSku || '—'}</td>
+                  <td style={{ padding: '9px 10px', borderRight: `1px solid ${BORDER}` }}>
+                    <div style={{ fontWeight: 700 }}>{it.productName}</div>
+                    {it.productDescription && <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>{it.productDescription}</div>}
                   </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', borderRight: '1px solid #dde7f0' }}>{formatNumber(it.quantity)}</td>
-                  <td style={{ padding: '7px 8px', textAlign: 'center', color: '#555', borderRight: '1px solid #dde7f0' }}>{it.unit}</td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', borderRight: '1px solid #dde7f0' }}>{formatNumber(it.unitPrice)}</td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', color: '#e53e3e', borderRight: '1px solid #dde7f0' }}>
+                  <td style={{ padding: '9px 10px', textAlign: 'right', borderRight: `1px solid ${BORDER}` }}>{formatNumber(it.quantity)}</td>
+                  <td style={{ padding: '9px 10px', textAlign: 'center', color: '#777', borderRight: `1px solid ${BORDER}` }}>{it.unit}</td>
+                  <td style={{ padding: '9px 10px', textAlign: 'right', borderRight: `1px solid ${BORDER}` }}>{formatNumber(it.unitPrice)}</td>
+                  <td style={{ padding: '9px 10px', textAlign: 'right', color: '#c0392b', borderRight: `1px solid ${BORDER}` }}>
                     {Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '—'}
                   </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 700 }}>{formatNumber(it.lineTotal)}</td>
+                  <td style={{ padding: '9px 12px', textAlign: 'right', fontWeight: 700 }}>{formatNumber(it.lineTotal)}</td>
                 </tr>
               ))}
               {Array.from({ length: padCount }).map((_, i) => (
-                <tr key={`pad-${i}`} className="so-tr-alt" style={{ borderBottom: '1px solid #dde7f0' }}>
-                  {Array.from({ length: 7 }).map((__, j) => (
-                    <td key={j} style={{ padding: '7px 8px', borderRight: j < 6 ? '1px solid #dde7f0' : undefined }}>&nbsp;</td>
+                <tr key={`pad-${i}`} className="so-row" style={{ borderBottom: `1px solid ${BORDER}` }}>
+                  {[30, 78, undefined, 54, 44, 92, 62, 100].map((w, j, arr) => (
+                    <td key={j} style={{ padding: '9px 10px', borderRight: j < arr.length - 1 ? `1px solid ${BORDER}` : undefined, width: w }}>&nbsp;</td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
 
-          {/* ── Footer: Baht text + Summary ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px' }}>
-            {/* Left: Baht text + Bank */}
-            <div style={{ padding: '12px 16px', borderRight: `1.5px solid ${NAVY}`, borderBottom: `1.5px solid ${NAVY}` }}>
+          {/* ── Amount in Words + Remarks | Summary ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 292px', borderBottom: `1px solid ${BORDER}` }}>
+            {/* Left */}
+            <div style={{ padding: '14px 20px', borderRight: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase', fontWeight: 700, marginBottom: 7 }}>
+                AMOUNT IN WORDS &nbsp;·&nbsp; <span style={{ color: '#ccc' }}>จำนวนเงินในตัวอักษร</span>
+              </div>
               {bahtText && (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>จำนวนเงินตัวอักษร</div>
-                  <div style={{ fontSize: 12, fontStyle: 'italic', fontWeight: 600, color: '#222', padding: '5px 10px', background: NAVY_LIGHT, borderLeft: `3px solid ${NAVY}`, borderRadius: 2 }}>
-                    ( {bahtText} )
-                  </div>
+                <div style={{ fontSize: 12, fontStyle: 'italic', color: '#333', borderLeft: '3px solid #ddd', paddingLeft: 10, marginBottom: 14, lineHeight: 1.5 }}>
+                  ( {bahtText} )
                 </div>
               )}
-              {company?.bankName && (
-                <div style={{ marginTop: bahtText ? 10 : 0 }}>
-                  <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>โอนเงินเข้าบัญชี</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: NAVY }}>
-                    {company.bankName}{company.bankAccount && ` — ${company.bankAccount}`}
+              {(so.conditions || company?.bankName) && (
+                <>
+                  <div style={{ fontSize: 9, letterSpacing: 2, color: '#aaa', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>
+                    REMARKS &nbsp;·&nbsp; <span style={{ color: '#ccc' }}>หมายเหตุ</span>
                   </div>
-                  {company.bankBranch && <div style={{ fontSize: 11, color: '#555' }}>สาขา {company.bankBranch}</div>}
-                </div>
+                  {so.conditions && (
+                    <div style={{ fontSize: 11, color: '#444', lineHeight: 1.85, whiteSpace: 'pre-wrap', marginBottom: 8 }}>{so.conditions}</div>
+                  )}
+                  {company?.bankName && (
+                    <div style={{ fontSize: 11, color: '#444' }}>
+                      โอนเงินเข้าบัญชี <strong style={{ color: NAVY }}>{company.bankName}</strong>
+                      {company.bankAccount && ` เลขที่ ${company.bankAccount}`}
+                      {company.bankBranch && ` สาขา ${company.bankBranch}`}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Right: Summary rows */}
-            <div style={{ fontSize: 11 }}>
+            {/* Right: summary */}
+            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 12 }}>
               {[
-                { label: 'รวมเงิน (ก่อน VAT)', value: formatNumber(so.subtotal) },
-                ...(Number(so.discountTotal) > 0 ? [{ label: 'ส่วนลดรวม', value: `− ${formatNumber(so.discountTotal)}`, red: true }] : []),
-                ...(Number(so.discountTotal) > 0 ? [{ label: 'หลังหักส่วนลด', value: formatNumber(afterDiscount) }] : []),
+                { label: 'รวมเงิน (ก่อน VAT) · Subtotal', val: formatNumber(so.subtotal) },
+                ...(Number(so.discountTotal) > 0 ? [{ label: 'ส่วนลดรวม · Discount', val: formatNumber(so.discountTotal), red: true }] : []),
+                ...(Number(so.discountTotal) > 0 ? [{ label: 'หลังหักส่วนลด · Net', val: formatNumber(afterDiscount) }] : []),
                 so.vatEnabled
-                  ? { label: `ภาษีมูลค่าเพิ่ม (VAT ${formatNumber(so.vatRate)}%)`, value: formatNumber(so.vatAmount) }
-                  : { label: 'ภาษีมูลค่าเพิ่ม', value: 'ไม่มี VAT', muted: true },
-              ].map((row, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', borderBottom: '1px solid #dde7f0', color: (row as { red?: boolean }).red ? '#e53e3e' : (row as { muted?: boolean }).muted ? '#999' : '#333' }}>
-                  <span style={{ color: '#555' }}>{row.label}</span>
-                  <span style={{ fontWeight: 600, minWidth: 90, textAlign: 'right' }}>{row.value}</span>
+                  ? { label: `ภาษีมูลค่าเพิ่ม ${formatNumber(so.vatRate)}% · VAT`, val: formatNumber(so.vatAmount) }
+                  : { label: 'ภาษีมูลค่าเพิ่ม · VAT', val: 'ไม่มี VAT', muted: true },
+              ].map((r, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 16px', borderBottom: `1px solid ${BORDER}`, color: (r as {red?:boolean}).red ? '#c0392b' : (r as {muted?:boolean}).muted ? '#bbb' : '#333' }}>
+                  <span style={{ color: (r as {red?:boolean}).red ? '#c0392b' : '#888', fontSize: 11 }}>{r.label}</span>
+                  <span style={{ fontWeight: 700 }}>{r.val}</span>
                 </div>
               ))}
-              <div style={{ background: NAVY, color: '#fff', padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: `1.5px solid ${NAVY}` }}>
-                <span style={{ fontWeight: 700, fontSize: 12 }}>จำนวนเงินทั้งสิ้น</span>
-                <span style={{ fontWeight: 800, fontSize: 15 }}>{formatNumber(so.grandTotal)} {so.currency}</span>
+              <div style={{ background: NAVY, color: '#fff', padding: '11px 16px', marginTop: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                  <div>
+                    <div style={{ fontSize: 10, letterSpacing: 1.5, opacity: 0.7, textTransform: 'uppercase' }}>Grand Total</div>
+                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 1 }}>จำนวนเงินทั้งสิ้น</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1 }}>{formatNumber(so.grandTotal)}</div>
+                    <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>{so.currency}</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* ── Conditions ── */}
-          {so.conditions && (
-            <div style={{ padding: '8px 16px', borderBottom: `1px solid #c8d8e8`, background: '#fafcff' }}>
-              <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>เงื่อนไขและหมายเหตุ</div>
-              <div style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: '#333', lineHeight: 1.6 }}>{so.conditions}</div>
-            </div>
-          )}
-
-          {/* ── Signature Section ── */}
-          <div style={{ padding: '6px 24px 16px', borderTop: `1px solid #c8d8e8` }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginTop: 8 }}>
+          {/* ── Signature ── */}
+          <div style={{ padding: '10px 28px 18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginTop: 4 }}>
               {[
-                { th: 'ผู้อนุมัติสั่งซื้อ', en: 'Authorized Buyer' },
-                { th: 'พนักงานขาย', en: 'Sales Representative' },
-                { th: 'ผู้มีอำนาจลงนาม', en: 'Authorized Signatory' },
+                { th: 'ผู้อนุมัติสั่งซื้อ', en: 'AUTHORIZED BUYER' },
+                { th: 'พนักงานขาย', en: 'SALES REPRESENTATIVE' },
+                { th: 'ผู้มีอำนาจลงนาม', en: 'AUTHORIZED SIGNATORY' },
               ].map((s, i) => (
                 <div key={i} style={{ textAlign: 'center' }}>
-                  <div style={{ height: 48 }} />
-                  <div style={{ borderTop: `1.5px solid ${NAVY}`, marginTop: 4, paddingTop: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#222' }}>{s.th}</div>
-                    <div style={{ fontSize: 10, color: '#777', marginTop: 1 }}>{s.en}</div>
-                    <div style={{ fontSize: 10, color: '#999', marginTop: 8 }}>วันที่ ________________</div>
+                  <div style={{ height: 44 }} />
+                  <div style={{ fontSize: 11, color: '#bbb', fontStyle: 'italic', marginBottom: 6 }}>( _________________________ )</div>
+                  <div style={{ borderTop: `1px solid #ccc`, paddingTop: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#222' }}>{s.th}</div>
+                    <div style={{ fontSize: 9, letterSpacing: 1.5, color: '#aaa', textTransform: 'uppercase', marginTop: 2 }}>{s.en}</div>
+                    <div style={{ fontSize: 10, color: '#bbb', marginTop: 7 }}>วันที่ · Date ___/___/______</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Bottom accent bar */}
-          <div style={{ height: 4, background: NAVY }} />
+          {/* ── Footer bar ── */}
+          <div style={{ borderTop: `1px solid ${BORDER}`, background: MUTED, padding: '5px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#bbb' }}>
+              Issued by {company?.companyName || company?.companyNameTh} — A computer-generated document; no signature required for validity of record.
+            </span>
+            <span style={{ fontSize: 9, color: '#bbb' }}>PAGE 01 / 01</span>
+          </div>
         </div>
       </div>
     </>
