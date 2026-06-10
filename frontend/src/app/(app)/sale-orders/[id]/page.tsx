@@ -529,6 +529,8 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
   const bahtText = so.currency === 'THB' ? toThaiBahtText(grandTotalNum) : '';
   const minRows = 8;
   const padCount = Math.max(0, minRows - (so.items?.length ?? 0));
+  const NAVY = '#1a3557';
+  const NAVY_LIGHT = '#e8eef5';
 
   return (
     <>
@@ -538,198 +540,249 @@ function ConfirmedDocument({ so, company }: { so: SaleOrder; company: CompanySet
           #so-printable, #so-printable * { visibility: visible !important; }
           #so-printable { position: fixed; inset: 0; padding: 0; margin: 0; }
           .no-print { display: none !important; }
-          @page { size: A4; margin: 12mm; }
+          @page { size: A4; margin: 10mm; }
         }
+        #so-printable { font-family: 'Sarabun', 'TH Sarabun New', sans-serif; }
+        .so-tr-alt:nth-child(even) { background-color: #f8fafc; }
       `}</style>
-      <div className="max-w-5xl mx-auto">
-        <div className="no-print flex flex-wrap gap-3 items-center justify-between mb-4">
+
+      <div className="max-w-4xl mx-auto">
+        {/* ── Screen toolbar ── */}
+        <div className="no-print flex flex-wrap gap-3 items-center justify-between mb-5 p-3 rounded-xl border bg-card shadow-sm">
           <Button asChild variant="ghost" size="sm">
-            <Link href="/sale-orders"><ArrowLeft className="h-4 w-4" />กลับ</Link>
+            <Link href="/sale-orders"><ArrowLeft className="h-4 w-4" />กลับรายการ</Link>
           </Button>
-          <div className="flex gap-2 items-center">
-            <Badge variant="outline" className="bg-blue-500/10 text-blue-700 border-blue-300">🔒 CONFIRMED</Badge>
+          <div className="flex gap-2 items-center flex-wrap">
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 gap-1.5">
+              <CheckCircle2 className="h-3 w-3" />CONFIRMED
+            </Badge>
             {so.quotation && (
               <Button asChild variant="outline" size="sm">
                 <Link href={`/quotations/${so.quotation.id}`}>
-                  <FileText className="h-4 w-4" />{so.quotation.quotationNo}
+                  <FileText className="h-3.5 w-3.5" />{so.quotation.quotationNo}
                 </Link>
               </Button>
             )}
-            <Button onClick={() => window.print()}>
-              <Printer className="h-4 w-4" />พิมพ์ / Save PDF
+            <Button size="sm" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" />พิมพ์ / Save PDF
             </Button>
           </div>
         </div>
 
-        <div id="so-printable" className="bg-white text-black shadow-sm" style={{ fontFamily: 'Sarabun, sans-serif' }}>
-          <div className="border-2 border-black">
-            <div className="grid grid-cols-[1fr_280px]">
-              <div className="px-4 py-3 border-r-2 border-black">
-                <div className="flex items-start gap-3">
-                  {company?.logoUrl ? (
-                    <img src={company.logoUrl} alt="logo" className="w-16 h-16 object-contain shrink-0" />
-                  ) : (
-                    <div className="w-12 h-12 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0">
-                      {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-base">{company?.companyNameTh || company?.companyName}</div>
-                    {company?.companyNameTh && company?.companyName && <div className="text-xs text-gray-700">{company.companyName}</div>}
-                    <div className="text-[11px] text-gray-800 mt-1 space-y-0.5">
-                      {(company?.addressTh || company?.address) && <div>{company?.addressTh || company?.address}</div>}
-                      {company?.phone && <div>โทร. {company.phone}{company?.fax && `  แฟกซ์ ${company.fax}`}</div>}
-                      {company?.email && <div>Email: {company.email}</div>}
-                      {company?.website && <div>Web: {company.website}</div>}
-                      {company?.taxId && <div>เลขประจำตัวผู้เสียภาษี: {company.taxId}</div>}
-                    </div>
+        {/* ── Printable Document ── */}
+        <div id="so-printable" className="bg-white text-black" style={{ fontFamily: 'Sarabun, sans-serif', border: `1.5px solid ${NAVY}` }}>
+
+          {/* Accent bar */}
+          <div style={{ height: 6, background: NAVY }} />
+
+          {/* ── Header: Company + Title ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px', borderBottom: `1.5px solid ${NAVY}` }}>
+            {/* Company info */}
+            <div style={{ padding: '14px 16px', borderRight: `1.5px solid ${NAVY}`, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {company?.logoUrl ? (
+                <img src={company.logoUrl} alt="logo" style={{ width: 64, height: 64, objectFit: 'contain', flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: 52, height: 52, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, flexShrink: 0, borderRadius: 4 }}>
+                  {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: NAVY }}>{company?.companyNameTh || company?.companyName || 'บริษัท'}</div>
+                {company?.companyNameTh && company?.companyName && (
+                  <div style={{ fontSize: 11, color: '#555', marginTop: 1 }}>{company.companyName}</div>
+                )}
+                <div style={{ fontSize: 11, color: '#444', marginTop: 5, lineHeight: 1.7 }}>
+                  {(company?.addressTh || company?.address) && <div>{company?.addressTh || company?.address}</div>}
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    {company?.phone && <span>โทร. {company.phone}</span>}
+                    {company?.fax && <span>แฟกซ์ {company.fax}</span>}
                   </div>
+                  {company?.email && <div>Email: {company.email}</div>}
+                  {company?.taxId && <div style={{ marginTop: 3 }}>เลขผู้เสียภาษี: <strong>{company.taxId}</strong></div>}
                 </div>
               </div>
-              <div className="flex flex-col">
-                <div className="text-center py-2 border-b-2 border-black">
-                  <div className="text-xl font-bold tracking-widest">SALE ORDER</div>
-                  <div className="text-xs text-gray-700">ใบสั่งขาย</div>
+            </div>
+
+            {/* Document title + meta */}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ background: NAVY, color: '#fff', textAlign: 'center', padding: '10px 8px', borderBottom: `1.5px solid ${NAVY}` }}>
+                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 3 }}>SALE ORDER</div>
+                <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>ใบสั่งขาย / ใบยืนยันการสั่งซื้อ</div>
+              </div>
+              <table style={{ width: '100%', fontSize: 11, flex: 1 }}>
+                <tbody>
+                  {[
+                    { label: 'เลขที่', value: so.saleOrderNo, bold: true },
+                    { label: 'วันที่ออก', value: formatDate(so.issueDate) },
+                    { label: 'เลข PO', value: so.poNumber || '—' },
+                    ...(so.deadlineDate ? [{ label: 'กำหนดส่ง', value: formatDate(so.deadlineDate) }] : []),
+                    { label: 'อ้างอิง QT', value: so.quotation?.quotationNo || '—' },
+                  ].map((row, i, arr) => (
+                    <tr key={i} style={{ borderBottom: i < arr.length - 1 ? `1px solid #d0dae8` : undefined }}>
+                      <td style={{ padding: '5px 10px', color: '#555', width: '45%', background: NAVY_LIGHT, borderRight: `1px solid #d0dae8` }}>{row.label}</td>
+                      <td style={{ padding: '5px 10px', fontWeight: row.bold ? 700 : 600, textAlign: 'right', color: row.bold ? NAVY : '#111' }}>{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Customer + Terms ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: `1.5px solid ${NAVY}` }}>
+            <div style={{ padding: '10px 16px', borderRight: `1px solid #c8d8e8` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>ข้อมูลลูกค้า · Bill To</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#111', marginBottom: 3 }}>{so.customerCompany}</div>
+              <div style={{ fontSize: 11, color: '#444', lineHeight: 1.75 }}>
+                {so.customerContactName && <div>ผู้ติดต่อ: {so.customerContactName}</div>}
+                {so.customerTaxId && <div>เลขผู้เสียภาษี: {so.customerTaxId}</div>}
+                {so.customerPhone && <div>โทร. {so.customerPhone}</div>}
+                {so.customerEmail && <div>{so.customerEmail}</div>}
+                {so.customerBillingAddress && <div style={{ marginTop: 4, color: '#555' }}>{so.customerBillingAddress}</div>}
+              </div>
+            </div>
+            <div style={{ padding: '10px 16px', background: '#fafcff' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>เงื่อนไข · Terms</div>
+              <div style={{ fontSize: 11, color: '#444', lineHeight: 2 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#666' }}>สกุลเงิน</span>
+                  <span style={{ fontWeight: 600 }}>{so.currency}</span>
                 </div>
-                <table className="w-full text-[11px]">
-                  <tbody>
-                    <tr className="border-b border-black">
-                      <td className="px-2 py-1 border-r border-black w-[42%] text-gray-700">เลขที่</td>
-                      <td className="px-2 py-1 font-semibold text-right">{so.saleOrderNo}</td>
-                    </tr>
-                    <tr className="border-b border-black">
-                      <td className="px-2 py-1 border-r border-black text-gray-700">วันที่</td>
-                      <td className="px-2 py-1 font-semibold text-right">{formatDate(so.issueDate)}</td>
-                    </tr>
-                    <tr className="border-b border-black">
-                      <td className="px-2 py-1 border-r border-black text-gray-700">เลข PO</td>
-                      <td className="px-2 py-1 font-semibold text-right">{so.poNumber || '-'}</td>
-                    </tr>
-                    {so.deadlineDate && (
-                      <tr className="border-b border-black">
-                        <td className="px-2 py-1 border-r border-black text-gray-700">กำหนดส่ง</td>
-                        <td className="px-2 py-1 font-semibold text-right">{formatDate(so.deadlineDate)}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td className="px-2 py-1 border-r border-black text-gray-700">อ้างอิง QT</td>
-                      <td className="px-2 py-1 font-semibold text-right">{so.quotation?.quotationNo || '-'}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#666' }}>เงื่อนไขชำระเงิน</span>
+                  <span style={{ fontWeight: 600 }}>{so.paymentTerms || '—'}</span>
+                </div>
+                {so.deadlineDate && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#666' }}>กำหนดส่งสินค้า</span>
+                    <span style={{ fontWeight: 600 }}>{formatDate(so.deadlineDate)}</span>
+                  </div>
+                )}
+                {so.customerShippingAddress && (
+                  <div style={{ marginTop: 4 }}>
+                    <div style={{ color: '#666', fontSize: 10 }}>ที่อยู่จัดส่ง (Ship To)</div>
+                    <div style={{ fontWeight: 600 }}>{so.customerShippingAddress}</div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="border-2 border-t-0 border-black grid grid-cols-2">
-            <div className="px-4 py-2 border-r-2 border-black">
-              <DocRow label="ลูกค้า" value={so.customerCompany} bold />
-              <DocRow label="ผู้ติดต่อ" value={so.customerContactName} />
-              {so.customerTaxId && <DocRow label="เลขผู้เสียภาษี" value={so.customerTaxId} />}
-              {so.customerPhone && <DocRow label="โทรศัพท์" value={so.customerPhone} />}
-              {so.customerBillingAddress && <DocRow label="ที่อยู่" value={so.customerBillingAddress} />}
-            </div>
-            <div className="px-4 py-2">
-              <DocRow label="วันที่ออกใบ" value={formatDate(so.issueDate)} />
-              <DocRow label="เงื่อนไขชำระเงิน" value={so.paymentTerms || '-'} />
-              <DocRow label="สกุลเงิน" value={so.currency} />
-              {so.customerShippingAddress && <DocRow label="ที่อยู่จัดส่ง" value={so.customerShippingAddress} />}
-            </div>
-          </div>
-
-          <table className="w-full border-2 border-t-0 border-black text-[11px]">
+          {/* ── Items Table ── */}
+          <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', borderBottom: `1.5px solid ${NAVY}` }}>
             <thead>
-              <tr className="bg-black text-white">
-                <th className="border-r border-gray-700 px-2 py-2 text-left w-[80px]">SKU</th>
-                <th className="border-r border-gray-700 px-2 py-2 text-left">รายการ</th>
-                <th className="border-r border-gray-700 px-2 py-2 text-right w-[60px]">จำนวน</th>
-                <th className="border-r border-gray-700 px-2 py-2 text-center w-[50px]">หน่วย</th>
-                <th className="border-r border-gray-700 px-2 py-2 text-right w-[80px]">ราคา/หน่วย</th>
-                <th className="border-r border-gray-700 px-2 py-2 text-right w-[60px]">ส่วนลด</th>
-                <th className="px-2 py-2 text-right w-[90px]">จำนวนเงิน</th>
+              <tr style={{ background: NAVY, color: '#fff' }}>
+                <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 72 }}>SKU</th>
+                <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)' }}>รายการสินค้า / Description</th>
+                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 56 }}>จำนวน</th>
+                <th style={{ padding: '7px 8px', textAlign: 'center', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 44 }}>หน่วย</th>
+                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 90 }}>ราคา/หน่วย</th>
+                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, borderRight: '1px solid rgba(255,255,255,0.2)', width: 60 }}>ส่วนลด</th>
+                <th style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 600, width: 96 }}>จำนวนเงิน</th>
               </tr>
             </thead>
             <tbody>
               {so.items?.map((it, idx) => (
-                <tr key={it.id || idx} className="border-b border-gray-300">
-                  <td className="border-r border-gray-300 px-2 py-2 font-mono text-[10px]">{it.productSku || '-'}</td>
-                  <td className="border-r border-gray-300 px-2 py-2">
-                    <div className="font-semibold">{it.productName}</div>
-                    {it.productDescription && <div className="text-[10px] text-gray-700">{it.productDescription}</div>}
+                <tr key={it.id || idx} className="so-tr-alt" style={{ borderBottom: '1px solid #dde7f0' }}>
+                  <td style={{ padding: '7px 8px', fontFamily: 'monospace', fontSize: 10, color: '#666', borderRight: '1px solid #dde7f0' }}>{it.productSku || '—'}</td>
+                  <td style={{ padding: '7px 8px', borderRight: '1px solid #dde7f0' }}>
+                    <div style={{ fontWeight: 600 }}>{it.productName}</div>
+                    {it.productDescription && <div style={{ fontSize: 10, color: '#777', marginTop: 1 }}>{it.productDescription}</div>}
                   </td>
-                  <td className="border-r border-gray-300 px-2 py-2 text-right">{formatNumber(it.quantity)}</td>
-                  <td className="border-r border-gray-300 px-2 py-2 text-center">{it.unit}</td>
-                  <td className="border-r border-gray-300 px-2 py-2 text-right">{formatNumber(it.unitPrice)}</td>
-                  <td className="border-r border-gray-300 px-2 py-2 text-right">
-                    {Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '-'}
+                  <td style={{ padding: '7px 8px', textAlign: 'right', borderRight: '1px solid #dde7f0' }}>{formatNumber(it.quantity)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'center', color: '#555', borderRight: '1px solid #dde7f0' }}>{it.unit}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', borderRight: '1px solid #dde7f0' }}>{formatNumber(it.unitPrice)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', color: '#e53e3e', borderRight: '1px solid #dde7f0' }}>
+                    {Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '—'}
                   </td>
-                  <td className="px-2 py-2 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 700 }}>{formatNumber(it.lineTotal)}</td>
                 </tr>
               ))}
               {Array.from({ length: padCount }).map((_, i) => (
-                <tr key={`pad-${i}`} className="border-b border-gray-300">
+                <tr key={`pad-${i}`} className="so-tr-alt" style={{ borderBottom: '1px solid #dde7f0' }}>
                   {Array.from({ length: 7 }).map((__, j) => (
-                    <td key={j} className={`px-2 py-2 ${j < 6 ? 'border-r border-gray-300' : ''}`}>&nbsp;</td>
+                    <td key={j} style={{ padding: '7px 8px', borderRight: j < 6 ? '1px solid #dde7f0' : undefined }}>&nbsp;</td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
 
-          <div className="border-2 border-t-0 border-black grid grid-cols-[1fr_300px]">
-            <div className="px-4 py-3 border-r-2 border-black">
+          {/* ── Footer: Baht text + Summary ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 290px' }}>
+            {/* Left: Baht text + Bank */}
+            <div style={{ padding: '12px 16px', borderRight: `1.5px solid ${NAVY}`, borderBottom: `1.5px solid ${NAVY}` }}>
               {bahtText && (
-                <div>
-                  <div className="text-[10px] text-gray-700 mb-1">จำนวนเงินตัวอักษร</div>
-                  <div className="text-[12px] italic font-semibold">( {bahtText} )</div>
-                </div>
-              )}
-              {company?.bankName && (
-                <div className="mt-3 pt-3 border-t border-gray-300">
-                  <div className="text-[10px] text-gray-700 mb-1">โอนเงินเข้าบัญชี</div>
-                  <div className="text-[11px] font-semibold">
-                    {company.bankName}{company.bankAccount && `   ${company.bankAccount}`}
-                    {company.bankBranch && ` (${company.bankBranch})`}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>จำนวนเงินตัวอักษร</div>
+                  <div style={{ fontSize: 12, fontStyle: 'italic', fontWeight: 600, color: '#222', padding: '5px 10px', background: NAVY_LIGHT, borderLeft: `3px solid ${NAVY}`, borderRadius: 2 }}>
+                    ( {bahtText} )
                   </div>
                 </div>
               )}
+              {company?.bankName && (
+                <div style={{ marginTop: bahtText ? 10 : 0 }}>
+                  <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>โอนเงินเข้าบัญชี</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: NAVY }}>
+                    {company.bankName}{company.bankAccount && ` — ${company.bankAccount}`}
+                  </div>
+                  {company.bankBranch && <div style={{ fontSize: 11, color: '#555' }}>สาขา {company.bankBranch}</div>}
+                </div>
+              )}
             </div>
-            <div className="text-[11px]">
-              <SummaryRow label="รวมเงิน" value={formatNumber(so.subtotal)} />
-              {Number(so.discountTotal) > 0 && <SummaryRow label="ส่วนลด" value={`-${formatNumber(so.discountTotal)}`} />}
-              <SummaryRow label="หลังหักส่วนลด" value={formatNumber(afterDiscount)} />
-              {so.vatEnabled
-                ? <SummaryRow label={`VAT ${formatNumber(so.vatRate)}%`} value={formatNumber(so.vatAmount)} />
-                : <SummaryRow label="ภาษีมูลค่าเพิ่ม" value="ไม่มี VAT" />}
-              <div className="bg-black text-white px-3 py-2 flex justify-between items-baseline">
-                <span className="font-bold">จำนวนเงินทั้งสิ้น</span>
-                <span className="font-bold text-base">{formatNumber(so.grandTotal)} {so.currency}</span>
+
+            {/* Right: Summary rows */}
+            <div style={{ fontSize: 11 }}>
+              {[
+                { label: 'รวมเงิน (ก่อน VAT)', value: formatNumber(so.subtotal) },
+                ...(Number(so.discountTotal) > 0 ? [{ label: 'ส่วนลดรวม', value: `− ${formatNumber(so.discountTotal)}`, red: true }] : []),
+                ...(Number(so.discountTotal) > 0 ? [{ label: 'หลังหักส่วนลด', value: formatNumber(afterDiscount) }] : []),
+                so.vatEnabled
+                  ? { label: `ภาษีมูลค่าเพิ่ม (VAT ${formatNumber(so.vatRate)}%)`, value: formatNumber(so.vatAmount) }
+                  : { label: 'ภาษีมูลค่าเพิ่ม', value: 'ไม่มี VAT', muted: true },
+              ].map((row, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px', borderBottom: '1px solid #dde7f0', color: (row as { red?: boolean }).red ? '#e53e3e' : (row as { muted?: boolean }).muted ? '#999' : '#333' }}>
+                  <span style={{ color: '#555' }}>{row.label}</span>
+                  <span style={{ fontWeight: 600, minWidth: 90, textAlign: 'right' }}>{row.value}</span>
+                </div>
+              ))}
+              <div style={{ background: NAVY, color: '#fff', padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: `1.5px solid ${NAVY}` }}>
+                <span style={{ fontWeight: 700, fontSize: 12 }}>จำนวนเงินทั้งสิ้น</span>
+                <span style={{ fontWeight: 800, fontSize: 15 }}>{formatNumber(so.grandTotal)} {so.currency}</span>
               </div>
             </div>
           </div>
 
+          {/* ── Conditions ── */}
           {so.conditions && (
-            <div className="border-2 border-t-0 border-black px-4 py-2">
-              <div className="text-[10px] text-gray-700 mb-1">เงื่อนไข</div>
-              <div className="text-[11px] whitespace-pre-wrap">{so.conditions}</div>
+            <div style={{ padding: '8px 16px', borderBottom: `1px solid #c8d8e8`, background: '#fafcff' }}>
+              <div style={{ fontSize: 10, color: '#666', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>เงื่อนไขและหมายเหตุ</div>
+              <div style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: '#333', lineHeight: 1.6 }}>{so.conditions}</div>
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-6 mt-12 pb-4 px-4">
-            {[
-              { th: 'ผู้อนุมัติสั่งซื้อ', en: 'Authorized Buyer' },
-              { th: 'พนักงานขาย', en: 'Sales Representative' },
-              { th: 'ผู้มีอำนาจลงนาม', en: 'Authorized Signatory' },
-            ].map((s, i) => (
-              <div key={i} className="text-center">
-                <div className="border-t border-black mt-12 mx-3 pt-1.5">
-                  <div className="text-[11px] font-medium">{s.th}</div>
-                  <div className="text-[10px] text-gray-700">{s.en}</div>
-                  <div className="text-[10px] text-gray-700 mt-3">วันที่: ____________</div>
+          {/* ── Signature Section ── */}
+          <div style={{ padding: '6px 24px 16px', borderTop: `1px solid #c8d8e8` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginTop: 8 }}>
+              {[
+                { th: 'ผู้อนุมัติสั่งซื้อ', en: 'Authorized Buyer' },
+                { th: 'พนักงานขาย', en: 'Sales Representative' },
+                { th: 'ผู้มีอำนาจลงนาม', en: 'Authorized Signatory' },
+              ].map((s, i) => (
+                <div key={i} style={{ textAlign: 'center' }}>
+                  <div style={{ height: 48 }} />
+                  <div style={{ borderTop: `1.5px solid ${NAVY}`, marginTop: 4, paddingTop: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#222' }}>{s.th}</div>
+                    <div style={{ fontSize: 10, color: '#777', marginTop: 1 }}>{s.en}</div>
+                    <div style={{ fontSize: 10, color: '#999', marginTop: 8 }}>วันที่ ________________</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+
+          {/* Bottom accent bar */}
+          <div style={{ height: 4, background: NAVY }} />
         </div>
       </div>
     </>
@@ -741,22 +794,6 @@ function InfoRow({ label, value, bold, span2 }: { label: string; value: string; 
     <div className={span2 ? 'md:col-span-2' : ''}>
       <span className="text-xs text-muted-foreground">{label}</span>
       <div className={cn('mt-0.5', bold ? 'font-bold text-base' : 'font-medium')}>{value}</div>
-    </div>
-  );
-}
-function DocRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div className="flex gap-2 text-[11px] py-0.5">
-      <span className="text-gray-700 w-[110px] shrink-0">{label}</span>
-      <span className={`flex-1 ${bold ? 'font-bold text-[12px]' : 'font-semibold'}`}>{value}</span>
-    </div>
-  );
-}
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[1fr_auto] px-3 py-1.5 border-b border-gray-300">
-      <span className="text-gray-700">{label}</span>
-      <span className="font-semibold min-w-[90px] text-right">{value}</span>
     </div>
   );
 }
