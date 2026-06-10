@@ -449,7 +449,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
     return (
       <Link href={firstChild.href} onClick={onMobileClose}
         className={cn('group relative flex items-center justify-center p-2.5 rounded-lg transition-all duration-200',
-          anyChildActive ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-accent/30')}
+          anyChildActive ? 'text-foreground bg-white/10 dark:bg-white/10 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-foreground dark:hover:text-white hover:bg-white/8 dark:hover:bg-white/8')}
         title={t(item.labelKey)}>
         <div className="relative flex items-center justify-center">
           <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
@@ -463,7 +463,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
     <div>
       <button onClick={() => setOpen((v) => !v)}
         className={cn('group w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-          anyChildActive ? 'text-foreground bg-gradient-to-r from-accent/40 to-transparent' : 'text-muted-foreground hover:text-foreground hover:bg-accent/30')}>
+          anyChildActive ? 'text-foreground dark:text-white bg-white/10 dark:bg-white/10' : 'text-slate-600 dark:text-slate-400 hover:text-foreground dark:hover:text-white hover:bg-white/8 dark:hover:bg-white/8')}>
         <div className="relative flex items-center justify-center shrink-0">
           <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         </div>
@@ -472,7 +472,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200 shrink-0', open && 'rotate-180')} style={{ color: theme.accentColor, opacity: 0.7 }} />
       </button>
       <div className={cn('overflow-hidden transition-all duration-300 ease-out', open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0')}>
-        <div className="pl-3 ml-3 border-l border-border/40 space-y-0.5">
+        <div className="pl-3 ml-3 border-l border-slate-200 dark:border-white/[0.08] space-y-0.5">
           {children.map((child) => (
             <NavItemView key={child.href ?? child.labelKey} item={child} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} level={level + 1} />
           ))}
@@ -493,7 +493,7 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
     if (collapsed) return null;
     return (
       <div className="px-3 pt-4 pb-1 first:pt-2">
-        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground/40 select-none">
+        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-600 select-none">
           {item.dividerLabel}
         </span>
       </div>
@@ -508,7 +508,9 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
   return (
     <Link href={item.href} onClick={onMobileClose}
       className={cn('group relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-        isLeafActive ? 'text-foreground bg-gradient-to-r from-accent/80 to-accent/40 shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-accent/30 hover:translate-x-0.5',
+        isLeafActive
+          ? 'text-foreground dark:text-white bg-white/12 dark:bg-white/10 shadow-sm'
+          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-white/8 hover:translate-x-0.5',
         level > 0 && 'py-1.5 text-[13px]')}
       title={collapsed ? t(item.labelKey) : undefined}>
       {isLeafActive && (
@@ -566,7 +568,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const items = roleCode === 'CEO' ? CEO_NAV_ITEMS : filterItems(NAV_ITEMS);
 
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
-    <div className="h-20 px-4 flex items-center justify-between border-b border-border/40 shrink-0 relative overflow-hidden">
+    <div className="h-20 px-4 flex items-center justify-between border-b border-slate-200 dark:border-white/[0.06] shrink-0 relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
         style={{ background: `radial-gradient(circle at 20% 50%, ${theme.accentColor} 0%, transparent 65%)` }} />
       <div className="flex items-center gap-3 min-w-0 relative z-10">
@@ -587,11 +589,11 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
         )}
       </div>
       {!showClose ? (
-        <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:scale-110 relative z-10">
+        <button onClick={() => setCollapsed(!collapsed)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-all hover:scale-110 relative z-10">
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       ) : (
-        <button onClick={onMobileClose} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-all hover:rotate-90 relative z-10">
+        <button onClick={onMobileClose} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-all hover:rotate-90 relative z-10">
           <X className="h-4 w-4" />
         </button>
       )}
@@ -605,17 +607,17 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
           <NavItemView key={item.href ?? item.labelKey} item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} />
         ))}
       </nav>
-      <div className="p-3 border-t border-border/40 shrink-0">
+      <div className="p-3 border-t border-slate-200 dark:border-white/[0.06] shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] text-muted-foreground font-mono">v2.0.0</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-600 font-mono">v2.0.0</span>
             <div className="text-[10px] font-bold px-2 py-0.5 rounded-full"
               style={{ background: `linear-gradient(to right, ${theme.gradientStops[0]}20, ${theme.gradientStops[2]}20)`, color: theme.accentColor, border: `1px solid ${theme.accentColor}30` }}>
               {role?.code || theme.tagline}
             </div>
           </div>
         ) : (
-          <div className="text-[10px] text-muted-foreground text-center font-mono">v2</div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-600 text-center font-mono">v2</div>
         )}
       </div>
     </>
@@ -623,12 +625,12 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
   return (
     <>
-      <aside className={cn('hidden lg:flex sticky top-0 h-screen flex-col border-r border-border/40 backdrop-blur-2xl transition-all duration-300 z-20', 'bg-card/60 dark:bg-card/40', collapsed ? 'w-16' : 'w-64')}>
+      <aside className={cn('hidden lg:flex sticky top-0 h-screen flex-col border-r transition-all duration-300 z-20', 'bg-white dark:bg-[#0d1b2e] border-slate-200 dark:border-white/[0.06]', collapsed ? 'w-16' : 'w-64')}>
         <div className="absolute right-0 top-0 bottom-0 w-px opacity-30" style={{ background: `linear-gradient(to bottom, transparent, ${theme.accentColor}, transparent)` }} />
         {brandHeader(false, 'desktop')}
         {navContent}
       </aside>
-      <aside className={cn('fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r border-border/40 bg-card/95 backdrop-blur-2xl transition-transform duration-300 lg:hidden shadow-2xl', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
+      <aside className={cn('fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r transition-transform duration-300 lg:hidden shadow-2xl', 'bg-white dark:bg-[#0d1b2e] border-slate-200 dark:border-white/[0.06]', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
         {brandHeader(true, 'mobile')}
         {navContent}
       </aside>
