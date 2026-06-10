@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Loader2, Plus, Save, Send, Trash2, X, Lock,
+  ArrowLeft, Loader2, Plus, Save, Send, Trash2, X, Lock, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,8 @@ export default function NewQuotationPage() {
   const [deliveryDate, setDeliveryDate] = useState('');
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
   const [usdExchangeRate, setUsdExchangeRate] = useState(35);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateUpdatedAt, setRateUpdatedAt] = useState<string | null>(null);
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
   const [normalDiscountMax, setNormalDiscountMax] = useState(20);
@@ -92,6 +94,38 @@ export default function NewQuotationPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [submitting]);
+
+  const fetchLiveRate = async (force = false) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const cacheKey = `usd_thb_rate_${today}`;
+    if (!force) {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const { rate, updatedAt } = JSON.parse(cached);
+        setUsdExchangeRate(rate);
+        setRateUpdatedAt(updatedAt);
+        return;
+      }
+    }
+    setRateLoading(true);
+    try {
+      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=THB');
+      const data = await res.json();
+      const rate = Math.round(data.rates.THB * 100) / 100;
+      const updatedAt = `${today} (ECB)`;
+      setUsdExchangeRate(rate);
+      setRateUpdatedAt(updatedAt);
+      localStorage.setItem(cacheKey, JSON.stringify({ rate, updatedAt }));
+    } catch {
+      // silently fall back to system setting value
+    } finally {
+      setRateLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currency === 'USD') fetchLiveRate();
+  }, [currency]);
 
   // Payment term hierarchy: index 0 = strictest, higher index = more lenient
   const PAYMENT_TERMS_ORDERED = ['Prepaid', 'COD', 'Net 7', 'Net 15', 'Net 30', 'Net 60', 'Net 90'] as const;
@@ -247,15 +281,34 @@ const submitForm = async (mode: 'draft' | 'submit') => {
             </div>
             {currency === 'USD' && (
               <div>
-                <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
-                <Input
-                  type="number" min="1" step="0.01"
-                  value={usdExchangeRate}
-                  onChange={(e) => setUsdExchangeRate(parseFloat(e.target.value) || 35)}
-                  disabled={isFullyDisabled}
-                  className="mt-1.5"
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">ใช้เปรียบเทียบกับวงเงินอนุมัติ (THB)</p>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
+                  {rateUpdatedAt && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                      Live · {rateUpdatedAt}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-1.5 mt-1.5">
+                  <Input
+                    type="number" min="1" step="0.01"
+                    value={usdExchangeRate}
+                    onChange={(e) => setUsdExchangeRate(parseFloat(e.target.value) || 35)}
+                    disabled={isFullyDisabled || rateLoading}
+                    className="flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fetchLiveRate(true)}
+                    disabled={isFullyDisabled || rateLoading}
+                    title="ดึงอัตราปัจจุบัน"
+                    className="h-10 w-10 shrink-0 flex items-center justify-center rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50 transition-colors"
+                  >
+                    {rateLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">อัตราอ้างอิง ECB รายวัน · แก้ไขได้</p>
               </div>
             )}
           </div>
@@ -432,11 +485,6 @@ const submitForm = async (mode: 'draft' | 'submit') => {
                   )}
                 </div>
               </div>
-              {currency === 'USD' && (
-                <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                  วงเงินอนุมัติของ Manager เป็น THB — ระบบจะใช้ <span className="font-semibold">{formatMoney(calc.grandTotal * usdExchangeRate, 'THB')}</span> เปรียบเทียบกับ approval limit
-                </div>
-              )}
             </div>
           </div>
         </CardContent>
