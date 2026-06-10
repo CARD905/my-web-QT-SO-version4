@@ -293,7 +293,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
             </div>
             {currency === 'USD' && (
               <div>
-                <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
+              
                 <div className="flex gap-1.5 mt-1.5">
                   <Input
                     type="number" min="1" step="0.01"
@@ -536,7 +536,7 @@ const submitForm = async (mode: 'draft' | 'submit') => {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">รวมสุทธิ:</span>
+                
                 <span className="text-lg font-bold text-primary">{formatMoney(calc.grandTotal, currency)}</span>
                 {currency === 'USD' && (
                   <span className="text-xs text-muted-foreground">≈ {formatMoney(calc.grandTotal * usdExchangeRate, 'THB')}</span>
