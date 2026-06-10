@@ -62,7 +62,6 @@ export default function EditQuotationPage() {
   const [currency, setCurrency] = useState<'THB' | 'USD'>('THB');
   const [usdExchangeRate, setUsdExchangeRate] = useState(35);
   const [rateLoading, setRateLoading] = useState(false);
-  const [rateUpdatedAt, setRateUpdatedAt] = useState<string | null>(null);
   const [vatEnabled, setVatEnabled] = useState(true);
   const [vatRate, setVatRate] = useState(7);
   const [normalDiscountMax, setNormalDiscountMax] = useState(20);
@@ -205,9 +204,8 @@ export default function EditQuotationPage() {
     if (!force) {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
-        const { rate, updatedAt } = JSON.parse(cached);
+        const { rate } = JSON.parse(cached);
         setUsdExchangeRate(rate);
-        setRateUpdatedAt(updatedAt);
         return;
       }
     }
@@ -218,10 +216,8 @@ export default function EditQuotationPage() {
       const rawRate = data?.rates?.THB;
       if (!rawRate) throw new Error('THB rate not found');
       const rate = Math.round(rawRate * 100) / 100;
-      const updatedAt = `${today}`;
       setUsdExchangeRate(rate);
-      setRateUpdatedAt(updatedAt);
-      localStorage.setItem(cacheKey, JSON.stringify({ rate, updatedAt }));
+      localStorage.setItem(cacheKey, JSON.stringify({ rate }));
     } catch {
       // silently fall back to current value
     } finally {
@@ -400,15 +396,7 @@ export default function EditQuotationPage() {
             </div>
             {currency === 'USD' && (
               <div>
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
-                  {rateUpdatedAt && (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                      Live · {rateUpdatedAt}
-                    </span>
-                  )}
-                </div>
+                <Label className="text-xs">อัตราแลกเปลี่ยน (1 USD = ? THB)</Label>
                 <div className="flex gap-1.5 mt-1.5">
                   <Input
                     type="number" min="1" step="0.01"
@@ -427,7 +415,6 @@ export default function EditQuotationPage() {
                     {rateLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">อัตราอ้างอิง ECB รายวัน · แก้ไขได้</p>
               </div>
             )}
           </div>

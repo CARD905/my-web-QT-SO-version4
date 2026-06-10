@@ -362,7 +362,6 @@ export default function AdminSettingsPage() {
                         {isChanged && <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-300">แก้ไขแล้ว</Badge>}
                       </Label>
                       {s.description && <p className="text-xs text-muted-foreground mt-0.5">{s.description}</p>}
-                      <p className="text-[10px] text-muted-foreground font-mono mt-1 opacity-60">key: {s.key}</p>
                     </div>
                     <div>
                       {s.type === 'boolean' ? (
