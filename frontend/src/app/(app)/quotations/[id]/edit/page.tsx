@@ -213,10 +213,12 @@ export default function EditQuotationPage() {
     }
     setRateLoading(true);
     try {
-      const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=THB');
+      const res = await fetch('https://open.er-api.com/v6/latest/USD');
       const data = await res.json();
-      const rate = Math.round(data.rates.THB * 100) / 100;
-      const updatedAt = `${today} (ECB)`;
+      const rawRate = data?.rates?.THB;
+      if (!rawRate) throw new Error('THB rate not found');
+      const rate = Math.round(rawRate * 100) / 100;
+      const updatedAt = `${today}`;
       setUsdExchangeRate(rate);
       setRateUpdatedAt(updatedAt);
       localStorage.setItem(cacheKey, JSON.stringify({ rate, updatedAt }));
