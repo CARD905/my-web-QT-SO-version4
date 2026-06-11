@@ -9,9 +9,9 @@ interface AuroraProps {
 // ─── สีตาม role — vibrant ทั้ง light/dark ─────────────────────────────────
 const VARIANT_COLORS = {
   default: {
-    c1: '99, 102, 241',    // indigo
+    c1: '124, 58, 237',    // violet (new primary)
     c2: '168, 85, 247',    // purple
-    c3: '14, 165, 233',    // sky
+    c3: '236, 72, 153',    // pink
   },
   manager: {
     c1: '245, 158, 11',    // amber
@@ -21,7 +21,7 @@ const VARIANT_COLORS = {
   approver: {
     c1: '168, 85, 247',    // purple
     c2: '236, 72, 153',    // pink
-    c3: '99, 102, 241',    // indigo
+    c3: '124, 58, 237',    // violet
   },
   admin: {
     c1: '244, 63, 94',     // rose
@@ -73,9 +73,9 @@ export function AuroraBackground({ variant = 'default' }: AuroraProps) {
         style={
           {
             background: `
-              radial-gradient(ellipse 800px 600px at var(--x1, 30%) var(--y1, 25%), rgba(${colors.c1}, 0.18), transparent 60%),
-              radial-gradient(ellipse 600px 800px at var(--x2, 70%) var(--y2, 65%), rgba(${colors.c2}, 0.15), transparent 60%),
-              radial-gradient(ellipse 700px 500px at var(--x3, 50%) var(--y3, 50%), rgba(${colors.c3}, 0.12), transparent 60%)
+              radial-gradient(ellipse 800px 600px at var(--x1, 30%) var(--y1, 25%), rgba(${colors.c1}, 0.22), transparent 60%),
+              radial-gradient(ellipse 600px 800px at var(--x2, 70%) var(--y2, 65%), rgba(${colors.c2}, 0.18), transparent 60%),
+              radial-gradient(ellipse 700px 500px at var(--x3, 50%) var(--y3, 50%), rgba(${colors.c3}, 0.15), transparent 60%)
             `,
           } as React.CSSProperties
         }
@@ -87,9 +87,9 @@ export function AuroraBackground({ variant = 'default' }: AuroraProps) {
         className="fixed inset-0 -z-10 overflow-hidden pointer-events-none opacity-60 dark:opacity-100"
         style={{
           backgroundImage: `
-            radial-gradient(at 0% 0%, rgba(${colors.c1}, 0.08) 0%, transparent 50%),
-            radial-gradient(at 100% 100%, rgba(${colors.c2}, 0.08) 0%, transparent 50%),
-            radial-gradient(at 100% 0%, rgba(${colors.c3}, 0.06) 0%, transparent 50%)
+            radial-gradient(at 0% 0%, rgba(${colors.c1}, 0.10) 0%, transparent 50%),
+            radial-gradient(at 100% 100%, rgba(${colors.c2}, 0.10) 0%, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(${colors.c3}, 0.08) 0%, transparent 50%)
           `,
         }}
       />

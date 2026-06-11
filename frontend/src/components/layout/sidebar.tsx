@@ -462,8 +462,11 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
   return (
     <div>
       <button onClick={() => setOpen((v) => !v)}
-        className={cn('group w-full relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
-          anyChildActive ? 'text-foreground dark:text-white bg-white/10 dark:bg-white/10' : 'text-slate-600 dark:text-slate-400 hover:text-foreground dark:hover:text-white hover:bg-white/8 dark:hover:bg-white/8')}>
+        className={cn('group w-full relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+          anyChildActive ? 'text-foreground dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-foreground dark:hover:text-white')}
+        style={anyChildActive
+          ? { background: `linear-gradient(135deg, ${theme.accentColor}18, ${theme.gradientStops[2]}12)`, border: `1px solid ${theme.accentColor}25` }
+          : undefined}>
         <div className="relative flex items-center justify-center shrink-0">
           <Icon className="h-4 w-4" style={{ color: anyChildActive ? theme.accentColor : undefined, filter: anyChildActive ? `drop-shadow(0 0 4px ${theme.accentColor}80)` : undefined }} />
         </div>
@@ -472,7 +475,7 @@ function NavGroupItem({ item, pathname, collapsed, theme, t, roleCode, onMobileC
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform duration-200 shrink-0', open && 'rotate-180')} style={{ color: theme.accentColor, opacity: 0.7 }} />
       </button>
       <div className={cn('overflow-hidden transition-all duration-300 ease-out', open ? 'max-h-96 opacity-100 mt-1' : 'max-h-0 opacity-0')}>
-        <div className="pl-3 ml-3 border-l border-slate-200 dark:border-white/[0.08] space-y-0.5">
+        <div className="pl-3 ml-3 border-l border-border/50 space-y-0.5">
           {children.map((child) => (
             <NavItemView key={child.href ?? child.labelKey} item={child} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} level={level + 1} />
           ))}
@@ -491,9 +494,25 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
   // Section divider label (CEO grouped nav)
   if (item.dividerLabel) {
     if (collapsed) return null;
+    const sectionColors: Record<string, { dot: string; text: string; bg: string; border: string }> = {
+      PIPELINE:     { dot: '#06b6d4', text: '#0891b2', bg: 'rgba(6,182,212,0.08)',   border: 'rgba(6,182,212,0.20)' },
+      MASTERDATA:   { dot: '#10b981', text: '#059669', bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.20)' },
+      ORGANIZATION: { dot: '#a855f7', text: '#9333ea', bg: 'rgba(168,85,247,0.08)',  border: 'rgba(168,85,247,0.20)' },
+      ANALYTICS:    { dot: '#f59e0b', text: '#d97706', bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.20)' },
+      REFERENCE:    { dot: '#ec4899', text: '#db2777', bg: 'rgba(236,72,153,0.08)',  border: 'rgba(236,72,153,0.20)' },
+      'ADMIN PANEL':{ dot: '#ef4444', text: '#dc2626', bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.20)' },
+      EXECUTIVE:    { dot: '#d4a574', text: '#b7874b', bg: 'rgba(212,165,116,0.08)', border: 'rgba(212,165,116,0.20)' },
+      REPORTS:      { dot: '#7c3aed', text: '#6d28d9', bg: 'rgba(124,58,237,0.08)',  border: 'rgba(124,58,237,0.20)' },
+      SETTINGS:     { dot: '#64748b', text: '#475569', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)' },
+    };
+    const sc = sectionColors[item.dividerLabel] ?? { dot: theme.accentColor, text: theme.accentColor, bg: `${theme.accentColor}14`, border: `${theme.accentColor}30` };
     return (
-      <div className="px-3 pt-4 pb-1 first:pt-2">
-        <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-600 select-none">
+      <div className="px-2 pt-4 pb-1 first:pt-2">
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-[0.16em] select-none"
+          style={{ color: sc.text, background: sc.bg, border: `1px solid ${sc.border}` }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sc.dot }} />
           {item.dividerLabel}
         </span>
       </div>
@@ -507,11 +526,16 @@ function NavItemView({ item, pathname, collapsed, theme, t, roleCode, onMobileCl
 
   return (
     <Link href={item.href} onClick={onMobileClose}
-      className={cn('group relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+      className={cn('group relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200',
         isLeafActive
-          ? 'text-foreground dark:text-white bg-white/12 dark:bg-white/10 shadow-sm'
-          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-white/8 hover:translate-x-0.5',
+          ? 'text-foreground dark:text-white shadow-sm'
+          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:translate-x-0.5',
         level > 0 && 'py-1.5 text-[13px]')}
+      style={isLeafActive
+        ? { background: `linear-gradient(135deg, ${theme.accentColor}18, ${theme.gradientStops[2]}12)`, borderColor: `${theme.accentColor}25`, border: `1px solid ${theme.accentColor}25` }
+        : undefined}
+      onMouseEnter={!isLeafActive ? (e) => { (e.currentTarget as HTMLElement).style.background = `${theme.accentColor}0d`; } : undefined}
+      onMouseLeave={!isLeafActive ? (e) => { (e.currentTarget as HTMLElement).style.background = ''; } : undefined}
       title={collapsed ? t(item.labelKey) : undefined}>
       {isLeafActive && (
         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full"
@@ -568,7 +592,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
   const items = roleCode === 'CEO' ? CEO_NAV_ITEMS : filterItems(NAV_ITEMS);
 
   const brandHeader = (showClose = false, idSuffix = 'desktop') => (
-    <div className="h-20 px-4 flex items-center justify-between border-b border-slate-200 dark:border-white/[0.06] shrink-0 relative overflow-hidden">
+    <div className="h-20 px-4 flex items-center justify-between border-b border-border/60 shrink-0 relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
         style={{ background: `radial-gradient(circle at 20% 50%, ${theme.accentColor} 0%, transparent 65%)` }} />
       <div className="flex items-center gap-3 min-w-0 relative z-10">
@@ -607,7 +631,7 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
           <NavItemView key={item.href ?? item.labelKey} item={item} pathname={pathname} collapsed={collapsed} theme={theme} t={t} roleCode={roleCode} onMobileClose={onMobileClose} />
         ))}
       </nav>
-      <div className="p-3 border-t border-slate-200 dark:border-white/[0.06] shrink-0">
+      <div className="p-3 border-t border-border/60 shrink-0">
         {!collapsed ? (
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] text-slate-400 dark:text-slate-600 font-mono">v2.0.0</span>
@@ -625,12 +649,13 @@ export function Sidebar({ role: initialRole, mobileOpen = false, onMobileClose }
 
   return (
     <>
-      <aside className={cn('hidden lg:flex sticky top-0 h-screen flex-col border-r transition-all duration-300 z-20', 'bg-white dark:bg-[#0d1b2e] border-slate-200 dark:border-white/[0.06]', collapsed ? 'w-16' : 'w-64')}>
-        <div className="absolute right-0 top-0 bottom-0 w-px opacity-30" style={{ background: `linear-gradient(to bottom, transparent, ${theme.accentColor}, transparent)` }} />
+      <aside className={cn('sidebar-bg hidden lg:flex sticky top-0 h-screen flex-col border-r transition-all duration-300 z-20 overflow-hidden', collapsed ? 'w-16' : 'w-64')}>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at 50% 0%, ${theme.accentColor}0a 0%, transparent 60%)` }} />
+        <div className="absolute right-0 top-0 bottom-0 w-px opacity-40" style={{ background: `linear-gradient(to bottom, transparent, ${theme.accentColor}, transparent)` }} />
         {brandHeader(false, 'desktop')}
         {navContent}
       </aside>
-      <aside className={cn('fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r transition-transform duration-300 lg:hidden shadow-2xl', 'bg-white dark:bg-[#0d1b2e] border-slate-200 dark:border-white/[0.06]', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
+      <aside className={cn('sidebar-bg fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r transition-transform duration-300 lg:hidden shadow-2xl', mobileOpen ? 'translate-x-0' : '-translate-x-full')}>
         {brandHeader(true, 'mobile')}
         {navContent}
       </aside>
