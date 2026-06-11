@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Printer, FileText, Send, CheckCircle2,
   XCircle, Loader2, Clock, AlertTriangle, Download, Calendar,
-  ZoomIn, ZoomOut, RotateCcw,
+  ZoomIn, ZoomOut, RotateCcw, Maximize2, X as XIcon, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -77,80 +77,176 @@ function ActionConfirmDialog({ title, description, confirmLabel, confirmVariant 
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// PO File Preview with zoom
+// PO File Preview — image/PDF with zoom + lightbox
 // ════════════════════════════════════════════════════════════════════════════
-function POFilePreview({ url, mimeType, fileName }: { url: string; mimeType?: string | null; fileName?: string | null }) {
-  const [zoom, setZoom] = useState(1);
-  const isImage = mimeType?.startsWith('image/');
-  const isPdf = mimeType === 'application/pdf';
+function detectFileType(mimeType?: string | null, url?: string): 'image' | 'pdf' | 'other' {
+  if (mimeType?.startsWith('image/')) return 'image';
+  if (mimeType === 'application/pdf') return 'pdf';
+  // fallback: detect from URL extension
+  const ext = url?.split('?')[0].split('.').pop()?.toLowerCase();
+  if (ext && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
+  if (ext === 'pdf') return 'pdf';
+  return 'other';
+}
 
-  if (!isImage && !isPdf) {
-    return (
-      <Button asChild variant="outline" size="sm" className="w-full">
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
-        </a>
-      </Button>
-    );
-  }
+function POLightbox({ url, fileName, onClose }: { url: string; fileName?: string | null; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const fileType = detectFileType(undefined, url);
+
+  // ปิดด้วย Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
-    <div className="space-y-2">
-      {/* Zoom controls */}
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground tabular-nums">{Math.round(zoom * 100)}%</span>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
-            disabled={zoom <= 0.25}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setZoom(1)}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors"
-          >
-            <RotateCcw className="h-3 w-3" />
-          </button>
-          <button
-            onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
-            disabled={zoom >= 4}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
+    <div className="fixed inset-0 z-[999] flex flex-col bg-black/92 backdrop-blur-md" onClick={onClose}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
+        <span className="text-sm text-white/70 font-medium truncate max-w-[60vw]">{fileName ?? 'PO File'}</span>
+        <div className="flex items-center gap-1">
+          {fileType === 'image' && (
+            <>
+              <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))} disabled={zoom <= 0.25}
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <span className="text-xs text-white/60 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(1)}
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors">
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={() => setZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))} disabled={zoom >= 5}
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <div className="w-px h-5 bg-white/20 mx-1" />
+            </>
+          )}
+          <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+            className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors">
+            <ExternalLink className="h-3.5 w-3.5" />เปิดใหม่
+          </a>
+          <a href={url} download={fileName ?? 'PO'} onClick={e => e.stopPropagation()}
+            className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors">
+            <Download className="h-3.5 w-3.5" />ดาวน์โหลด
+          </a>
+          <button onClick={onClose}
+            className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-red-500/70 text-white transition-colors ml-1">
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Preview area */}
-      <div
-        className="rounded-lg border bg-muted/20 overflow-auto"
-        style={{ height: 220 }}
-      >
-        {isImage && (
-          <div className="flex justify-center items-start min-h-full">
-            <img
-              src={url}
-              alt={fileName ?? 'PO'}
-              style={{ width: `${zoom * 100}%`, flexShrink: 0, display: 'block' }}
-            />
-          </div>
+      {/* Content */}
+      <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-0" onClick={e => e.stopPropagation()}>
+        {fileType === 'image' && (
+          <img src={url} alt={fileName ?? 'PO'} draggable={false}
+            style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? 'none' : '100%', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.6)', transition: 'width 0.2s ease' }} />
         )}
-        {isPdf && (
-          <div style={{ width: `${zoom * 100}%`, height: '100%', minWidth: '100%', minHeight: 220 }}>
-            <iframe src={url} title="PO PDF" className="w-full h-full" style={{ minHeight: 220 }} />
+        {fileType === 'pdf' && (
+          <iframe src={url} title="PO PDF" className="w-full rounded-lg" style={{ height: 'calc(100vh - 100px)', background: '#fff' }} />
+        )}
+        {fileType === 'other' && (
+          <div className="text-center text-white/60">
+            <FileText className="h-16 w-16 mx-auto mb-3 opacity-40" />
+            <p className="text-sm">ไม่รองรับการ preview ไฟล์ประเภทนี้</p>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-primary underline text-sm">
+              <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
+            </a>
           </div>
         )}
       </div>
-
-      {/* Download button */}
-      <Button asChild variant="outline" size="sm" className="w-full">
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <Download className="h-3.5 w-3.5" />ดาวน์โหลด PO
-        </a>
-      </Button>
     </div>
+  );
+}
+
+function POFilePreview({ url, mimeType, fileName }: { url: string; mimeType?: string | null; fileName?: string | null }) {
+  const [zoom, setZoom] = useState(1);
+  const [lightbox, setLightbox] = useState(false);
+  const fileType = detectFileType(mimeType, url);
+
+  return (
+    <>
+      {lightbox && <POLightbox url={url} fileName={fileName} onClose={() => setLightbox(false)} />}
+
+      <div className="space-y-2">
+        {fileType === 'other' ? (
+          /* ── ไม่ใช่ image/PDF → ปุ่ม download ── */
+          <Button asChild variant="outline" size="sm" className="w-full">
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
+            </a>
+          </Button>
+        ) : (
+          <>
+            {/* ── Toolbar ── */}
+            <div className="flex items-center justify-between">
+              {fileType === 'image' ? (
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))} disabled={zoom <= 0.25}
+                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors" title="ย่อ">
+                    <ZoomOut className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-[11px] text-muted-foreground tabular-nums w-9 text-center">{Math.round(zoom * 100)}%</span>
+                  <button onClick={() => setZoom(1)}
+                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors" title="รีเซ็ต">
+                    <RotateCcw className="h-3 w-3" />
+                  </button>
+                  <button onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))} disabled={zoom >= 4}
+                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors" title="ขยาย">
+                    <ZoomIn className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[11px] text-muted-foreground">PDF</span>
+              )}
+              <button onClick={() => setLightbox(true)}
+                className="h-6 px-2 flex items-center gap-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors text-[11px]"
+                title="เปิดเต็มจอ">
+                <Maximize2 className="h-3.5 w-3.5" />เต็มจอ
+              </button>
+            </div>
+
+            {/* ── Preview box ── */}
+            <div className="rounded-xl border bg-muted/20 overflow-auto cursor-zoom-in"
+              style={{ height: fileType === 'pdf' ? 340 : 260 }}
+              onClick={() => setLightbox(true)}>
+              {fileType === 'image' && (
+                <div className="flex justify-center items-start min-h-full p-1">
+                  <img src={url} alt={fileName ?? 'PO'}
+                    style={{ width: `${zoom * 100}%`, flexShrink: 0, display: 'block', borderRadius: 6, transition: 'width 0.2s ease' }} />
+                </div>
+              )}
+              {fileType === 'pdf' && (
+                <iframe src={url} title="PO PDF" className="w-full h-full" style={{ minHeight: 340 }}
+                  onClick={e => e.stopPropagation()} />
+              )}
+            </div>
+
+            {/* ── ชื่อไฟล์ ── */}
+            {fileName && (
+              <p className="text-[11px] text-muted-foreground truncate" title={fileName}>{fileName}</p>
+            )}
+
+            {/* ── Action buttons ── */}
+            <div className="flex gap-2">
+              <Button asChild variant="outline" size="sm" className="flex-1">
+                <a href={url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
+                </a>
+              </Button>
+              <Button asChild variant="outline" size="sm" className="flex-1">
+                <a href={url} download={fileName ?? 'PO'}>
+                  <Download className="h-3.5 w-3.5" />ดาวน์โหลด
+                </a>
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 

@@ -18,10 +18,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatDate, formatMoney } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import ManagerDashboardPage from './manager';
+import { CurrencyProvider, useCx } from '@/lib/currency-context';
+import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CeoDashboardData {
@@ -168,6 +170,7 @@ function WinRateBarSVG({ data }: { data: Array<{ month: string; approved: number
 
 // ─── Revenue Area SVG ─────────────────────────────────────────────────────────
 function RevenueAreaSVG({ data }: { data: Array<{ month: string; value: number }> }) {
+  const currency = useCx();
   const W = 500; const H = 160; const PL = 54; const PR = 12; const PT = 8; const PB = 28;
   const cW = W - PL - PR; const cH = H - PT - PB;
   const maxVal = Math.max(...data.map((d) => d.value), 1);
@@ -206,7 +209,7 @@ function RevenueAreaSVG({ data }: { data: Array<{ month: string; value: number }
       <path d={pathD} fill="none" stroke="#10b981" strokeWidth={2.2} strokeLinejoin="round" />
       {pts.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={3} fill="#10b981" stroke="white" strokeWidth={1.2}>
-          <title>{data[i].month}: {formatMoney(data[i].value)}</title>
+          <title>{data[i].month}: {currency.fmt(data[i].value)}</title>
         </circle>
       ))}
       {data.map((d, i) => (
@@ -295,6 +298,7 @@ function RiskPanel({ icon, label, dot, border, iconBg, textColor, itemColor, ite
 // MAIN EXPORT — Data Fetching Wrapper + View Switcher
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function CeoExecutiveDashboard() {
+  const cx = useCx();
   const [viewMode, setViewMode] = useState<'executive' | 'team'>('executive');
   const [data, setData] = useState<CeoDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -353,48 +357,56 @@ export default function CeoExecutiveDashboard() {
 
   if (viewMode === 'team') {
     return (
-      <div>
-        {viewSwitcher}
-        <ManagerDashboardPage initialFilter="all" />
-      </div>
+      <CurrencyProvider>
+        <div>
+          {viewSwitcher}
+          <ManagerDashboardPage initialFilter="all" />
+        </div>
+      </CurrencyProvider>
     );
   }
 
   if (loading && !data) {
     return (
-      <div className="space-y-5 max-w-7xl">
-        {viewSwitcher}
-        <Skeleton className="h-[88px] rounded-2xl" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
+      <CurrencyProvider>
+        <div className="space-y-5 max-w-7xl">
+          {viewSwitcher}
+          <Skeleton className="h-[88px] rounded-2xl" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-[120px] rounded-2xl" />)}
+          </div>
+          <Skeleton className="h-[240px] rounded-2xl" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[140px] rounded-2xl" />)}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[200px] rounded-2xl" />)}
+          </div>
         </div>
-        <Skeleton className="h-[240px] rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-[140px] rounded-2xl" />)}
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[200px] rounded-2xl" />)}
-        </div>
-      </div>
+      </CurrencyProvider>
     );
   }
 
   if (!data) {
     return (
-      <div className="space-y-5 max-w-7xl">
-        {viewSwitcher}
-        <div className="flex items-center justify-center h-64 rounded-2xl bg-card border border-border text-muted-foreground text-sm">
-          ไม่สามารถโหลดข้อมูลได้ — กรุณาลองใหม่
+      <CurrencyProvider>
+        <div className="space-y-5 max-w-7xl">
+          {viewSwitcher}
+          <div className="flex items-center justify-center h-64 rounded-2xl bg-card border border-border text-muted-foreground text-sm">
+            ไม่สามารถโหลดข้อมูลได้ — กรุณาลองใหม่
+          </div>
         </div>
-      </div>
+      </CurrencyProvider>
     );
   }
 
   return (
-    <div className="space-y-5 max-w-7xl">
-      {viewSwitcher}
-      <CeoDashboardContent data={data} lastUpdate={lastUpdate} onRefresh={handleRefresh} spinning={spinning} />
-    </div>
+    <CurrencyProvider>
+      <div className="space-y-5 max-w-7xl">
+        {viewSwitcher}
+        <CeoDashboardContent data={data} lastUpdate={lastUpdate} onRefresh={handleRefresh} spinning={spinning} />
+      </div>
+    </CurrencyProvider>
   );
 }
 
@@ -406,6 +418,7 @@ function CeoDashboardContent({
 }: {
   data: CeoDashboardData; lastUpdate: Date; onRefresh: () => void; spinning: boolean;
 }) {
+  const cx = useCx();
   // ── Approve / Reject state ───────────────────────────────────────────────────
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
@@ -525,13 +538,13 @@ function CeoDashboardContent({
       ? Math.round((data.forecast.nextMonthForecast / data.forecast.avgMonthlyRevenue - 1) * 100) : 0;
     insights.push({
       icon: <Target className="h-3.5 w-3.5 text-violet-400" />,
-      text: `Forecast เดือนหน้า ${formatMoney(data.forecast.nextMonthForecast)} (${vs >= 0 ? '+' : ''}${vs}% vs avg)`,
+      text: `Forecast เดือนหน้า ${cx.fmt(data.forecast.nextMonthForecast)} (${vs >= 0 ? '+' : ''}${vs}% vs avg)`,
       cls: 'text-violet-300',
     });
   }
   if (quarterRevenue > 0) insights.push({
     icon: <BarChart3 className="h-3.5 w-3.5 text-cyan-400" />,
-    text: `Revenue ไตรมาสนี้ ${formatMoney(quarterRevenue)}${quarterGrowth !== null ? ` (${quarterGrowth >= 0 ? '+' : ''}${quarterGrowth}% QoQ)` : ''}`,
+    text: `Revenue ไตรมาสนี้ ${cx.fmt(quarterRevenue)}${quarterGrowth !== null ? ` (${quarterGrowth >= 0 ? '+' : ''}${quarterGrowth}% QoQ)` : ''}`,
     cls: 'text-cyan-300',
   });
   insights.push({
@@ -600,6 +613,7 @@ function CeoDashboardContent({
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <CurrencyToggleBar className="shrink-0" />
             <div className="hidden md:flex items-center gap-5 text-[11px]">
               {[
                 { dot: 'bg-emerald-400', label: 'QT', val: data.totals.quotations, cls: 'text-white' },
@@ -638,7 +652,7 @@ function CeoDashboardContent({
         <ExecKpiCard
           icon={<DollarSign className="h-4 w-4 text-emerald-600" />}
           label="Total Revenue"
-          value={formatMoney(data.totals.totalValue)}
+          value={cx.fmt(data.totals.totalValue)}
           sublabel={`${data.totals.approved} QT Approved`}
           trend={revGrowth !== null ? `${revGrowth >= 0 ? '+' : ''}${revGrowth}% MoM` : undefined}
           trendUp={revGrowth !== null ? revGrowth >= 0 : null}
@@ -649,7 +663,7 @@ function CeoDashboardContent({
         <ExecKpiCard
           icon={<BarChart3 className="h-4 w-4 text-teal-600" />}
           label="Revenue / Month"
-          value={formatMoney(thisMonthRevenue)}
+          value={cx.fmt(thisMonthRevenue)}
           sublabel={revTrend.length > 0 ? revTrend[revTrend.length - 1].month : 'เดือนนี้'}
           trend={monthGrowth !== null ? `${monthGrowth >= 0 ? '+' : ''}${monthGrowth}% MoM` : undefined}
           trendUp={monthGrowth !== null ? monthGrowth >= 0 : null}
@@ -693,9 +707,9 @@ function CeoDashboardContent({
         <ExecKpiCard
           icon={<Target className="h-4 w-4 text-violet-600" />}
           label="Forecast"
-          value={formatMoney(data.forecast?.nextMonthForecast ?? 0)}
+          value={cx.fmt(data.forecast?.nextMonthForecast ?? 0)}
           sublabel="เดือนหน้า"
-          trend={data.forecast ? `Avg ${formatMoney(data.forecast.avgMonthlyRevenue)}/mo` : undefined}
+          trend={data.forecast ? `Avg ${cx.fmt(data.forecast.avgMonthlyRevenue)}/mo` : undefined}
           trendUp={null}
         />
         {/* 8. High-Risk Deals */}
@@ -719,7 +733,7 @@ function CeoDashboardContent({
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Revenue เดือนนี้</span>
           </div>
           <div className="text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-tight">
-            {formatMoney(thisMonthRevenue)}
+            {cx.fmt(thisMonthRevenue)}
           </div>
           {monthGrowth !== null ? (
             <div className={`mt-1.5 flex items-center gap-1 text-[11px] font-medium ${monthGrowth >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
@@ -857,7 +871,7 @@ function CeoDashboardContent({
                       </div>
                     </div>
                     <div className="text-right shrink-0 hidden sm:block">
-                      <div className="font-bold text-red-700 dark:text-red-400 text-sm tabular-nums">{formatMoney(q.grandTotal)}</div>
+                      <div className="font-bold text-red-700 dark:text-red-400 text-sm tabular-nums">{cx.fmt(q.grandTotal)}</div>
                       <div className="text-[10px] text-muted-foreground flex items-center gap-1 justify-end mt-0.5">
                         <Timer className="h-3 w-3" />{waitLabel(q.submittedAt)}
                       </div>
@@ -956,7 +970,7 @@ function CeoDashboardContent({
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-xs font-bold">{days < 1 ? 'วันนี้!' : `${days} วัน`}</div>
-                        <div className="text-[10px] opacity-65">{formatMoney(q.grandTotal)}</div>
+                        <div className="text-[10px] opacity-65">{cx.fmt(q.grandTotal)}</div>
                       </div>
                     </Link>
                   );
@@ -1029,14 +1043,14 @@ function CeoDashboardContent({
             {[
               {
                 label: 'Net Revenue (After Discount)',
-                value: formatMoney(netRevenue),
+                value: cx.fmt(netRevenue),
                 color: 'text-emerald-600 dark:text-emerald-400',
                 bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-                sub: `จาก ${formatMoney(data.marginAnalysis.totalApprovedSubtotal)} list price`,
+                sub: `จาก ${cx.fmt(data.marginAnalysis.totalApprovedSubtotal)} list price`,
               },
               {
                 label: 'Total Discount Given',
-                value: formatMoney(data.marginAnalysis.totalDiscountGiven),
+                value: cx.fmt(data.marginAnalysis.totalDiscountGiven),
                 color: 'text-rose-600 dark:text-rose-400',
                 bg: 'bg-rose-50 dark:bg-rose-900/20',
                 sub: `${data.marginAnalysis.approvedCount} QT Approved`,
@@ -1162,7 +1176,7 @@ function CeoDashboardContent({
           {/* Deal metrics */}
           <div className="grid grid-cols-2 gap-2 mb-4">
             <div className="rounded-xl p-3 bg-muted/40">
-              <div className="text-sm font-bold tabular-nums">{formatMoney(avgDealSize)}</div>
+              <div className="text-sm font-bold tabular-nums">{cx.fmt(avgDealSize)}</div>
               <div className="text-[10px] text-muted-foreground">Avg Deal Size</div>
             </div>
             <div className="rounded-xl p-3 bg-muted/40">
@@ -1191,7 +1205,7 @@ function CeoDashboardContent({
                         <div className="text-[10px] text-muted-foreground">{o.count} QT</div>
                       </div>
                       <div className={`text-xs text-right font-semibold ${wr >= 60 ? 'text-emerald-600 dark:text-emerald-400' : wr >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{wr}%</div>
-                      <div className="text-xs font-bold text-right tabular-nums">{formatMoney(o.value)}</div>
+                      <div className="text-xs font-bold text-right tabular-nums">{cx.fmt(o.value)}</div>
                     </div>
                     <div className="ml-6 h-1 rounded-full bg-muted overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-violet-500 to-purple-400"
@@ -1239,7 +1253,7 @@ function CeoDashboardContent({
                 {quarterRevenue > 0 && (
                   <span className="flex items-center gap-1">
                     <span className="h-2 w-2 rounded-full bg-violet-400 shrink-0" />
-                    Q: {formatMoney(quarterRevenue)}
+                    Q: {cx.fmt(quarterRevenue)}
                     {quarterGrowth !== null && <span className={`ml-1 font-semibold ${quarterGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>({quarterGrowth >= 0 ? '+' : ''}{quarterGrowth}%)</span>}
                   </span>
                 )}
@@ -1265,23 +1279,23 @@ function CeoDashboardContent({
             <div className="space-y-3">
               <div className="rounded-xl p-4 bg-gradient-to-br from-violet-500/10 to-purple-500/5 border border-violet-200/40 dark:border-violet-800/30">
                 <div className="text-xs text-muted-foreground mb-0.5">Forecast เดือนหน้า</div>
-                <div className="text-2xl font-bold text-violet-700 dark:text-violet-300">{formatMoney(data.forecast.nextMonthForecast)}</div>
+                <div className="text-2xl font-bold text-violet-700 dark:text-violet-300">{cx.fmt(data.forecast.nextMonthForecast)}</div>
                 <div className="text-[11px] text-violet-600/60 mt-0.5">ประมาณการ +5% จากค่าเฉลี่ย</div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-xl p-3 bg-muted/40">
                   <div className="text-[10px] text-muted-foreground">Avg / เดือน</div>
-                  <div className="text-sm font-bold mt-0.5 tabular-nums">{formatMoney(data.forecast.avgMonthlyRevenue)}</div>
+                  <div className="text-sm font-bold mt-0.5 tabular-nums">{cx.fmt(data.forecast.avgMonthlyRevenue)}</div>
                 </div>
                 <div className="rounded-xl p-3 bg-muted/40">
                   <div className="text-[10px] text-muted-foreground">Pipeline Coverage</div>
-                  <div className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 tabular-nums">{formatMoney(data.forecast.pipelineCoverage)}</div>
+                  <div className="text-sm font-bold text-cyan-600 dark:text-cyan-400 mt-0.5 tabular-nums">{cx.fmt(data.forecast.pipelineCoverage)}</div>
                 </div>
               </div>
               {quarterRevenue > 0 && (
                 <div className="rounded-xl p-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/5 border border-blue-200/40 dark:border-blue-800/30">
                   <div className="text-[10px] text-muted-foreground">Revenue ไตรมาสนี้</div>
-                  <div className="text-sm font-bold text-blue-700 dark:text-blue-300 mt-0.5 tabular-nums">{formatMoney(quarterRevenue)}</div>
+                  <div className="text-sm font-bold text-blue-700 dark:text-blue-300 mt-0.5 tabular-nums">{cx.fmt(quarterRevenue)}</div>
                   {quarterGrowth !== null && (
                     <div className={`text-[10px] mt-0.5 ${quarterGrowth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                       {quarterGrowth >= 0 ? '+' : ''}{quarterGrowth}% vs ไตรมาสก่อน
@@ -1330,7 +1344,7 @@ function CeoDashboardContent({
                     </div>
                     <div className="text-right shrink-0 w-24">
                       <div className="text-xs font-bold tabular-nums" style={{ color: s.color }}>{s.pct}%</div>
-                      <div className="text-[10px] text-muted-foreground tabular-nums">{formatMoney(s.value)}</div>
+                      <div className="text-[10px] text-muted-foreground tabular-nums">{cx.fmt(s.value)}</div>
                     </div>
                   </div>
                 ))}
@@ -1366,7 +1380,7 @@ function CeoDashboardContent({
                         <span className="font-medium truncate">{c.customerCompany}</span>
                         {i === 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">KEY ACCOUNT</span>}
                       </div>
-                      <span className="text-muted-foreground ml-3 shrink-0 tabular-nums">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
+                      <span className="text-muted-foreground ml-3 shrink-0 tabular-nums">{c.qtCount} QT · {cx.fmt(c.totalValue)}</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-700"
@@ -1423,7 +1437,7 @@ function CeoDashboardContent({
                         </div>
                         <div className={`text-2xl font-bold tabular-nums ${textCls}`}>{count}</div>
                         {value > 0 && (
-                          <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{formatMoney(value)}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">{cx.fmt(value)}</div>
                         )}
                       </div>
                     );
@@ -1446,7 +1460,7 @@ function CeoDashboardContent({
                   />
                 </div>
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-1.5">
-                  <span>ส่งมอบแล้ว: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatMoney(data.soExecution.completedValue)}</span></span>
+                  <span>ส่งมอบแล้ว: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{cx.fmt(data.soExecution.completedValue)}</span></span>
                   <span>{data.soExecution.completedCount} / {data.soExecution.totalSos} SO</span>
                 </div>
               </div>

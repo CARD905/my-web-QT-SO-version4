@@ -25,7 +25,7 @@ interface CurrentUser {
 const saleOrderInclude = {
   items: { orderBy: { sortOrder: 'asc' as const } },
   customer: { select: { id: true, company: true, contactName: true } },
-  quotation: { select: { id: true, quotationNo: true, expiryDate: true, createdById: true, poFileUrl: true } },
+  quotation: { select: { id: true, quotationNo: true, expiryDate: true, createdById: true, poFileUrl: true, poFileMimeType: true, poFileName: true } },
 } satisfies Prisma.SaleOrderInclude;
 
 function isOfficer(roleCode: string): boolean {

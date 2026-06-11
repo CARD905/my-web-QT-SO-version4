@@ -21,6 +21,8 @@ import { formatDate, formatMoney } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
+import { CurrencyProvider, useCx } from '@/lib/currency-context';
+import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DashboardFilter = 'self' | 'team' | 'all' | 'user';
 
@@ -259,6 +261,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
   const isCeoViewingOfficer = isUserView && selectedUser != null && !MANAGER_LEVEL_ROLES.includes(selectedUser.role.code);
 
   return (
+    <CurrencyProvider>
     <div className="space-y-0 max-w-7xl">
 
       {/* ── SECTION 1: Dark gradient header banner ── */}
@@ -274,6 +277,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
               {role?.nameTh && <span className="text-blue-200/60"> · {role.nameTh}</span>}
             </p>
           </div>
+          <CurrencyToggleBar className="shrink-0" />
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-blue-300 shrink-0" />
@@ -587,6 +591,7 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
         </>
       )}
     </div>
+    </CurrencyProvider>
   );
 }
 
@@ -619,6 +624,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
   userId: string;
   selectedUser: { name: string; email: string; role: { code: string; nameTh: string } };
 }) {
+  const cx = useCx();
   const [data, setData] = useState<OfficerAnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [trendTab, setTrendTab] = useState<'count' | 'value'>('value');
@@ -684,9 +690,9 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-stagger-fast">
         {[
           { icon: <BarChart2 className="h-5 w-5" />, label: 'Total QT', value: totals.quotations, sub: `เดือนนี้ ${totals.thisMonth} ใบ`, gradient: 'from-slate-600 to-slate-800', isText: false },
-          { icon: <CheckCircle2 className="h-5 w-5" />, label: 'Approved Value', value: formatMoney(totals.approvedValue), sub: `${totals.approvedCount} ใบอนุมัติแล้ว`, gradient: 'from-emerald-500 to-teal-700', isText: true },
+          { icon: <CheckCircle2 className="h-5 w-5" />, label: 'Approved Value', value: cx.fmt(totals.approvedValue), sub: `${totals.approvedCount} ใบอนุมัติแล้ว`, gradient: 'from-emerald-500 to-teal-700', isText: true },
           { icon: <Activity className="h-5 w-5" />, label: 'Win Rate', value: `${winRate}%`, sub: `ปฏิเสธ ${totals.rejectedCount} ใบ`, gradient: winRate >= 50 ? 'from-green-500 to-emerald-700' : 'from-orange-500 to-red-600', isText: true },
-          { icon: <ShoppingCart className="h-5 w-5" />, label: 'SO Confirmed', value: formatMoney(totals.soValue), sub: `${totals.soCount} SO ยืนยันแล้ว`, gradient: 'from-blue-500 to-indigo-700', isText: true },
+          { icon: <ShoppingCart className="h-5 w-5" />, label: 'SO Confirmed', value: cx.fmt(totals.soValue), sub: `${totals.soCount} SO ยืนยันแล้ว`, gradient: 'from-blue-500 to-indigo-700', isText: true },
         ].map((k) => (
           <div key={k.label} className={`bg-gradient-to-br ${k.gradient} rounded-2xl p-4 text-white shadow hover-lift`}>
             <div className="flex items-center gap-2 mb-2 opacity-80">{k.icon}<span className="text-xs font-medium uppercase tracking-wide">{k.label}</span></div>
@@ -724,12 +730,12 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
                 <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Revenue Total</div>
-                <div className="text-base font-bold tabular-nums truncate">{formatMoney(totalRevenue)}</div>
+                <div className="text-base font-bold tabular-nums truncate">{cx.fmt(totalRevenue)}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">6 เดือนล่าสุด</div>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
                 <div className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide mb-1">Avg / Month</div>
-                <div className="text-base font-bold tabular-nums truncate">{formatMoney(avgMonthRevenue)}</div>
+                <div className="text-base font-bold tabular-nums truncate">{cx.fmt(avgMonthRevenue)}</div>
                 <div className="text-[10px] text-muted-foreground mt-0.5">{activeMonths.length} เดือนที่มีข้อมูล</div>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
@@ -820,11 +826,11 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Best Month</span>
               <span className="text-sm font-bold">{bestMonthEntry?.month ?? '—'}</span>
-              <span className="text-[10px] text-muted-foreground tabular-nums">{bestMonthEntry ? formatMoney(bestMonthEntry.value) : '—'}</span>
+              <span className="text-[10px] text-muted-foreground tabular-nums">{bestMonthEntry ? cx.fmt(bestMonthEntry.value) : '—'}</span>
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wide">Avg per Order</span>
-              <span className="text-sm font-bold tabular-nums">{formatMoney(avgPerOrder)}</span>
+              <span className="text-sm font-bold tabular-nums">{cx.fmt(avgPerOrder)}</span>
               <span className="text-[10px] text-muted-foreground">ต่อใบเสนอราคา</span>
             </div>
             <div className="flex flex-col gap-0.5">
@@ -894,7 +900,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                   <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                   <span className="text-[12px] font-semibold tabular-nums w-28 shrink-0">{q.quotationNo}</span>
                   <span className="text-[11px] text-muted-foreground truncate flex-1">{q.customerCompany}</span>
-                  <span className="text-[11px] font-medium tabular-nums shrink-0">{formatMoney(q.grandTotal)}</span>
+                  <span className="text-[11px] font-medium tabular-nums shrink-0">{cx.fmt(q.grandTotal)}</span>
                   <span className="text-[10px] text-muted-foreground shrink-0">{STATUS_LABELS[q.status] ?? q.status}</span>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0" />
                 </Link>
@@ -922,7 +928,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                   <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                   <span className="text-[12px] font-semibold tabular-nums w-28 shrink-0">{so.saleOrderNo}</span>
                   <span className="text-[11px] text-muted-foreground truncate flex-1">{so.customerCompany}</span>
-                  <span className="text-[11px] font-medium tabular-nums shrink-0">{formatMoney(so.grandTotal)}</span>
+                  <span className="text-[11px] font-medium tabular-nums shrink-0">{cx.fmt(so.grandTotal)}</span>
                   <span className="text-[10px] text-muted-foreground shrink-0">{so.status}</span>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0" />
                 </Link>
@@ -958,7 +964,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
               <div className="text-sm font-semibold flex items-center gap-2 text-foreground mb-4">
                 <TrendingUp className="h-4 w-4 text-blue-500" />
                 Sales Pipeline
-                <span className="ml-auto text-xs text-muted-foreground font-normal">มูลค่ารวม {formatMoney(totalVal)}</span>
+                <span className="ml-auto text-xs text-muted-foreground font-normal">มูลค่ารวม {cx.fmt(totalVal)}</span>
               </div>
               {pipelineStages.length === 0 ? (
                 <div className="flex items-center justify-center h-20 text-muted-foreground text-xs">ยังไม่มีข้อมูล</div>
@@ -974,7 +980,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                             <span className="font-medium">{s.label}</span>
                             <span className="text-muted-foreground">({s.count} ใบ)</span>
                           </span>
-                          <span className="tabular-nums text-muted-foreground">{s.value > 0 ? formatMoney(s.value) : '—'} {pct > 0 ? `· ${pct}%` : ''}</span>
+                          <span className="tabular-nums text-muted-foreground">{s.value > 0 ? cx.fmt(s.value) : '—'} {pct > 0 ? `· ${pct}%` : ''}</span>
                         </div>
                         <div className="h-2 rounded-full bg-muted overflow-hidden">
                           <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(pct, s.count > 0 ? 4 : 0)}%`, backgroundColor: s.color }} />
@@ -1009,10 +1015,10 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                     <span className="text-[13px] font-bold tabular-nums">{totals.quotations}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[13px] font-bold tabular-nums">{formatMoney(totalVal)}</span>
+                    <span className="text-[13px] font-bold tabular-nums">{cx.fmt(totalVal)}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(totals.soValue)}</span>
+                    <span className="text-[12px] text-muted-foreground tabular-nums">{cx.fmt(totals.soValue)}</span>
                   </div>
                   <div className="text-right">
                     <span className={`text-[13px] font-bold tabular-nums ${winColor}`}>{winRate}%</span>
@@ -1072,7 +1078,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                           </div>
                           <div className="text-right shrink-0">
                             <div className="text-xs font-bold">{dayLabel}</div>
-                            <div className="text-[10px] opacity-75">{formatMoney(q.grandTotal)}</div>
+                            <div className="text-[10px] opacity-75">{cx.fmt(q.grandTotal)}</div>
                           </div>
                         </Link>
                       );
@@ -1105,7 +1111,7 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
                           <div key={c.customerId}>
                             <div className="flex items-center justify-between text-xs mb-1">
                               <span className="font-medium truncate max-w-[60%]">{c.customerCompany}</span>
-                              <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
+                              <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {cx.fmt(c.totalValue)}</span>
                             </div>
                             <div className="h-2 rounded-full bg-muted overflow-hidden">
                               <div className={`h-full rounded-full bg-gradient-to-r ${grad} transition-all duration-700`} style={{ width: `${Math.max(pct, 5)}%` }} />
@@ -1138,6 +1144,7 @@ function DashboardContent({
   isSelfView: boolean;
   selectedUserName?: string;
 }) {
+  const cx = useCx();
   // ── Derived values ────────────────────────────────────────────────────────
   const conversionRate = data.totals.conversionRate ??
     (data.totals.quotations > 0 && data.totals.approved > 0
@@ -1199,7 +1206,7 @@ function DashboardContent({
         <KpiCard
           icon={<DollarSign className="h-5 w-5" />}
           label="Total QT Value"
-          value={formatMoney(data.totals.totalValue)}
+          value={cx.fmt(data.totals.totalValue)}
           gradient="from-blue-600 to-indigo-700"
           subtitle={`${data.totals.quotations} ใบเสนอราคา`}
           isText
@@ -1207,7 +1214,7 @@ function DashboardContent({
         <KpiCard
           icon={<CheckCircle2 className="h-5 w-5" />}
           label="Approved Value"
-          value={formatMoney(approvedValue)}
+          value={cx.fmt(approvedValue)}
           gradient="from-emerald-500 to-teal-700"
           subtitle={`${data.totals.approved} รายการอนุมัติแล้ว`}
           isText
@@ -1215,7 +1222,7 @@ function DashboardContent({
         <KpiCard
           icon={<Clock className="h-5 w-5" />}
           label="Pending Value"
-          value={formatMoney(data.totals.pendingValue)}
+          value={cx.fmt(data.totals.pendingValue)}
           gradient="from-amber-500 to-orange-600"
           subtitle={`${data.totals.pending} รายการรออนุมัติ`}
           isText
@@ -1309,9 +1316,9 @@ function DashboardContent({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
-                { icon: <BarChart2 className="h-5 w-5" />, label: 'Avg Revenue / เดือน', value: formatMoney(data.forecast.avgMonthlyRevenue), sub: 'เฉลี่ย 6 เดือนที่ผ่านมา', gradient: 'from-blue-500 to-indigo-600' },
-                { icon: <TrendingUp className="h-5 w-5" />, label: 'Forecast เดือนหน้า', value: formatMoney(data.forecast.nextMonthForecast), sub: 'ประมาณการ +5% growth', gradient: 'from-violet-500 to-purple-600' },
-                { icon: <Zap className="h-5 w-5" />, label: 'Pipeline Coverage', value: formatMoney(data.forecast.pipelineCoverage), sub: 'มูลค่า pending × conv. rate', gradient: 'from-cyan-500 to-teal-600' },
+                { icon: <BarChart2 className="h-5 w-5" />, label: 'Avg Revenue / เดือน', value: cx.fmt(data.forecast.avgMonthlyRevenue), sub: 'เฉลี่ย 6 เดือนที่ผ่านมา', gradient: 'from-blue-500 to-indigo-600' },
+                { icon: <TrendingUp className="h-5 w-5" />, label: 'Forecast เดือนหน้า', value: cx.fmt(data.forecast.nextMonthForecast), sub: 'ประมาณการ +5% growth', gradient: 'from-violet-500 to-purple-600' },
+                { icon: <Zap className="h-5 w-5" />, label: 'Pipeline Coverage', value: cx.fmt(data.forecast.pipelineCoverage), sub: 'มูลค่า pending × conv. rate', gradient: 'from-cyan-500 to-teal-600' },
               ].map((f) => (
                 <div key={f.label} className={`rounded-2xl p-4 text-white bg-gradient-to-br ${f.gradient} shadow`}>
                   <div className="flex items-center gap-2 mb-2 opacity-80">{f.icon}<span className="text-xs font-medium uppercase tracking-wide">{f.label}</span></div>
@@ -1406,7 +1413,7 @@ function DashboardContent({
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-xs font-bold">{dayLabel}</div>
-                      <div className="text-[10px] opacity-75">{formatMoney(q.grandTotal)}</div>
+                      <div className="text-[10px] opacity-75">{cx.fmt(q.grandTotal)}</div>
                     </div>
                   </Link>
                 );
@@ -1500,7 +1507,7 @@ function DashboardContent({
                     <div className="text-right shrink-0">
                       <div className="text-xl font-bold tabular-nums text-red-600">{pendingCount}</div>
                       {pendingVal > 0 && (
-                        <div className="text-[11px] text-muted-foreground tabular-nums">{formatMoney(pendingVal)}</div>
+                        <div className="text-[11px] text-muted-foreground tabular-nums">{cx.fmt(pendingVal)}</div>
                       )}
                     </div>
                     <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
@@ -1526,7 +1533,7 @@ function DashboardContent({
                               <span className="text-[12px] font-semibold tabular-nums">{q.quotationNo}</span>
                               <div className="text-[11px] text-muted-foreground truncate mt-px">{q.customerCompany}</div>
                             </div>
-                            <div className="text-[13px] font-bold text-red-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
+                            <div className="text-[13px] font-bold text-red-700 tabular-nums shrink-0">{cx.fmt(q.grandTotal)}</div>
                             <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-red-400 transition-colors shrink-0" />
                           </Link>
                         ))}
@@ -1580,7 +1587,7 @@ function DashboardContent({
                           )}
                         </div>
                       </div>
-                      <div className="text-[13px] font-bold text-amber-700 tabular-nums shrink-0">{formatMoney(q.grandTotal)}</div>
+                      <div className="text-[13px] font-bold text-amber-700 tabular-nums shrink-0">{cx.fmt(q.grandTotal)}</div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-amber-400 transition-colors shrink-0" />
                     </Link>
                   ))}
@@ -1607,7 +1614,7 @@ function DashboardContent({
                       <div className="text-[11px] text-muted-foreground">เกินวงเงิน/สิทธิ์ส่วนลด · ติดตามสถานะ</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-[13px] font-bold text-orange-600 tabular-nums">{formatMoney(escalatedVal)}</div>
+                      <div className="text-[13px] font-bold text-orange-600 tabular-nums">{cx.fmt(escalatedVal)}</div>
                       <div className="text-[10px] text-muted-foreground tabular-nums">{data.recentEscalated.length} รายการ</div>
                     </div>
                     <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">
@@ -1632,7 +1639,7 @@ function DashboardContent({
                           </div>
                         </div>
                         <div className="text-[13px] font-bold text-orange-700 dark:text-orange-400 tabular-nums shrink-0">
-                          {formatMoney(q.grandTotal)}
+                          {cx.fmt(q.grandTotal)}
                         </div>
                         <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-orange-400 transition-colors shrink-0" />
                       </Link>
@@ -1713,11 +1720,11 @@ function DashboardContent({
                           </div>
                           {/* Value */}
                           <div className="text-right">
-                            <span className="text-[13px] font-bold tabular-nums">{formatMoney(o.value)}</span>
+                            <span className="text-[13px] font-bold tabular-nums">{cx.fmt(o.value)}</span>
                           </div>
                           {/* SO อนุมัติ */}
                           <div className="text-right">
-                            <span className="text-[12px] text-muted-foreground tabular-nums">{formatMoney(soValue)}</span>
+                            <span className="text-[12px] text-muted-foreground tabular-nums">{cx.fmt(soValue)}</span>
                           </div>
                           {/* Win% */}
                           <div className="text-right">
@@ -1769,7 +1776,7 @@ function DashboardContent({
                     <div key={c.customerId}>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="font-medium truncate max-w-[60%]">{c.customerCompany}</span>
-                        <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {formatMoney(c.totalValue)}</span>
+                        <span className="text-muted-foreground tabular-nums ml-2 shrink-0">{c.qtCount} QT · {cx.fmt(c.totalValue)}</span>
                       </div>
                       <div className="h-2 rounded-full bg-muted overflow-hidden">
                         <div className={`h-full rounded-full bg-gradient-to-r ${grad} transition-all duration-700`} style={{ width: `${Math.max(pct, 5)}%` }} />
@@ -1821,7 +1828,7 @@ function DashboardContent({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between text-xs mb-1.5">
                         <span className="font-semibold">{b.label}</span>
-                        <span className="text-muted-foreground">{b.count} QT · {formatMoney(b.value)}</span>
+                        <span className="text-muted-foreground">{b.count} QT · {cx.fmt(b.value)}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/50 dark:bg-black/20 overflow-hidden">
                         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.max(Math.round((b.count / maxCount) * 100), b.count > 0 ? 10 : 0)}%`, background: b.color }} />
@@ -1871,7 +1878,7 @@ function DashboardContent({
               {data.soExecution.completedValue > 0 && (
                 <div className="p-3 rounded-xl bg-emerald-500/10 flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">มูลค่า SO ที่ Completed แล้ว</span>
-                  <span className="text-sm font-bold text-emerald-600">{formatMoney(data.soExecution.completedValue)}</span>
+                  <span className="text-sm font-bold text-emerald-600">{cx.fmt(data.soExecution.completedValue)}</span>
                 </div>
               )}
               <div className="space-y-1.5">
@@ -1904,6 +1911,7 @@ function DashboardContent({
 // SALES FUNNEL — with value, aging, bottleneck alerts, drilldown
 // ════════════════════════════════════════════════════════════════════════════
 function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversionRate: number }) {
+  const cx = useCx();
   const [expanded, setExpanded] = useState<number | null>(null);
   const pd = data.pipelineDetail;
 
@@ -2052,7 +2060,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
 
                   {/* Col 6: Value — always present */}
                   <div className="text-right">
-                    <div className="text-[11px] font-bold tabular-nums leading-tight" style={{ color: s.color }}>{formatMoney(s.value)}</div>
+                    <div className="text-[11px] font-bold tabular-nums leading-tight" style={{ color: s.color }}>{cx.fmt(s.value)}</div>
                     <div className="text-[9px] text-muted-foreground">มูลค่า</div>
                   </div>
 
@@ -2082,7 +2090,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                     <span>
                       <span className="font-semibold">{lvl === 'crit' ? 'Bottleneck วิกฤต' : 'Bottleneck เตือน'}:</span>
                       {' '}งานเฉลี่ยค้างอยู่ <span className="font-semibold">{fmtAge(s.avgH)}</span>
-                      {s.value > 0 && <> · มูลค่า <span className="font-semibold">{formatMoney(s.value)}</span> ติดอยู่ที่ stage นี้</>}
+                      {s.value > 0 && <> · มูลค่า <span className="font-semibold">{cx.fmt(s.value)}</span> ติดอยู่ที่ stage นี้</>}
                     </span>
                   </div>
                 )}
@@ -2115,7 +2123,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
                                   <div className="text-[10px] text-muted-foreground truncate">{item.customerCompany}</div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <div className="text-xs font-bold">{formatMoney(item.grandTotal)}</div>
+                                  <div className="text-xs font-bold">{cx.fmt(item.grandTotal)}</div>
                                   {ageHrs !== null && ageHrs > 0 && (
                                     <div className={`text-[10px] ${ageHrs >= s.critH && s.critH > 0 ? 'text-red-500' : ageHrs >= s.warnH && s.warnH > 0 ? 'text-amber-500' : 'text-muted-foreground'}`}>
                                       {fmtAge(ageHrs)}
@@ -2148,6 +2156,7 @@ function SalesFunnel({ data, conversionRate }: { data: DashboardData; conversion
 // REVENUE AREA CHART (SVG)
 // ════════════════════════════════════════════════════════════════════════════
 function RevenueAreaChart({ data }: { data: Array<{ month: string; value: number }> }) {
+  const cx = useCx();
   const W = 500; const H = 160; const PL = 55; const PR = 16; const PT = 10; const PB = 28;
   const cW = W - PL - PR; const cH = H - PT - PB;
   const maxVal = Math.max(...data.map((d) => d.value), 1);
@@ -2191,7 +2200,7 @@ function RevenueAreaChart({ data }: { data: Array<{ month: string; value: number
       <path d={pathD} fill="none" stroke="#10b981" strokeWidth={2.5} strokeLinejoin="round" />
       {points.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={3.5} fill="#10b981" stroke="white" strokeWidth={1.5}>
-          <title>{data[i].month}: {formatMoney(data[i].value)}</title>
+          <title>{data[i].month}: {cx.fmt(data[i].value)}</title>
         </circle>
       ))}
       {data.map((d, i) => (
@@ -2277,6 +2286,7 @@ function TrendOverviewCard({
   trendData: Array<{ month: string; approved: number; rejected: number }>;
   revenueTrendData: Array<{ month: string; value: number }>;
 }) {
+  const cx = useCx();
   const [tab, setTab] = useState<'count' | 'value'>('count');
   const totalApproved = trendData.reduce((s, d) => s + d.approved, 0);
   const totalRejected = trendData.reduce((s, d) => s + d.rejected, 0);
@@ -2346,11 +2356,11 @@ function TrendOverviewCard({
         ) : (
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <div className="text-base font-bold text-emerald-500 tabular-nums">{formatMoney(totalRevenue)}</div>
+              <div className="text-base font-bold text-emerald-500 tabular-nums">{cx.fmt(totalRevenue)}</div>
               <div className="text-[10px] text-muted-foreground">รายได้รวม 6 เดือน</div>
             </div>
             <div className="text-right">
-              <div className="text-base font-bold tabular-nums">{formatMoney(revenueTrendData.length > 0 ? Math.round(totalRevenue / revenueTrendData.length) : 0)}</div>
+              <div className="text-base font-bold tabular-nums">{cx.fmt(revenueTrendData.length > 0 ? Math.round(totalRevenue / revenueTrendData.length) : 0)}</div>
               <div className="text-[10px] text-muted-foreground">เฉลี่ย/เดือน</div>
             </div>
           </div>

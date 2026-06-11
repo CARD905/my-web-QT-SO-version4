@@ -14,10 +14,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api, getApiErrorMessage } from '@/lib/api';
-import { formatMoney, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { AnimatedCounter } from '@/components/effects/animated-counter';
 import type { ApiResponse } from '@/types/api';
+import { CurrencyProvider, useCx } from '@/lib/currency-context';
+import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface FvtMonth { label: string; year: number; month: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; isFuture?: boolean; }
@@ -131,9 +133,15 @@ function BarComboChart({ data, labelKey, actualKey, targetKey, forecastKey, futu
   labelKey: string; actualKey: string; targetKey: string; forecastKey: string;
   futureSplit?: number;
 }) {
+  const cx = useCx();
+  // Y-axis labels use module-level short() on already-converted maxVal — no shadow needed here
   const W = 640; const H = 180; const PL = 52; const PR = 12; const PT = 10; const PB = 30;
   const cW = W - PL - PR; const cH = H - PT - PB;
-  const vals = data.flatMap((d) => [Number(d[actualKey] ?? 0), Number(d[targetKey] ?? 0), Number(d[forecastKey] ?? 0)]);
+  const vals = data.flatMap((d) => [
+    cx.conv(Number(d[actualKey] ?? 0)),
+    cx.conv(Number(d[targetKey] ?? 0)),
+    cx.conv(Number(d[forecastKey] ?? 0))
+  ]);
   const maxVal = Math.max(...vals, 1);
   const bW = cW / data.length;
   const gap = bW * 0.12; const aW = bW * 0.36; const fW = bW * 0.22; const tW = bW * 0.16;
@@ -160,11 +168,12 @@ function BarComboChart({ data, labelKey, actualKey, targetKey, forecastKey, futu
         const forecast = Number(d[forecastKey] ?? 0);
         const isFutureBar = futureSplit != null && i >= futureSplit;
         const isCurrent = !isFutureBar && i === (futureSplit != null ? futureSplit - 1 : data.length - 1);
+        const cActual = cx.conv(actual); const cForecast = cx.conv(forecast); const cTarget = cx.conv(target);
         return <g key={i}>
           {isFutureBar && <rect x={x - gap / 2} y={PT} width={bW} height={cH} fill="currentColor" fillOpacity={0.025} />}
-          {!isFutureBar && actual > 0 && <rect x={x} y={yv(actual)} width={aW} height={Math.max(2, (actual / maxVal) * cH)} fill="url(#fcActual)" rx={2}><title>จริง: {formatMoney(actual)}</title></rect>}
-          {forecast > 0 && <rect x={x + aW + 1} y={yv(forecast)} width={fW} height={Math.max(2, (forecast / maxVal) * cH)} fill="#a5b4fc" rx={2} opacity={isFutureBar ? 0.95 : 0.8}><title>Forecast: {formatMoney(forecast)}</title></rect>}
-          {target > 0 && <rect x={x + aW + fW + 2} y={yv(target)} width={tW} height={Math.max(2, (target / maxVal) * cH)} fill="#f59e0b" rx={2} opacity={0.75}><title>เป้า: {formatMoney(target)}</title></rect>}
+          {!isFutureBar && cActual > 0 && <rect x={x} y={yv(cActual)} width={aW} height={Math.max(2, (cActual / maxVal) * cH)} fill="url(#fcActual)" rx={2}><title>จริง: {cx.fmt(actual)}</title></rect>}
+          {cForecast > 0 && <rect x={x + aW + 1} y={yv(cForecast)} width={fW} height={Math.max(2, (cForecast / maxVal) * cH)} fill="#a5b4fc" rx={2} opacity={isFutureBar ? 0.95 : 0.8}><title>Forecast: {cx.fmt(forecast)}</title></rect>}
+          {cTarget > 0 && <rect x={x + aW + fW + 2} y={yv(cTarget)} width={tW} height={Math.max(2, (cTarget / maxVal) * cH)} fill="#f59e0b" rx={2} opacity={0.75}><title>เป้า: {cx.fmt(target)}</title></rect>}
           <text x={x + aW / 2} y={H - 8} textAnchor="middle" fontSize={9} fill="currentColor" fillOpacity={isCurrent ? 0.9 : isFutureBar ? 0.6 : 0.4} fontWeight={isCurrent || isFutureBar ? '600' : '400'}>
             {String(d[labelKey])}
           </text>
@@ -178,6 +187,8 @@ function BarComboChart({ data, labelKey, actualKey, targetKey, forecastKey, futu
 }
 
 function AreaLineChart({ data, color = '#10b981', yMax }: { data: Array<{ label: string; value: number | null; value2?: number | null }>; color?: string; yMax?: number }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const W = 500; const H = 120; const PL = 44; const PR = 12; const PT = 8; const PB = 24;
   const cW = W - PL - PR; const cH = H - PT - PB;
   if (data.length < 2) return <div className="text-xs text-center text-muted-foreground py-4">ข้อมูลไม่เพียงพอ</div>;
@@ -277,6 +288,8 @@ function QuickStatChip({ icon: Icon, label, value, sub, color }: { icon: Element
 }
 
 function KpiQuickStatsBar({ kpi, isCeo }: { kpi: KpiSummary; isCeo: boolean }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   type Chip = { icon: ElementType; label: string; value: string; sub?: string; color?: string };
   const chips = [
     kpi.forecastGap !== null && {
@@ -328,6 +341,8 @@ function ForecastVsTargetCard({ data, period, onPeriodChange, onSaveTarget, canE
   onSaveTarget: (year: number, month: number, target: number) => Promise<void>;
   canEditTarget?: boolean;
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const rows = period === 'monthly' ? data.monthly : period === 'quarterly' ? data.quarterly : [data.yearly as FvtMonth];
   type ChartRow = { label: string; actual: number; target: number; forecast: number };
   const allMonthly = period === 'monthly' ? [...data.monthly, ...(data.forecastMonths ?? [])] : null;
@@ -414,9 +429,11 @@ function ForecastVsTargetCard({ data, period, onPeriodChange, onSaveTarget, canE
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between text-xs mb-0.5">
                       <span>จริง: <span className="font-semibold">{short(row.actual)}</span></span>
-                      {row.target != null && <span className="text-muted-foreground">เป้า: {short(row.target)}</span>}
+                      {row.target != null && row.target > 0
+                        ? <span className="text-muted-foreground">เป้า: {short(row.target)}</span>
+                        : <span className="text-muted-foreground/50 italic">ไม่มีเป้า</span>}
                     </div>
-                    {row.target != null && (
+                    {row.target != null && row.target > 0 && (
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div className={cn('h-full rounded-full', pct && pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500')} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
                       </div>
@@ -435,6 +452,8 @@ function ForecastVsTargetCard({ data, period, onPeriodChange, onSaveTarget, canE
 
 // Conversion Funnel — shows both Overall Conversion and Stage-to-Stage Conversion
 function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const mainSteps = data.filter((s) => !s.isRejected);
   const rejectedStep = data.find((s) => s.isRejected);
   const maxCount = mainSteps[0]?.count ?? 1;
@@ -522,6 +541,8 @@ function ConversionFunnelCard({ data }: { data: FunnelStep[] }) {
 }
 
 function DealsAtRiskCard({ data }: { data: DealRisk[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const [showAll, setShowAll] = useState(false);
   const displayed = showAll ? data : data.slice(0, 6);
   if (data.length === 0) return (
@@ -589,6 +610,8 @@ function DealsAtRiskCard({ data }: { data: DealRisk[] }) {
 }
 
 function ForecastAccuracyCard({ data }: { data: AccuracyMonth[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const accuracyMonths = data.filter((m) => m.accuracy !== null);
   const avgAcc = accuracyMonths.length > 0
     ? Math.round(accuracyMonths.reduce((s, m) => s + (m.accuracy ?? 0), 0) / accuracyMonths.length)
@@ -655,6 +678,8 @@ function WinRatePill({ winRate, closedDeals, lowSample }: { winRate: number | nu
 }
 
 function TopSalesCard({ data }: { data: SalesPerf[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   if (data.length === 0) return null;
   const maxRev = Math.max(...data.map((s) => s.actualRevenue), 1);
   return (
@@ -680,7 +705,7 @@ function TopSalesCard({ data }: { data: SalesPerf[] }) {
                   <span className={cn('h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0', RANK_STYLE[i] ?? 'bg-muted text-muted-foreground')}>{i + 1}</span>
                   <span className="flex-1 font-semibold text-sm truncate">{s.name}</span>
                   <span className="w-20 text-right font-bold text-sm shrink-0">
-                    {s.actualRevenue > 0 ? formatMoney(s.actualRevenue) : <span className="text-muted-foreground font-normal text-xs">-</span>}
+                    {s.actualRevenue > 0 ? cx.fmt(s.actualRevenue) : <span className="text-muted-foreground font-normal text-xs">-</span>}
                   </span>
                   <span className="w-16 text-right text-xs text-muted-foreground shrink-0">
                     {s.avgDealSize > 0 ? short(s.avgDealSize) : '-'}
@@ -726,6 +751,8 @@ function StatChip({ label, value, color }: { label: string; value: number; color
 }
 
 function TrendCard({ revData, winData }: { revData: TrendMonth[]; winData: WinRateTrendItem[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const latestMom = revData.filter((m) => m.momGrowth !== null).slice(-1)[0];
   const latestYoy = revData.filter((m) => m.yoyGrowth !== null).slice(-1)[0];
   const momExtreme = latestMom?.momIsExtreme;
@@ -868,6 +895,8 @@ function TrendCard({ revData, winData }: { revData: TrendMonth[]; winData: WinRa
 }
 
 function PipelineHealthCard({ data }: { data: PipelineHealth }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const [tab, setTab] = useState<PipelineTab>('status');
   const coverageColor = data.coverageRatio == null ? '' : data.coverageRatio >= 3 ? 'text-emerald-600' : data.coverageRatio >= 1.5 ? 'text-amber-600' : 'text-red-600';
   return (
@@ -959,6 +988,8 @@ function PipelineHealthCard({ data }: { data: PipelineHealth }) {
 }
 
 function TopOpportunitiesCard({ data }: { data: Opportunity[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const [showAll, setShowAll] = useState(false);
   const displayed = showAll ? data : data.slice(0, 6);
   if (data.length === 0) return (
@@ -1021,6 +1052,8 @@ function TopOpportunitiesCard({ data }: { data: Opportunity[] }) {
 }
 
 function AgingPipelineCard({ data }: { data: AdvancedData['agingPipeline'] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const [showItems, setShowItems] = useState(false);
   const totalVal = data.buckets.reduce((s, b) => s + b.value, 0);
   const BUCKET_COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444'];
@@ -1080,6 +1113,8 @@ function AgingPipelineCard({ data }: { data: AdvancedData['agingPipeline'] }) {
 }
 
 function CustomerConcentrationCard({ data }: { data: CustomerConcentration[] }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   if (data.length === 0) return null;
   const top5Total = data.slice(0, 5).reduce((s, c) => s + c.pct, 0);
   const isHighRisk = top5Total > 70;
@@ -1119,6 +1154,8 @@ function CustomerConcentrationCard({ data }: { data: CustomerConcentration[] }) 
 }
 
 function GoalPlannerCard({ monthProgress, kpiSummary }: { monthProgress: MonthProgress; kpiSummary: KpiSummary }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const dbTarget = monthProgress.target ?? 0;
   const [targetInput, setTargetInput] = useState<string>(dbTarget > 0 ? String(dbTarget) : '');
 
@@ -1167,7 +1204,14 @@ function GoalPlannerCard({ monthProgress, kpiSummary }: { monthProgress: MonthPr
 
         {/* Target input */}
         <div className="mb-4">
-          <div className="text-[10px] text-muted-foreground mb-1">ตั้งเป้าหมายรายได้ (บาท)</div>
+          <div className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1.5">
+            ตั้งเป้าหมายรายได้ (บาท)
+            {cx.currency === 'USD' && (
+              <span className="text-amber-600 dark:text-amber-400 font-medium">
+                · กรอกเป็น THB เสมอ (แสดงผลเป็น USD อัตโนมัติ)
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -1299,6 +1343,8 @@ function GoalPlannerCard({ monthProgress, kpiSummary }: { monthProgress: MonthPr
 }
 
 function RevenueAtRiskCard({ data }: { data: RevenueAtRisk }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const total = data.safeValue + data.totalRiskValue;
   const safePct = total > 0 ? Math.round((data.safeValue / total) * 100) : 100;
   const medPct = total > 0 ? Math.round((data.mediumValue / total) * 100) : 0;
@@ -1359,6 +1405,8 @@ function RevenueAtRiskCard({ data }: { data: RevenueAtRisk }) {
 }
 
 function PipelineIntakeCard({ data }: { data: PipelineIntake }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const last6 = data.trend.slice(-6);
   const maxCount = Math.max(...last6.map((m) => m.count), 1);
   const BUCKET_COLORS = ['bg-slate-400', 'bg-blue-400', 'bg-indigo-500', 'bg-purple-500'];
@@ -1431,6 +1479,8 @@ function PipelineIntakeCard({ data }: { data: PipelineIntake }) {
 }
 
 function ForecastInsightsCard({ data }: { data: ForecastInsights }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const { targetHitRate, monthsHit, monthsTotal, forecastBias, forecastBiasDir, customerRetention: cr } = data;
   const biasColor = forecastBiasDir === 'OVER' ? 'text-amber-600' : forecastBiasDir === 'UNDER' ? 'text-blue-600' : 'text-emerald-600';
   const biasLabel = forecastBiasDir === 'OVER' ? 'Over-forecast (สูงกว่าจริง)' : forecastBiasDir === 'UNDER' ? 'Under-forecast (ต่ำกว่าจริง)' : 'Balanced ✓';
@@ -1501,6 +1551,8 @@ function ForecastInsightsCard({ data }: { data: ForecastInsights }) {
 }
 
 function MonthProgressCard({ data }: { data: MonthProgress }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const pctDays = data.pctElapsed;
   const pctRev = data.pctAchieved ?? 0;
   const pctProj = data.target && data.target > 0 ? Math.min(Math.round((data.projectedEOM / data.target) * 100), 200) : null;
@@ -1578,6 +1630,8 @@ function MonthProgressCard({ data }: { data: MonthProgress }) {
 }
 
 function ScenarioForecastCard({ data }: { data: ScenarioForecast }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const maxVal = Math.max(data.conservative, data.expected, data.optimistic, data.target ?? 0, 1);
   const scenarios = [
     {
@@ -1673,6 +1727,8 @@ function CommitForecastCard({ opportunities, target, expectedForecast }: {
   target: number | null;
   expectedForecast: number;
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const commitDeals = opportunities.filter((o) => o.probability >= 80);
   const commitRevenue = commitDeals.reduce((s, o) => s + o.forecastValue, 0);
   const vsTarget = target && target > 0 ? Math.round((commitRevenue / target) * 100) : null;
@@ -1744,6 +1800,8 @@ function ForecastGapAnalysisCard({ monthProgress, scenarioForecast }: {
   monthProgress: MonthProgress;
   scenarioForecast: ScenarioForecast;
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const actual = monthProgress.actual;
   const target = monthProgress.target;
   const projEOM = monthProgress.projectedEOM;
@@ -1865,6 +1923,8 @@ function ForecastConfidenceScoreCard({ accuracy, forecastInsights, pipelineHealt
   pipelineHealth: PipelineHealth;
   winRateTrend: WinRateTrendItem[];
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const conf = computeForecastConfidence(accuracy, forecastInsights, pipelineHealth, winRateTrend);
   const LEVEL = {
     VERY_HIGH: { label: 'Very High', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', bar: 'bg-emerald-500' },
@@ -2011,6 +2071,8 @@ function generateSalesInsights(params: {
 }
 
 function AISalesInsightsCard(props: Parameters<typeof generateSalesInsights>[0]) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const insights = generateSalesInsights(props);
   const iconCls = { critical: 'text-red-500', warning: 'text-amber-500', positive: 'text-emerald-500', info: 'text-blue-500' };
   const bgCls = { critical: 'bg-red-50 border-red-200 dark:bg-red-900/15 dark:border-red-800', warning: 'bg-amber-50 border-amber-200 dark:bg-amber-900/15 dark:border-amber-800', positive: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/15 dark:border-emerald-800', info: 'bg-blue-50 border-blue-200 dark:bg-blue-900/15 dark:border-blue-800' };
@@ -2054,6 +2116,8 @@ function NextBestActionsCard({ dealsAtRisk, opportunities, agingPipeline, pipeli
   pipelineHealth: PipelineHealth;
   kpiSummary: KpiSummary;
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const actions: Action[] = [];
 
   // Expiring ≤ 7 days
@@ -2145,6 +2209,8 @@ function NextBestActionsCard({ dealsAtRisk, opportunities, agingPipeline, pipeli
 // ════════════════════════════════════════════════════════════════════════════
 
 function ClosingProbabilityDistributionCard({ pipelineHealth }: { pipelineHealth: PipelineHealth }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   // Map status → probability bucket
   const STATUS_PROB: Record<string, number> = {
     PO_APPROVED: 95, PO_PENDING: 90, APPROVED: 80,
@@ -2220,6 +2286,8 @@ function ExecutiveSummaryPanel({ data, currentM, avgAcc, confScore }: {
   avgAcc: number | null;
   confScore: ReturnType<typeof computeForecastConfidence>;
 }) {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const { kpiSummary, pipelineHealth, dealsAtRisk, monthProgress, scenarioForecast } = data;
   const gap = monthProgress.target ? monthProgress.target - monthProgress.actual : null;
   const commitDeals = data.topOpportunities.filter((o) => o.probability >= 80);
@@ -2267,7 +2335,9 @@ function ExecutiveSummaryPanel({ data, currentM, avgAcc, confScore }: {
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
-export default function ForecastPage() {
+function ForecastPageInner() {
+  const cx = useCx();
+  const short = cx.short; // shadows module-level short()
   const { role } = usePermissions();
   const roleCode = role?.code ?? 'OFFICER';
 
@@ -2442,9 +2512,12 @@ export default function ForecastPage() {
             {isOfficer ? 'ยอดขายและ pipeline ของคุณ' : isManager ? 'ภาพรวมทีม · Pipeline · Performance' : 'ภาพรวมบริษัท · Forecast · Accuracy'}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
-          <RefreshCw className="h-4 w-4" />รีเฟรช
-        </Button>
+        <div className="flex items-center gap-2">
+          <CurrencyToggleBar className="shrink-0" />
+          <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
+            <RefreshCw className="h-4 w-4" />รีเฟรช
+          </Button>
+        </div>
       </div>
 
       {/* ── Executive Summary (CEO / ADMIN only) ────────────────────────── */}
@@ -2536,5 +2609,13 @@ export default function ForecastPage() {
       {/* ── Customer Concentration (CEO only) ───────────────────────────── */}
       {isCeo && <CustomerConcentrationCard data={customerConcentration} />}
     </div>
+  );
+}
+
+export default function ForecastPage() {
+  return (
+    <CurrencyProvider>
+      <ForecastPageInner />
+    </CurrencyProvider>
   );
 }
