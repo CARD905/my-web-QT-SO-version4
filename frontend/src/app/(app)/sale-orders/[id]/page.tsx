@@ -89,11 +89,17 @@ function detectFileType(mimeType?: string | null, url?: string): 'image' | 'pdf'
   return 'other';
 }
 
-function POLightbox({ url, fileName, onClose }: { url: string; fileName?: string | null; onClose: () => void }) {
+// ── Comparison Lightbox: PO left | SO details right ──────────────────────────
+function POComparisonLightbox({
+  url, fileName, mimeType, so, onClose,
+}: {
+  url: string; fileName?: string | null; mimeType?: string | null;
+  so: SaleOrder; onClose: () => void;
+}) {
   const [zoom, setZoom] = useState(1);
-  const fileType = detectFileType(undefined, url);
+  const fileType = detectFileType(mimeType, url);
+  const [rightOpen, setRightOpen] = useState(true);
 
-  // ปิดด้วย Escape
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -101,60 +107,201 @@ function POLightbox({ url, fileName, onClose }: { url: string; fileName?: string
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-black/92 backdrop-blur-md" onClick={onClose}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
-        <span className="text-sm text-white/70 font-medium truncate max-w-[60vw]">{fileName ?? 'PO File'}</span>
-        <div className="flex items-center gap-1">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-[#0f0f14]">
+      {/* ── Top toolbar ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-[#1a1a26] border-b border-white/10 shrink-0 gap-2">
+        {/* Left: file info + zoom */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm text-white/60 font-medium truncate max-w-[30vw] hidden sm:block">
+            {fileName ?? 'PO File'}
+          </span>
           {fileType === 'image' && (
-            <>
-              <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))} disabled={zoom <= 0.25}
-                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
-                <ZoomOut className="h-4 w-4" />
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+                disabled={zoom <= 0.25}
+                className="h-7 w-7 flex items-center justify-center rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
+                <ZoomOut className="h-3.5 w-3.5" />
               </button>
-              <span className="text-xs text-white/60 w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+              <span className="text-[11px] text-white/50 w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
               <button onClick={() => setZoom(1)}
-                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors">
-                <RotateCcw className="h-3.5 w-3.5" />
+                className="h-7 w-7 flex items-center justify-center rounded bg-white/10 hover:bg-white/20 text-white transition-colors">
+                <RotateCcw className="h-3 w-3" />
               </button>
-              <button onClick={() => setZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))} disabled={zoom >= 5}
-                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
-                <ZoomIn className="h-4 w-4" />
+              <button onClick={() => setZoom(z => Math.min(5, parseFloat((z + 0.25).toFixed(2))))}
+                disabled={zoom >= 5}
+                className="h-7 w-7 flex items-center justify-center rounded bg-white/10 hover:bg-white/20 text-white disabled:opacity-30 transition-colors">
+                <ZoomIn className="h-3.5 w-3.5" />
               </button>
-              <div className="w-px h-5 bg-white/20 mx-1" />
-            </>
+            </div>
           )}
-          <a href={url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-            className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors">
-            <ExternalLink className="h-3.5 w-3.5" />เปิดใหม่
+        </div>
+        {/* Right: actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setRightOpen(v => !v)}
+            title={rightOpen ? 'ซ่อนข้อมูล SO' : 'แสดงข้อมูล SO'}
+            className={cn(
+              'h-7 px-2.5 flex items-center gap-1.5 rounded text-[11px] font-medium transition-colors',
+              rightOpen ? 'bg-indigo-500/30 hover:bg-indigo-500/50 text-indigo-200' : 'bg-white/10 hover:bg-white/20 text-white',
+            )}>
+            <FileText className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">ข้อมูล SO</span>
+          </button>
+          <div className="w-px h-4 bg-white/15 mx-0.5" />
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            className="h-7 px-2.5 flex items-center gap-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] transition-colors">
+            <ExternalLink className="h-3.5 w-3.5" /><span className="hidden sm:inline">เปิดใหม่</span>
           </a>
-          <a href={url} download={fileName ?? 'PO'} onClick={e => e.stopPropagation()}
-            className="h-8 px-3 flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors">
-            <Download className="h-3.5 w-3.5" />ดาวน์โหลด
+          <a href={url} download={fileName ?? 'PO'}
+            className="h-7 px-2.5 flex items-center gap-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] transition-colors">
+            <Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">ดาวน์โหลด</span>
           </a>
           <button onClick={onClose}
-            className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-red-500/70 text-white transition-colors ml-1">
+            className="h-7 w-7 flex items-center justify-center rounded bg-white/10 hover:bg-red-500/60 text-white transition-colors">
             <XIcon className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-0" onClick={e => e.stopPropagation()}>
-        {fileType === 'image' && (
-          <img src={url} alt={fileName ?? 'PO'} draggable={false}
-            style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? 'none' : '100%', objectFit: 'contain', borderRadius: 8, boxShadow: '0 8px 40px rgba(0,0,0,0.6)', transition: 'width 0.2s ease' }} />
-        )}
-        {fileType === 'pdf' && (
-          <iframe src={url} title="PO PDF" className="w-full rounded-lg" style={{ height: 'calc(100vh - 100px)', background: '#fff' }} />
-        )}
-        {fileType === 'other' && (
-          <div className="text-center text-white/60">
-            <FileText className="h-16 w-16 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">ไม่รองรับการ preview ไฟล์ประเภทนี้</p>
-            <a href={url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-primary underline text-sm">
-              <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
-            </a>
+      {/* ── Split body ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* Left — PO viewer */}
+        <div className="flex-1 overflow-auto bg-[#13131a] flex items-start justify-center p-3 sm:p-5 min-w-0">
+          {fileType === 'image' && (
+            <img src={url} alt={fileName ?? 'PO'} draggable={false}
+              style={{
+                width: `${zoom * 100}%`,
+                maxWidth: zoom > 1 ? 'none' : '100%',
+                borderRadius: 8,
+                boxShadow: '0 8px 48px rgba(0,0,0,0.7)',
+                transition: 'width 0.2s ease',
+              }} />
+          )}
+          {fileType === 'pdf' && (
+            <iframe src={url} title="PO PDF" className="w-full rounded"
+              style={{ height: 'calc(100dvh - 52px)', minHeight: 500 }} />
+          )}
+          {fileType === 'other' && (
+            <div className="text-center text-white/50 mt-24">
+              <FileText className="h-16 w-16 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">ไม่รองรับ preview ไฟล์ประเภทนี้</p>
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-primary hover:underline text-sm">
+                <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Right — SO details for comparison */}
+        {rightOpen && (
+          <div className="w-[340px] sm:w-[400px] shrink-0 bg-background border-l border-border overflow-y-auto flex flex-col text-sm">
+
+            {/* Header */}
+            <div className="px-4 py-3 bg-muted/40 border-b shrink-0">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">ข้อมูลตรวจสอบ</div>
+              <div className="font-bold text-base">{so.saleOrderNo}</div>
+              {so.poNumber && (
+                <div className="text-xs text-muted-foreground mt-0.5 font-mono">PO: <span className="font-semibold text-foreground">{so.poNumber}</span></div>
+              )}
+            </div>
+
+            {/* Customer */}
+            <div className="px-4 py-3 border-b space-y-1">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">ลูกค้า</div>
+              <div className="font-bold leading-tight">{so.customerCompany}</div>
+              {so.customerContactName && <div className="text-muted-foreground text-xs">{so.customerContactName}</div>}
+              {so.customerTaxId && <div className="text-[11px] font-mono text-muted-foreground">เลขภาษี: {so.customerTaxId}</div>}
+              {so.customerPhone && <div className="text-[11px] text-muted-foreground">โทร: {so.customerPhone}</div>}
+              {so.customerBillingAddress && (
+                <div className="text-[11px] text-muted-foreground pt-0.5 leading-relaxed">{so.customerBillingAddress}</div>
+              )}
+            </div>
+
+            {/* Items */}
+            <div className="px-4 py-3 border-b">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2.5">
+                รายการสินค้า <span className="text-foreground font-bold">({so.items?.length ?? 0})</span>
+              </div>
+              <div className="space-y-1.5">
+                {so.items?.map((it, idx) => (
+                  <div key={it.id || idx} className="flex gap-2.5 p-2 rounded-lg bg-muted/40 border border-border/50">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-xs leading-tight truncate">{it.productName}</div>
+                      {it.productSku && (
+                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{it.productSku}</div>
+                      )}
+                      {it.productDescription && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{it.productDescription}</div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right text-[11px]">
+                      <div className="font-mono text-muted-foreground">{formatNumber(it.quantity)} {it.unit}</div>
+                      <div className="text-muted-foreground/70 text-[10px]">× {formatNumber(it.unitPrice)}</div>
+                      <div className="font-bold text-foreground mt-0.5">{formatNumber(it.lineTotal)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="px-4 py-3 border-b space-y-2">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">สรุปยอด</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">ราคารวม</span>
+                <span className="font-mono">{formatNumber(so.subtotal)}</span>
+              </div>
+              {Number(so.discountTotal) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">ส่วนลด</span>
+                  <span className="font-mono text-destructive">-{formatNumber(so.discountTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">VAT ({formatNumber(so.vatRate)}%)</span>
+                <span className="font-mono">{so.vatEnabled ? formatNumber(so.vatAmount) : 'ไม่มี'}</span>
+              </div>
+              <div className="border-t pt-2 flex justify-between items-baseline">
+                <span className="font-bold text-sm">ยอดรวมทั้งสิ้น</span>
+                <span className="text-lg font-extrabold text-primary font-mono tabular-nums">
+                  {formatMoney(so.grandTotal, so.currency)}
+                </span>
+              </div>
+            </div>
+
+            {/* Meta */}
+            <div className="px-4 py-3 space-y-2 text-xs flex-1">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">รายละเอียด</div>
+              {so.paymentTerms && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground shrink-0">เงื่อนไขชำระ</span>
+                  <span className="font-semibold text-right">{so.paymentTerms}</span>
+                </div>
+              )}
+              {so.issueDate && (
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground shrink-0">วันที่ออก</span>
+                  <span className="font-semibold">{formatDate(so.issueDate)}</span>
+                </div>
+              )}
+              {so.quotation && (
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-muted-foreground shrink-0">ใบเสนอราคา</span>
+                  <Link href={`/quotations/${so.quotation.id}`} target="_blank"
+                    className="flex items-center gap-1 text-primary hover:underline font-semibold">
+                    {so.quotation.quotationNo}<ExternalLink className="h-2.5 w-2.5" />
+                  </Link>
+                </div>
+              )}
+              {so.conditions && (
+                <div className="pt-2 border-t mt-2">
+                  <div className="text-[10px] text-muted-foreground mb-1">เงื่อนไขพิเศษ</div>
+                  <div className="text-xs leading-relaxed">{so.conditions}</div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -162,18 +309,26 @@ function POLightbox({ url, fileName, onClose }: { url: string; fileName?: string
   );
 }
 
-function POFilePreview({ url, mimeType, fileName }: { url: string; mimeType?: string | null; fileName?: string | null }) {
+function POFilePreview({
+  url, mimeType, fileName, so,
+}: {
+  url: string; mimeType?: string | null; fileName?: string | null; so: SaleOrder;
+}) {
   const [zoom, setZoom] = useState(1);
   const [lightbox, setLightbox] = useState(false);
   const fileType = detectFileType(mimeType, url);
 
   return (
     <>
-      {lightbox && <POLightbox url={url} fileName={fileName} onClose={() => setLightbox(false)} />}
+      {lightbox && (
+        <POComparisonLightbox
+          url={url} mimeType={mimeType} fileName={fileName}
+          so={so} onClose={() => setLightbox(false)}
+        />
+      )}
 
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         {fileType === 'other' ? (
-          /* ── ไม่ใช่ image/PDF → ปุ่ม download ── */
           <Button asChild variant="outline" size="sm" className="w-full">
             <a href={url} target="_blank" rel="noopener noreferrer">
               <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
@@ -182,62 +337,76 @@ function POFilePreview({ url, mimeType, fileName }: { url: string; mimeType?: st
         ) : (
           <>
             {/* ── Toolbar ── */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               {fileType === 'image' ? (
                 <div className="flex items-center gap-0.5">
-                  <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))} disabled={zoom <= 0.25}
-                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors" title="ย่อ">
+                  <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+                    disabled={zoom <= 0.25}
+                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted disabled:opacity-30 transition-colors">
                     <ZoomOut className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-[11px] text-muted-foreground tabular-nums w-9 text-center">{Math.round(zoom * 100)}%</span>
+                  <span className="text-[11px] text-muted-foreground tabular-nums w-10 text-center">{Math.round(zoom * 100)}%</span>
                   <button onClick={() => setZoom(1)}
-                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted transition-colors" title="รีเซ็ต">
+                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted transition-colors">
                     <RotateCcw className="h-3 w-3" />
                   </button>
-                  <button onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))} disabled={zoom >= 4}
-                    className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted disabled:opacity-30 transition-colors" title="ขยาย">
+                  <button onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
+                    disabled={zoom >= 4}
+                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted disabled:opacity-30 transition-colors">
                     <ZoomIn className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ) : (
-                <span className="text-[11px] text-muted-foreground">PDF</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">PDF</span>
               )}
               <button onClick={() => setLightbox(true)}
-                className="h-6 px-2 flex items-center gap-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors text-[11px]"
-                title="เปิดเต็มจอ">
-                <Maximize2 className="h-3.5 w-3.5" />เต็มจอ
+                className="h-7 px-2.5 flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors text-[11px] font-semibold"
+                title="เปิดเต็มจอเพื่อตรวจสอบ">
+                <Maximize2 className="h-3.5 w-3.5" />เต็มจอ + เปรียบเทียบ
               </button>
             </div>
 
             {/* ── Preview box ── */}
-            <div className="rounded-xl border bg-muted/20 overflow-auto cursor-zoom-in"
-              style={{ height: fileType === 'pdf' ? 340 : 260 }}
-              onClick={() => setLightbox(true)}>
+            <div
+              className="relative rounded-xl border bg-muted/20 overflow-auto cursor-zoom-in hover:border-primary/40 transition-colors group"
+              style={{ height: fileType === 'pdf' ? 520 : 420 }}
+              onClick={() => setLightbox(true)}
+            >
               {fileType === 'image' && (
-                <div className="flex justify-center items-start min-h-full p-1">
+                <div className="flex justify-center items-start min-h-full p-2">
                   <img src={url} alt={fileName ?? 'PO'}
-                    style={{ width: `${zoom * 100}%`, flexShrink: 0, display: 'block', borderRadius: 6, transition: 'width 0.2s ease' }} />
+                    style={{
+                      width: `${zoom * 100}%`, flexShrink: 0, display: 'block',
+                      borderRadius: 6, transition: 'width 0.2s ease',
+                    }} />
                 </div>
               )}
               {fileType === 'pdf' && (
-                <iframe src={url} title="PO PDF" className="w-full h-full" style={{ minHeight: 340 }}
+                <iframe src={url} title="PO PDF" className="w-full h-full"
+                  style={{ minHeight: 520 }}
                   onClick={e => e.stopPropagation()} />
               )}
+              {/* Hover overlay hint */}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors rounded-xl pointer-events-none">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                  <Maximize2 className="h-3 w-3" />คลิกเพื่อเปิดเต็มจอ
+                </div>
+              </div>
             </div>
 
-            {/* ── ชื่อไฟล์ ── */}
+            {/* ── File name ── */}
             {fileName && (
-              <p className="text-[11px] text-muted-foreground truncate" title={fileName}>{fileName}</p>
+              <p className="text-[11px] text-muted-foreground truncate px-0.5" title={fileName}>{fileName}</p>
             )}
 
             {/* ── Action buttons ── */}
             <div className="flex gap-2">
-              <Button asChild variant="outline" size="sm" className="flex-1">
+              <Button asChild variant="outline" size="sm" className="flex-1 text-xs">
                 <a href={url} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
                 </a>
               </Button>
-              <Button asChild variant="outline" size="sm" className="flex-1">
+              <Button asChild variant="outline" size="sm" className="flex-1 text-xs">
                 <a href={url} download={fileName ?? 'PO'}>
                   <Download className="h-3.5 w-3.5" />ดาวน์โหลด
                 </a>
@@ -538,6 +707,7 @@ export default function SaleOrderDetailPage() {
                       url={so.quotation.poFileUrl as string}
                       mimeType={so.quotation.poFileMimeType}
                       fileName={so.quotation.poFileName}
+                      so={so}
                     />
                   </div>
                 )}
