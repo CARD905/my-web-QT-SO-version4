@@ -23,7 +23,6 @@ import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import ManagerDashboardPage from './manager';
 import { CurrencyProvider, useCx } from '@/lib/currency-context';
-import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CeoDashboardData {
@@ -613,7 +612,6 @@ function CeoDashboardContent({
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <CurrencyToggleBar className="shrink-0" />
             <div className="hidden md:flex items-center gap-5 text-[11px]">
               {[
                 { dot: 'bg-emerald-400', label: 'QT', val: data.totals.quotations, cls: 'text-white' },

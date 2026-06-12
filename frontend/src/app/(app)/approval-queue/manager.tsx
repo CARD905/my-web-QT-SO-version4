@@ -19,7 +19,6 @@ import type { ApiResponse, Quotation, SaleOrder } from '@/types/api';
 const QT_STATUS: Record<string, { label: string; color: string; bg: string }> = {
   PENDING:           { label: 'Pending',        color: '#f59e0b', bg: '#fef3c7' },
   PENDING_BACKUP:    { label: 'Pending Backup',  color: '#f97316', bg: '#ffedd5' },
-  PENDING_ESCALATED: { label: 'ส่งต่อแล้ว',      color: '#ef4444', bg: '#fee2e2' },
 };
 
 const SO_STATUS: Record<string, { label: string; color: string; bg: string }> = {
@@ -49,7 +48,6 @@ function EmptyPanel({ label }: { label: string }) {
 // ─── Quotation card ─────────────────────────────────────────────────────────────
 function QtCard({ q, compact = false }: { q: Quotation; compact?: boolean }) {
   const cfg = QT_STATUS[q.status] ?? { label: q.status, color: '#94a3b8', bg: '#f1f5f9' };
-  const isEscalated = q.status === 'PENDING_ESCALATED';
   const isPo = q.status === 'PO_PENDING';
   const ageMs = q.submittedAt ? Date.now() - new Date(q.submittedAt as string).getTime() : null;
   const ageHrs = ageMs ? ageMs / (1000 * 60 * 60) : null;
@@ -58,26 +56,23 @@ function QtCard({ q, compact = false }: { q: Quotation; compact?: boolean }) {
   return (
     <Link href={`/quotations/${q.id}`}
       className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:shadow-md hover:-translate-y-0.5 ${
-        isEscalated
-          ? 'border-red-300 dark:border-red-800 bg-red-50/60 dark:bg-red-900/15'
-          : isUrgent
+        isUrgent
           ? 'border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-900/10'
           : 'border-border/60 hover:border-border'
       }`}>
       <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${
-        isEscalated ? 'bg-red-100 dark:bg-red-900/40'
-        : isPo ? 'bg-cyan-100 dark:bg-cyan-900/30'
+        isPo ? 'bg-cyan-100 dark:bg-cyan-900/30'
         : isUrgent ? 'bg-amber-100 dark:bg-amber-900/30'
         : 'bg-amber-50 dark:bg-amber-900/20'
       }`}>
-        <FileText className={`h-4 w-4 ${isEscalated ? 'text-red-500' : isPo ? 'text-cyan-600' : 'text-amber-600'}`} />
+        <FileText className={`h-4 w-4 ${isPo ? 'text-cyan-600' : 'text-amber-600'}`} />
       </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[13px] font-semibold">{q.quotationNo}</span>
           <StatusPill {...cfg} />
-          {isUrgent && !isEscalated && (
+          {isUrgent && (
             <span className="text-[10px] font-bold text-amber-600">⚡ ด่วน</span>
           )}
         </div>
@@ -88,7 +83,7 @@ function QtCard({ q, compact = false }: { q: Quotation; compact?: boolean }) {
       </div>
 
       <div className="text-right shrink-0">
-        <div className={`text-[13px] font-bold tabular-nums ${isEscalated ? 'text-red-600' : ''}`}>
+        <div className="text-[13px] font-bold tabular-nums">
           {formatMoney(q.grandTotal, q.currency)}
         </div>
         <div className="text-[10px] text-muted-foreground">
@@ -251,9 +246,8 @@ export default function ApprovalQueuePage() {
     try {
       if (isManager) {
         // Fetch pending QTs + SO review (PO_PENDING is handled via Sale Order flow, not here)
-        const [pendingRes, escalatedRes, backupRes, soRes] = await Promise.all([
+        const [pendingRes, backupRes, soRes] = await Promise.all([
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING&limit=100'),
-          api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_ESCALATED&limit=100'),
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_BACKUP&limit=100'),
           api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=PENDING_REVIEW&limit=100'),
         ]);
@@ -261,7 +255,6 @@ export default function ApprovalQueuePage() {
         // Deduplicate all pending QTs
         const allPending: Quotation[] = [
           ...(pendingRes.data.data ?? []),
-          ...(escalatedRes.data.data ?? []),
           ...(backupRes.data.data ?? []),
         ];
         const seen = new Set<string>();
@@ -292,12 +285,11 @@ export default function ApprovalQueuePage() {
         setSoItems(soRes.data.data ?? []);
       } else {
         // Officer: their pending QTs (tracking) + draft SOs
-        const [pendingRes, escalatedRes, soRes] = await Promise.all([
+        const [pendingRes, soRes] = await Promise.all([
           api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING&limit=100'),
-          api.get<ApiResponse<Quotation[]>>('/quotations?status=PENDING_ESCALATED&limit=100'),
           api.get<ApiResponse<SaleOrder[]>>('/sale-orders?status=DRAFT&limit=50'),
         ]);
-        const allQt = [...(pendingRes.data.data ?? []), ...(escalatedRes.data.data ?? [])];
+        const allQt = [...(pendingRes.data.data ?? [])];
         const seen = new Set<string>();
         setQtItems(allQt.filter((q) => { if (seen.has(q.id)) return false; seen.add(q.id); return true; }));
         setEscalatedItems([]);

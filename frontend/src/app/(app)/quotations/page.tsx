@@ -101,7 +101,7 @@ export default function QuotationsPage() {
   };
 
   const approvableList = list.filter((q) => {
-    const isPending = q.status === 'PENDING' || q.status === 'PENDING_ESCALATED';
+    const isPending = q.status === 'PENDING';
     return canApprove && isPending && (canApproveAll || role?.code === 'MANAGER');
   });
 
@@ -284,7 +284,7 @@ export default function QuotationsPage() {
           {list.map((q) => {
             const isApprovable =
               canApprove &&
-              (q.status === 'PENDING' || q.status === 'PENDING_ESCALATED') &&
+              q.status === 'PENDING' &&
               (canApproveAll || role?.code === 'MANAGER');
             const isChecked = selected.has(q.id);
 
@@ -334,7 +334,7 @@ export default function QuotationsPage() {
                           {q.version > 1 && (
                             <span className="text-xs text-muted-foreground">v{q.version}</span>
                           )}
-                          {(q.status === 'PENDING' || q.status === 'PENDING_ESCALATED') && q.currentApprover && q.currentApprover.id !== user?.id && (
+                          {q.status === 'PENDING' && q.currentApprover && q.currentApprover.id !== user?.id && (
                             <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">
                               <Lock className="h-2.5 w-2.5 mr-1" />
                               รอ {q.currentApprover.name} อนุมัติ

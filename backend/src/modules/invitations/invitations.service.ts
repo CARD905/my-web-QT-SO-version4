@@ -244,14 +244,28 @@ export const invitationsService = {
     let resolvedDiscountLimit: any = null;
 
     if (managerLevel) {
-      const refManager = await prisma.user.findFirst({
-        where: { deletedAt: null, isActive: true, managerLevel, role: { code: 'MANAGER' } },
-        select: { approvalLimit: true, discountLimit: true } as any,
-        orderBy: { createdAt: 'asc' },
-      });
-      if (refManager) {
-        if (resolvedApprovalLimit === null) resolvedApprovalLimit = (refManager as any).approvalLimit ?? null;
-        resolvedDiscountLimit = (refManager as any).discountLimit ?? null;
+      const [approvalSetting, discountSetting] = await Promise.all([
+        prisma.systemSetting.findUnique({ where: { key: `approvalLimit.default.${managerLevel}` } }),
+        prisma.systemSetting.findUnique({ where: { key: `discountLimit.default.${managerLevel}` } }),
+      ]);
+
+      if (approvalSetting) {
+        resolvedApprovalLimit = approvalSetting.value === 'null' ? null : Number(approvalSetting.value);
+      } else {
+        // Fall back to existing manager at same level if no canonical default has been set yet
+        const refManager = await prisma.user.findFirst({
+          where: { deletedAt: null, isActive: true, managerLevel, role: { code: 'MANAGER' } },
+          select: { approvalLimit: true, discountLimit: true } as any,
+          orderBy: { createdAt: 'asc' },
+        });
+        if (refManager) {
+          if (resolvedApprovalLimit === null) resolvedApprovalLimit = (refManager as any).approvalLimit ?? null;
+          resolvedDiscountLimit = (refManager as any).discountLimit ?? null;
+        }
+      }
+
+      if (discountSetting) {
+        resolvedDiscountLimit = discountSetting.value === 'null' ? null : Number(discountSetting.value);
       }
     }
 

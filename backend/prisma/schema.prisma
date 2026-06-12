@@ -385,6 +385,8 @@ model Quotation {
   poRejectionReason        String?               @map("po_rejection_reason")
   poUploadHistory          Json?                 @map("po_upload_history")
   poNumber                 String?               @map("po_number")
+  deliveryDateChangedAt    DateTime?             @map("delivery_date_changed_at")
+  deliveryDateChangeReason String?               @map("delivery_date_change_reason")
   currentApproverId        String?               @map("current_approver_id")
   currentApprover          User?                 @relation("CurrentApprover", fields: [currentApproverId], references: [id])
   approvals     QuotationApproval[]
@@ -742,7 +744,6 @@ enum QuotationStatus {
   REVISED
   PENDING
   PENDING_BACKUP
-  PENDING_ESCALATED
   APPROVED
   REJECTED
   SENT

@@ -11,7 +11,6 @@ export type QuotationStatus =
   | 'REVISED'
   | 'PENDING'
   | 'PENDING_BACKUP'
-  | 'PENDING_ESCALATED'
   | 'APPROVED'
   | 'REJECTED'
   | 'SENT'

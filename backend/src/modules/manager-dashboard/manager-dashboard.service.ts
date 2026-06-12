@@ -150,7 +150,7 @@ export const managerDashboardService = {
     ] = await Promise.all([
       prisma.quotation.count({ where: { ...baseWhere, status: { notIn: ['EXPIRED', 'CANCELLED', 'DRAFT'] } } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
-      prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING_ESCALATED' } }),
+      Promise.resolve(0),
       prisma.quotation.count({ where: { ...baseWhere, status: 'APPROVED' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'REJECTED' } }),
 
@@ -158,7 +158,7 @@ export const managerDashboardService = {
       prisma.quotation.count({ where: { ...baseWhere, status: 'PO_PENDING' } }),
 
       prisma.quotation.findMany({ where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } }, select: { grandTotal: true, currency: true } }),
-      prisma.quotation.findMany({ where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PO_PENDING'] } }, select: { grandTotal: true, currency: true } }),
+      prisma.quotation.findMany({ where: { ...baseWhere, status: { in: ['PENDING', 'PO_PENDING'] } }, select: { grandTotal: true, currency: true } }),
 
       prisma.quotation.count({ where: { deletedAt: null, approvedById: actingUserId, approvedAt: { gte: todayStart } } }),
       prisma.quotation.count({ where: { deletedAt: null, rejectedById: actingUserId, rejectedAt: { gte: todayStart } } }),
@@ -173,14 +173,7 @@ export const managerDashboardService = {
 
       prisma.quotation.findMany({ where: baseWhere, select: { createdById: true, grandTotal: true, currency: true } }),
       prisma.quotation.findMany({
-        where: {
-          ...baseWhere,
-          status: 'PENDING_ESCALATED',
-          // CEO only sees items routed specifically to them; other managers see their team's scope
-          ...(currentUser.roleCode === 'CEO' ? { currentApproverId: currentUser.id } : {}),
-        },
-        orderBy: { submittedAt: 'desc' },
-        take: 10,
+        where: { ...baseWhere, id: '__pending_escalated_removed__' },
         include: { createdBy: { select: { id: true, name: true } } },
       }),
       prisma.quotation.groupBy({ by: ['status'], where: baseWhere, _count: { id: true } }),
@@ -252,7 +245,7 @@ export const managerDashboardService = {
       prisma.quotation.findMany({
         where: {
           ...baseWhere,
-          status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] },
+          status: { in: ['PENDING', 'PENDING_BACKUP'] },
           submittedAt: { not: null },
         },
         select: { id: true, submittedAt: true, grandTotal: true, currency: true },
@@ -305,7 +298,7 @@ export const managerDashboardService = {
 
       // Pipeline stage 1: top 5 pending QTs (with quotationNo for drilldown)
       prisma.quotation.findMany({
-        where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] }, submittedAt: { not: null } },
+        where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_BACKUP'] }, submittedAt: { not: null } },
         select: { id: true, quotationNo: true, grandTotal: true, currency: true, submittedAt: true, customerCompany: true },
         orderBy: { grandTotal: 'desc' },
         take: 5,
@@ -670,17 +663,16 @@ export const managerDashboardService = {
     if (isManagerAbove) {
       // QT approval: only items explicitly routed to this user
       // PO_PENDING is handled via Sale Order flow, not counted here
-      const [normalQt, escalatedQt, pendingSo] = await Promise.all([
+      const [pendingQt, pendingSo] = await Promise.all([
         prisma.quotation.count({ where: { deletedAt: null, status: { in: ['PENDING', 'PENDING_BACKUP'] }, currentApproverId: currentUser.id } }),
-        prisma.quotation.count({ where: { deletedAt: null, status: 'PENDING_ESCALATED', currentApproverId: currentUser.id } }),
         prisma.saleOrder.count({ where: { deletedAt: null, status: 'PENDING_REVIEW' } }),
       ]);
-      qtCount = normalQt + escalatedQt;
+      qtCount = pendingQt;
       soCount = pendingSo;
     } else {
       // Officer: their QTs in pending states + their draft/rejected SOs
       const [pendingQt, actionSo] = await Promise.all([
-        prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } } }),
+        prisma.quotation.count({ where: { deletedAt: null, createdById: currentUser.id, status: { in: ['PENDING', 'PENDING_BACKUP'] } } }),
         prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['DRAFT', 'REJECTED'] }, quotation: { createdById: currentUser.id } } }),
       ]);
       qtCount = pendingQt;
@@ -777,7 +769,7 @@ export const managerDashboardService = {
       // Total value of all QTs (pipeline baseline)
       prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, select: { grandTotal: true, currency: true } }),
       // Pending value
-      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } }, select: { grandTotal: true, currency: true } }),
+      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null, status: { in: ['PENDING', 'PENDING_BACKUP'] } }, select: { grandTotal: true, currency: true } }),
       // Expiring in 7 days
       prisma.quotation.findMany({
         where: {
@@ -860,7 +852,6 @@ export const managerDashboardService = {
         totalValue: totalValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
         pendingValue: pendingValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
         pendingCount: (byStatusRaw.find((s) => s.status === 'PENDING')?._count.id ?? 0)
-          + (byStatusRaw.find((s) => s.status === 'PENDING_ESCALATED')?._count.id ?? 0)
           + (byStatusRaw.find((s) => s.status === 'PENDING_BACKUP')?._count.id ?? 0),
         poPendingCount: byStatusRaw.find((s) => s.status === 'PO_PENDING')?._count.id ?? 0,
         approvedCount2: byStatusRaw.find((s) => s.status === 'APPROVED')?._count.id ?? 0,

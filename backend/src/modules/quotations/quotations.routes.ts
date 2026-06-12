@@ -159,6 +159,11 @@ router.post(
   requireAnyPermission(['quotation', 'approve', 'TEAM'], ['quotation', 'approve', 'ALL']),
   asyncHandler(poController.reject),
 );
+router.patch(
+  '/:id/delivery-date',
+  requirePermission('saleOrder', 'create', 'OWN'),
+  asyncHandler(poController.updateDeliveryDate),
+);
 
 // ─── COMMENTS ────────────────────────────────────────────────────────────────
 

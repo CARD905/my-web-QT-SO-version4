@@ -84,7 +84,6 @@ export function getStatusClass(status: string): string {
     REVISED:           'status-revised',
     PENDING:           'status-pending',
     PENDING_BACKUP:    'status-pending',
-    PENDING_ESCALATED: 'status-pending',
     APPROVED:          'status-approved',
     REJECTED:          'status-rejected',
     CANCELLED:         'status-cancelled',

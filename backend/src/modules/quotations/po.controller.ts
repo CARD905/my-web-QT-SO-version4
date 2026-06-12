@@ -65,13 +65,21 @@ export const poController = {
     return success(res, data);
   },
   async cancel(req: Request, res: Response) {
-  const user = requireUser(req);
-  const data = await poService.cancelPo(
-    req.params.id,
-    user,
-    req.body.reason,
-    req,
-  );
-  return success(res, data);
-},
+    const user = requireUser(req);
+    const data = await poService.cancelPo(req.params.id, user, req.body.reason, req);
+    return success(res, data);
+  },
+
+  // PATCH /quotations/:id/delivery-date  body: { deliveryDate: string|null, reason: string }
+  async updateDeliveryDate(req: Request, res: Response) {
+    const user = requireUser(req);
+    const data = await poService.updateDeliveryDate(
+      req.params.id,
+      user,
+      req.body.deliveryDate ?? null,
+      req.body.reason,
+      req,
+    );
+    return success(res, data);
+  },
 };

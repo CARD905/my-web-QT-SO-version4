@@ -197,14 +197,14 @@ export const quotationsService = {
 
     if (query.highValue) where.grandTotal = { gte: HIGH_VALUE_THRESHOLD };
 
-    // Visibility gate: PENDING/PENDING_ESCALATED quotations are only visible
+    // Visibility gate: pending quotations are only visible
     // to their creator or the designated currentApprover.
     // CEO/ADMIN bypass this gate (they can see everything).
     const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
     if (!isCeoOrAdmin) {
       const pendingGate: Prisma.QuotationWhereInput = {
         OR: [
-          { status: { notIn: ['PENDING', 'PENDING_ESCALATED'] as QuotationStatus[] } },
+          { status: { notIn: ['PENDING'] as QuotationStatus[] } },
           { currentApproverId: currentUser.id },
           { createdById: currentUser.id },
           { approvals: { some: { approverId: currentUser.id } } },
@@ -281,9 +281,9 @@ export const quotationsService = {
     const canView = isCurrentApprover || await canActOnEntity(currentUser, 'quotation', 'view', quotation.createdById);
     if (!canView) throw new AppError(403, 'FORBIDDEN', 'You do not have access to this quotation');
 
-    // Additional gate: PENDING/PENDING_ESCALATED/PENDING_BACKUP are only visible to creator,
+    // Additional gate: pending approval statuses are only visible to creator,
     // the designated currentApprover, or CEO/ADMIN.
-    if (['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(quotation.status)) {
+    if (['PENDING', 'PENDING_BACKUP'].includes(quotation.status)) {
       const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
       const isCreator = quotation.createdById === currentUser.id;
       const isPreviousApprover = (quotation.approvals as Array<{ approverId: string }>).some(
@@ -309,7 +309,7 @@ export const quotationsService = {
     // Build projected future approvers for PENDING statuses so the frontend
     // can show the full chain (current + future) instead of just the next person.
     let projectedFutureApprovers: ProjectedApprover[] = [];
-    if (['PENDING', 'PENDING_ESCALATED'].includes(quotation.status) && quotation.currentApproverId) {
+    if (quotation.status === 'PENDING' && quotation.currentApproverId) {
       const usdRate = await getUsdRate();
       const grandTotalTHB =
         (quotation.currency as string) === 'USD'
@@ -467,7 +467,7 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only submit your own quotations');
-    if (!['DRAFT', 'REJECTED', 'REVISED'].includes(existing.status)) {
+    if (!['DRAFT', 'REVISED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot submit quotation with status ${existing.status}`);
     }
     if (new Date(existing.expiryDate) < new Date()) {
@@ -478,13 +478,13 @@ export const quotationsService = {
     const currency = (existing.currency ?? 'THB') as 'THB' | 'USD';
     const rateSetting = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
     const usdExchangeRate = rateSetting ? (parseFloat(rateSetting.value) || 35) : 35;
-    const isResubmit = existing.status === 'REJECTED';
+    const isResubmit = existing.status === 'REVISED';
 
     // For resubmit: route directly to the manager who rejected (skip Section Manager if already escalated).
     // For fresh submit: find the first approver in the chain (Section Manager).
     let targetApproverId: string | null = null;
     let targetApproverName = '';
-    let targetStatus: 'PENDING' | 'PENDING_ESCALATED' = 'PENDING';
+    let targetStatus: 'PENDING' = 'PENDING';
 
     if (isResubmit && existing.rejectedById) {
       const rejector = await prisma.user.findUnique({
@@ -494,9 +494,7 @@ export const quotationsService = {
       if (rejector && !isOfficer(rejector.role.code)) {
         targetApproverId = rejector.id;
         targetApproverName = rejector.name;
-        // PENDING only when going back to Section Manager (first in chain); any higher level = PENDING_ESCALATED
-        const isSectionManager = rejector.role.code === 'MANAGER' && (rejector as any).managerLevel === 'SECTION';
-        targetStatus = isSectionManager ? 'PENDING' : 'PENDING_ESCALATED';
+        targetStatus = 'PENDING';
       }
     }
 
@@ -556,7 +554,7 @@ export const quotationsService = {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (!['PENDING', 'PENDING_ESCALATED'].includes(existing.status)) {
+    if (existing.status !== 'PENDING') {
       throw new AppError(409, 'INVALID_STATUS', 'Only pending quotations can be escalated');
     }
 
@@ -586,14 +584,11 @@ export const quotationsService = {
     });
     if (!managerUser) throw new AppError(404, 'USER_NOT_FOUND', 'Manager not found');
 
-    // Any escalation beyond the first approver → PENDING_ESCALATED
-    const escalateStatus = 'PENDING_ESCALATED';
-
     const updated = await prisma.$transaction(async (tx) => {
       const q = await tx.quotation.update({
         where: { id },
         data: {
-          status: escalateStatus,
+          status: 'PENDING',
           currentApproverId: next.approverId,
           currentStep: { increment: 1 },
         },
@@ -677,7 +672,7 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (!['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(existing.status)) {
+    if (!['PENDING', 'PENDING_BACKUP'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Only pending quotations can be approved (current: ${existing.status})`);
     }
 
@@ -794,7 +789,7 @@ export const quotationsService = {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    if (!['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(existing.status)) {
+    if (!['PENDING', 'PENDING_BACKUP'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Only pending quotations can be rejected (current: ${existing.status})`);
     }
 
@@ -912,7 +907,7 @@ export const quotationsService = {
     for (const id of ids) {
       const q = qMap.get(id);
       if (!q) { result.failed.push({ id, reason: 'Not found' }); continue; }
-      if (!['PENDING', 'PENDING_ESCALATED'].includes(q.status)) {
+      if (q.status !== 'PENDING') {
         result.failed.push({ id, quotationNo: q.quotationNo, reason: `Cannot approve status ${q.status}` });
         continue;
       }
@@ -960,7 +955,7 @@ export const quotationsService = {
     const existing = await prisma.quotation.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
 
-    const allowCommentStatuses: QuotationStatus[] = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING'];
+    const allowCommentStatuses: QuotationStatus[] = ['PENDING', 'PENDING_BACKUP', 'PO_PENDING', 'REJECTED', 'REVISED'];
     if (!allowCommentStatuses.includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot comment when status is ${existing.status}.`);
     }

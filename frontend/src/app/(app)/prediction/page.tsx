@@ -19,7 +19,6 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { AnimatedCounter } from '@/components/effects/animated-counter';
 import type { ApiResponse } from '@/types/api';
 import { CurrencyProvider, useCx } from '@/lib/currency-context';
-import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface FvtMonth { label: string; year: number; month: number; actual: number; target: number | null; forecast: number; achievePct: number | null; gap: number | null; isFuture?: boolean; }
@@ -105,12 +104,12 @@ function short(v: number): string {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'รออนุมัติ', PENDING_ESCALATED: 'Escalated', PENDING_BACKUP: 'Backup',
+  PENDING: 'รออนุมัติ', PENDING_BACKUP: 'Backup',
   APPROVED: 'อนุมัติแล้ว', PO_PENDING: 'รอ PO', PO_APPROVED: 'PO อนุมัติ',
   DRAFT: 'Draft', REJECTED: 'ถูกปฏิเสธ',
 };
 const STATUS_COLOR: Record<string, string> = {
-  PENDING: '#f59e0b', PENDING_ESCALATED: '#f97316', PENDING_BACKUP: '#f97316',
+  PENDING: '#f59e0b', PENDING_BACKUP: '#f97316',
   APPROVED: '#10b981', PO_PENDING: '#8b5cf6', PO_APPROVED: '#06b6d4',
   DRAFT: '#94a3b8', REJECTED: '#ef4444',
 };
@@ -2214,7 +2213,7 @@ function ClosingProbabilityDistributionCard({ pipelineHealth }: { pipelineHealth
   // Map status → probability bucket
   const STATUS_PROB: Record<string, number> = {
     PO_APPROVED: 95, PO_PENDING: 90, APPROVED: 80,
-    PENDING_ESCALATED: 65, PENDING_BACKUP: 60, PENDING: 50, DRAFT: 20,
+    PENDING_BACKUP: 60, PENDING: 50, DRAFT: 20,
   };
   const buckets = [
     { label: '90–100%', range: [90, 100], color: '#10b981', bg: 'bg-emerald-500', light: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400' },
@@ -2513,7 +2512,6 @@ function ForecastPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <CurrencyToggleBar className="shrink-0" />
           <Button variant="outline" size="sm" onClick={load} className="gap-1.5">
             <RefreshCw className="h-4 w-4" />รีเฟรช
           </Button>

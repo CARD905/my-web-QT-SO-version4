@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -23,7 +23,7 @@ import { CommentThread } from '@/components/comments/comment-thread';
 import type { ApiResponse, CompanySettings, Quotation, QuotationApproval } from '@/types/api';
 
 const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
-const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING', 'REJECTED'];
+const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_BACKUP', 'PO_PENDING', 'REJECTED', 'REVISED'];
 const PDF_ALLOWED_STATUSES = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED', 'SENT', 'SIGNED'];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -104,20 +104,24 @@ function ConfirmPopover({
 // ════════════════════════════════════════════════════════════════════════════
 // Quotation PDF Document
 // ════════════════════════════════════════════════════════════════════════════
-function DocRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+
+/** One labeled field in the Customer Information / Terms sections */
+function DocField({ label, value, bold, wide }: { label: string; value?: string | null; bold?: boolean; wide?: boolean }) {
+  if (!value) return null;
   return (
-    <div className="flex gap-2 text-[11px] py-0.5">
-      <span className="text-gray-700 w-[110px] shrink-0">{label}</span>
-      <span className={`flex-1 ${bold ? 'font-bold text-[12px]' : 'font-semibold'}`}>{value}</span>
+    <div className={wide ? 'col-span-2' : ''}>
+      <div className="text-[9.5px] text-gray-500 uppercase tracking-wide">{label}</div>
+      <div className={`text-[11px] mt-0.5 ${bold ? 'font-bold text-[13px]' : 'font-medium text-gray-900'}`}>{value}</div>
     </div>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+/** One row in the totals summary */
+function SummaryRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] px-3 py-1.5 border-b border-gray-300">
-      <span className="text-gray-700">{label}</span>
-      <span className="font-semibold min-w-[90px] text-right">{value}</span>
+    <div className={`flex justify-between items-baseline py-1.5 border-b border-gray-100 text-[11px] ${accent ? 'font-bold text-base' : ''}`}>
+      <span className={accent ? 'text-gray-900' : 'text-gray-600'}>{label}</span>
+      <span className={`font-semibold tabular-nums ${accent ? 'text-[#5B21B6] text-base' : 'text-gray-900'}`}>{value}</span>
     </div>
   );
 }
@@ -125,113 +129,244 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 function QuotationDocument({ q, company }: { q: Quotation; company: CompanySettings | null }) {
   const grandTotalNum = Number(q.grandTotal);
   const bahtText = q.currency === 'THB' ? toThaiBahtText(grandTotalNum) : '';
-  const padCount = Math.max(0, 8 - (q.items?.length ?? 0));
+  const padCount = Math.max(0, 7 - (q.items?.length ?? 0));
+
+  // Validity days (issueDate → expiryDate)
+  const validDays = q.issueDate && q.expiryDate
+    ? Math.round((new Date(q.expiryDate as string).getTime() - new Date(q.issueDate as string).getTime()) / 86_400_000)
+    : null;
+
+  const companyName = company?.companyNameTh || company?.companyName || '';
+  const companyNameEn = company?.companyNameTh && company?.companyName ? company.companyName : '';
+  const initial = companyName.slice(0, 1) || 'C';
 
   return (
-    <div id="qt-printable" className="bg-white text-black" style={{ fontFamily: 'Sarabun, sans-serif' }}>
-      <div className="border-2 border-black">
-        <div className="grid grid-cols-[1fr_280px]">
-          <div className="px-4 py-3 border-r-2 border-black">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0">
-                {(company?.companyNameTh || company?.companyName || 'C').slice(0, 1)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-bold text-base">{company?.companyNameTh || company?.companyName}</div>
-                {company?.companyNameTh && company?.companyName && <div className="text-xs text-gray-700">{company.companyName}</div>}
-                <div className="text-[11px] text-gray-800 mt-1">
-                  {company?.addressTh || company?.address}
-                  {company?.phone && <div>โทร. {company.phone}{company?.fax && `  แฟกซ์ ${company.fax}`}</div>}
-                  {company?.email && <div>อีเมล {company.email}</div>}
-                  {company?.taxId && <div>เลขประจำตัวผู้เสียภาษี: {company.taxId}</div>}
+    <div
+      id="qt-printable"
+      className="bg-white text-black"
+      style={{ fontFamily: "'Sarabun', 'Noto Sans Thai', sans-serif", fontSize: 13 }}
+    >
+      {/* ── HEADER ── */}
+      <div className="flex items-start justify-between px-8 pt-7 pb-5 border-b border-gray-200">
+        {/* Company info */}
+        <div className="flex items-start gap-3 flex-1 min-w-0 pr-6">
+          <div
+            className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold text-xl shrink-0"
+            style={{ background: 'linear-gradient(135deg,#7C3AED,#5B21B6)' }}
+          >
+            {initial}
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold text-[14px] leading-snug">{companyName}</div>
+            {companyNameEn && <div className="text-[11px] text-gray-500">{companyNameEn}</div>}
+            <div className="text-[11px] text-gray-600 mt-1 space-y-0.5">
+              {(company?.addressTh || company?.address) && (
+                <div>{company?.addressTh || company?.address}</div>
+              )}
+              {(company?.phone || company?.fax) && (
+                <div>
+                  {company?.phone && `โทร. ${company.phone}`}
+                  {company?.phone && company?.fax && '  ·  '}
+                  {company?.fax && `โทรสาร ${company.fax}`}
                 </div>
+              )}
+              {company?.email && <div>อีเมล {company.email}</div>}
+              {company?.taxId && <div>เลขผู้เสียภาษี {company.taxId}</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Document title + meta */}
+        <div className="text-right shrink-0">
+          <div className="text-[22px] font-extrabold tracking-widest" style={{ color: '#5B21B6' }}>QUOTATION</div>
+          <div className="text-[11px] text-gray-500 -mt-0.5 tracking-wide">ใบเสนอราคา</div>
+          <div className="mt-3 text-[11px] space-y-1">
+            <div className="flex justify-end gap-3">
+              <span className="text-gray-500">เลขที่</span>
+              <span className="font-bold text-[13px]" style={{ color: '#5B21B6' }}>{q.quotationNo}</span>
+            </div>
+            <div className="flex justify-end gap-3">
+              <span className="text-gray-500">วันที่</span>
+              <span className="font-semibold">{formatDate(q.issueDate)}</span>
+            </div>
+            {q.currency !== 'THB' && (
+              <div className="flex justify-end gap-3">
+                <span className="text-gray-500">สกุลเงิน</span>
+                <span className="font-semibold">{q.currency}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── CUSTOMER INFORMATION ── */}
+      <div className="mx-8 mt-4 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
+        <div className="px-5 py-2 border-b border-gray-200 bg-gray-100">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-700">Customer Information</span>
+        </div>
+        <div className="px-5 py-3 grid grid-cols-2 gap-x-8 gap-y-2.5">
+          <DocField label="Company" value={q.customerCompany} bold />
+          <DocField label="Contact Name" value={q.customerContactName} />
+          {q.customerTaxId && <DocField label="Tax ID" value={q.customerTaxId} />}
+          {q.customerPhone && <DocField label="Phone" value={q.customerPhone} />}
+          {q.customerEmail && <DocField label="Email" value={q.customerEmail} />}
+          {q.customerBillingAddress && <DocField label="Billing Address" value={q.customerBillingAddress} wide />}
+          {q.customerShippingAddress && q.customerShippingAddress !== q.customerBillingAddress && (
+            <DocField label="Shipping Address" value={q.customerShippingAddress} wide />
+          )}
+        </div>
+      </div>
+
+      {/* ── QUOTATION TERMS ── */}
+      <div className="mx-8 mt-3 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
+        <div className="px-5 py-2 border-b border-gray-200 bg-gray-100">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-700">Quotation Terms</span>
+        </div>
+        <div className="px-5 py-3 grid grid-cols-4 gap-x-6">
+          <div>
+            <div className="text-[9.5px] text-gray-500 uppercase tracking-wide">วันที่กำหนดส่ง</div>
+            <div className="text-[11px] font-medium text-gray-900 mt-0.5">{q.deliveryDate ? formatDate(q.deliveryDate) : '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9.5px] text-gray-500 uppercase tracking-wide">อินราคาภายใน (วัน)</div>
+            <div className="text-[11px] font-medium text-gray-900 mt-0.5">{validDays != null ? `${validDays} วัน` : '—'}</div>
+          </div>
+          <div>
+            <div className="text-[9.5px] text-gray-500 uppercase tracking-wide">Expire Date</div>
+            <div className="text-[11px] font-medium text-gray-900 mt-0.5">{formatDate(q.expiryDate)}</div>
+          </div>
+          <div>
+            <div className="text-[9.5px] text-gray-500 uppercase tracking-wide">เงื่อนไขชำระเงิน</div>
+            <div className="text-[11px] font-medium text-gray-900 mt-0.5">{q.paymentTerms || '—'}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── LINE ITEMS ── */}
+      <div className="mx-8 mt-3 rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-5 py-2 border-b border-gray-200 bg-gray-100">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-gray-700">Line Items</span>
+        </div>
+        <table className="w-full border-collapse text-[11px]">
+          <thead>
+            <tr className="bg-gray-900 text-white">
+              <th className="px-3 py-2.5 text-left w-[70px] font-semibold tracking-wide text-[10px]">SKU</th>
+              <th className="px-3 py-2.5 text-left font-semibold tracking-wide text-[10px]">PRODUCT</th>
+              <th className="px-3 py-2.5 text-right w-[60px] font-semibold tracking-wide text-[10px]">QTY</th>
+              <th className="px-3 py-2.5 text-center w-[40px] font-semibold tracking-wide text-[10px]">UNIT</th>
+              <th className="px-3 py-2.5 text-right w-[90px] font-semibold tracking-wide text-[10px]">UNIT PRICE</th>
+              <th className="px-3 py-2.5 text-right w-[70px] font-semibold tracking-wide text-[10px]">DISCOUNT</th>
+              <th className="px-3 py-2.5 text-right w-[90px] font-semibold tracking-wide text-[10px]">LINE TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {q.items?.map((it, idx) => (
+              <tr key={it.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
+                <td className="px-3 py-2.5 align-top font-mono text-[10px] text-gray-500">{it.productSku || '-'}</td>
+                <td className="px-3 py-2.5 align-top">
+                  <div className="font-semibold text-gray-900">{it.productName}</div>
+                  {it.productDescription && <div className="text-[10px] text-gray-400 mt-0.5">{it.productDescription}</div>}
+                </td>
+                <td className="px-3 py-2.5 align-top text-right">{formatNumber(it.quantity)}</td>
+                <td className="px-3 py-2.5 align-top text-center text-gray-500">{it.unit}</td>
+                <td className="px-3 py-2.5 align-top text-right">{formatNumber(it.unitPrice)}</td>
+                <td className="px-3 py-2.5 align-top text-right text-gray-500">
+                  {Number(it.discount) > 0
+                    ? it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)
+                    : '-'}
+                </td>
+                <td className="px-3 py-2.5 align-top text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+              </tr>
+            ))}
+            {Array.from({ length: padCount }).map((_, i) => (
+              <tr key={`pad-${i}`} className={i % 2 === (q.items?.length ?? 0) % 2 ? 'bg-white' : 'bg-gray-50/60'}>
+                {Array.from({ length: 7 }).map((__, j) => (
+                  <td key={j} className="px-3 py-2.5">&nbsp;</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── NOTES + TOTALS ── */}
+      <div className="mx-8 mt-3 grid grid-cols-[1fr_260px] gap-4">
+        {/* Notes / bank info */}
+        <div className="text-[11px] space-y-3">
+          {q.conditions && (
+            <div>
+              <div className="text-[9.5px] text-gray-500 uppercase tracking-wide font-semibold mb-1">หมายเหตุ / Notes</div>
+              <div className="text-gray-700 leading-relaxed">{q.conditions}</div>
+            </div>
+          )}
+          {bahtText && (
+            <div>
+              <div className="text-[9.5px] text-gray-500 uppercase tracking-wide font-semibold mb-1">จำนวนเงินตัวอักษร</div>
+              <div className="italic text-gray-700">( {bahtText} )</div>
+            </div>
+          )}
+          {company?.bankName && (
+            <div className="mt-2 pt-2 border-t border-gray-200">
+              <div className="text-[9.5px] text-gray-500 uppercase tracking-wide font-semibold mb-1">โอนเงินเข้าบัญชี</div>
+              <div className="font-semibold text-gray-900">{company.bankName}</div>
+              {company.bankAccount && <div className="text-gray-700">{company.bankAccount}{company.bankBranch ? ` (${company.bankBranch})` : ''}</div>}
+            </div>
+          )}
+        </div>
+
+        {/* Totals */}
+        <div className="text-[11px] self-start">
+          <SummaryRow label="Subtotal" value={formatNumber(q.subtotal)} />
+          <SummaryRow
+            label={`Trade Discount (${Number(q.discountTotal) > 0 ? formatNumber(Number(q.discountTotal) / Number(q.subtotal) * 100) : '0.00'}%)`}
+            value={`-${formatNumber(q.discountTotal)}`}
+          />
+          <SummaryRow label="After Discount" value={formatNumber(Number(q.subtotal) - Number(q.discountTotal))} />
+          {q.vatEnabled
+            ? <SummaryRow label={`VAT (${formatNumber(q.vatRate)}%)`} value={formatNumber(q.vatAmount)} />
+            : <SummaryRow label="VAT" value="Exempt" />
+          }
+          <div className="flex justify-between items-baseline pt-2 mt-1">
+            <span className="font-bold text-[13px] text-gray-900">Grand Total</span>
+            <span className="font-extrabold text-[16px]" style={{ color: '#5B21B6' }}>
+              {q.currency === 'THB' ? '฿' : q.currency + ' '}{formatNumber(q.grandTotal)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── PAYMENT TERMS ── */}
+      {q.paymentTerms && (
+        <div className="mx-8 mt-4">
+          <div className="rounded-lg bg-gray-50 border border-gray-200 px-5 py-2.5">
+            <div className="text-[9.5px] text-gray-500 uppercase tracking-wide font-semibold">Payment Terms</div>
+            <div className="text-[12px] font-bold text-gray-900 mt-0.5">{q.paymentTerms}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SIGNATURE FOOTER ── */}
+      <div className="mx-8 mt-6 pt-5 border-t border-gray-200">
+        <div className="grid grid-cols-2 gap-12">
+          {[{ th: 'พนักงานขาย', en: 'Sales Officer' }, { th: 'ผู้จัดการฝ่ายขาย', en: 'Sales Manager' }].map((s, i) => (
+            <div key={i} className="text-center">
+              <div className="flex justify-center gap-4 mb-6 text-gray-300">
+                <MessageSquare className="h-4 w-4" />
+                <span className="text-[10px]">T</span>
+                <span className="text-[10px]">✎</span>
+                <span className="text-[10px]">□</span>
+              </div>
+              <div className="border-t border-gray-400 mx-6 pt-2">
+                <div className="text-[12px] font-semibold text-gray-900">{s.th}</div>
+                <div className="text-[10px] text-gray-500">{s.en}</div>
+                <div className="text-[10px] text-gray-400 mt-1.5">วันที่ / ______________</div>
               </div>
             </div>
-          </div>
-          <div className="flex flex-col">
-            <div className="text-center py-2 border-b-2 border-black">
-              <div className="text-xl font-bold tracking-widest">QUOTATION</div>
-              <div className="text-xs text-gray-700">ใบเสนอราคา</div>
-            </div>
-            <table className="w-full text-[11px]">
-              <tbody>
-                <tr className="border-b border-black"><td className="px-2 py-1 border-r border-black w-[42%] text-gray-700">เลขที่ / No.</td><td className="px-2 py-1 font-semibold text-right">{q.quotationNo}</td></tr>
-                <tr className="border-b border-black"><td className="px-2 py-1 border-r border-black text-gray-700">วันที่ / Date</td><td className="px-2 py-1 font-semibold text-right">{formatDate(q.issueDate)}</td></tr>
-                <tr className="border-b border-black"><td className="px-2 py-1 border-r border-black text-gray-700">หมดอายุ / Expiry</td><td className="px-2 py-1 font-semibold text-right">{formatDate(q.expiryDate)}</td></tr>
-                <tr><td className="px-2 py-1 border-r border-black text-gray-700">สกุลเงิน</td><td className="px-2 py-1 font-semibold text-right">{q.currency}</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div className="border-2 border-t-0 border-black grid grid-cols-2">
-        <div className="px-4 py-2 border-r-2 border-black">
-          <div className="text-[10px] text-gray-500 uppercase font-semibold mb-1">เสนอราคาให้แก่ / To</div>
-          <DocRow label="บริษัท" value={q.customerCompany} bold />
-          <DocRow label="ผู้ติดต่อ" value={q.customerContactName} />
-          {q.customerTaxId && <DocRow label="เลขผู้เสียภาษี" value={q.customerTaxId} />}
-          {q.customerPhone && <DocRow label="โทรศัพท์" value={q.customerPhone} />}
-          {q.customerEmail && <DocRow label="Email" value={q.customerEmail} />}
-          {q.customerBillingAddress && <DocRow label="ที่อยู่" value={q.customerBillingAddress} />}
-        </div>
-        <div className="px-4 py-2">
-          <div className="text-[10px] text-gray-500 uppercase font-semibold mb-1">รายละเอียด</div>
-          {q.paymentTerms && <DocRow label="เงื่อนไขชำระเงิน" value={q.paymentTerms} />}
-          {q.conditions && <DocRow label="เงื่อนไข" value={q.conditions} />}
-          {q.customerShippingAddress && <DocRow label="ที่อยู่จัดส่ง" value={q.customerShippingAddress} />}
-        </div>
-      </div>
-      <table className="w-full border-2 border-t-0 border-black border-collapse text-[11px]">
-        <thead>
-          <tr className="bg-black text-white">
-            <th className="border-r border-gray-700 px-2 py-2 text-left w-[70px]">รหัส / SKU</th>
-            <th className="border-r border-gray-700 px-2 py-2 text-left">รายการ / Description</th>
-            <th className="border-r border-gray-700 px-2 py-2 text-right w-[55px]">จำนวน</th>
-            <th className="border-r border-gray-700 px-2 py-2 text-center w-[45px]">หน่วย</th>
-            <th className="border-r border-gray-700 px-2 py-2 text-right w-[80px]">ราคา/หน่วย</th>
-            <th className="border-r border-gray-700 px-2 py-2 text-right w-[55px]">ส่วนลด</th>
-            <th className="px-2 py-2 text-right w-[85px]">จำนวนเงิน</th>
-          </tr>
-        </thead>
-        <tbody>
-          {q.items?.map((it, idx) => (
-            <tr key={it.id || idx} className="border-b border-gray-300">
-              <td className="border-r border-gray-300 px-2 py-2 align-top font-mono text-[10px]">{it.productSku || '-'}</td>
-              <td className="border-r border-gray-300 px-2 py-2 align-top"><div className="font-semibold">{it.productName}</div>{it.productDescription && <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>}</td>
-              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">{formatNumber(it.quantity)}</td>
-              <td className="border-r border-gray-300 px-2 py-2 align-top text-center">{it.unit}</td>
-              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">{formatNumber(it.unitPrice)}</td>
-              <td className="border-r border-gray-300 px-2 py-2 align-top text-right">{Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '-'}</td>
-              <td className="px-2 py-2 align-top text-right font-semibold">{formatNumber(it.lineTotal)}</td>
-            </tr>
-          ))}
-          {Array.from({ length: padCount }).map((_, i) => (
-            <tr key={`pad-${i}`} className="border-b border-gray-300">
-              {Array.from({ length: 7 }).map((__, j) => <td key={j} className={`px-2 py-2 ${j < 6 ? 'border-r border-gray-300' : ''}`}>&nbsp;</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="border-2 border-t-0 border-black grid grid-cols-[1fr_300px]">
-        <div className="px-4 py-3 border-r-2 border-black flex flex-col justify-between">
-          {bahtText && <div><div className="text-[10px] text-gray-700 mb-1">จำนวนเงินตัวอักษร</div><div className="text-[12px] italic font-semibold">( {bahtText} )</div></div>}
-          {company?.bankName && <div className="mt-3 pt-3 border-t border-gray-300"><div className="text-[10px] text-gray-700 mb-1">โอนเงินเข้าบัญชี</div><div className="text-[11px] font-semibold">{company.bankName}{company.bankAccount && `   ${company.bankAccount}`}{company.bankBranch && ` (${company.bankBranch})`}</div></div>}
-        </div>
-        <div className="text-[11px]">
-          <SummaryRow label="รวมเงิน (Subtotal)" value={formatNumber(q.subtotal)} />
-          {Number(q.discountTotal) > 0 && <SummaryRow label="ส่วนลด (Discount)" value={`-${formatNumber(q.discountTotal)}`} />}
-          <SummaryRow label="หลังหักส่วนลด" value={formatNumber(Number(q.subtotal) - Number(q.discountTotal))} />
-          {q.vatEnabled ? <SummaryRow label={`ภาษีมูลค่าเพิ่ม ${formatNumber(q.vatRate)}%`} value={formatNumber(q.vatAmount)} /> : <SummaryRow label="ภาษีมูลค่าเพิ่ม" value="ไม่มี VAT" />}
-          <div className="bg-black text-white px-3 py-2 flex justify-between items-baseline"><span className="font-bold">จำนวนเงินทั้งสิ้น</span><span className="font-bold text-base">{formatNumber(q.grandTotal)} {q.currency}</span></div>
-        </div>
-      </div>
-      <div className="border-2 border-t-0 border-black">
-        <div className="grid grid-cols-3 gap-6 py-10 px-6">
-          {[{ th: 'ผู้เสนอราคา', en: 'Sales Representative' }, { th: 'ผู้ตรวจสอบ', en: 'Reviewed By' }, { th: 'ผู้มีอำนาจอนุมัติ', en: 'Authorized Signatory' }].map((s, i) => (
-            <div key={i} className="text-center"><div className="border-t border-black mt-10 mx-4 pt-1.5"><div className="text-[11px] font-medium">{s.th}</div><div className="text-[10px] text-gray-700">{s.en}</div><div className="text-[10px] text-gray-700 mt-2">วันที่ / Date: ____________</div></div></div>
           ))}
         </div>
-        <div className="px-4 pb-3 text-[9px] text-gray-500 text-center border-t border-gray-200">เอกสารนี้ออกโดยระบบอัตโนมัติ · ใบเสนอราคามีอายุถึง {formatDate(q.expiryDate)}</div>
+        <div className="mt-4 pb-4 text-center text-[9px] text-gray-400">
+          เอกสารนี้ออกโดยระบบอัตโนมัติ · ใบเสนอราคามีอายุถึง {formatDate(q.expiryDate)}
+        </div>
       </div>
     </div>
   );
@@ -348,6 +483,43 @@ export default function QuotationDetailPage() {
   const [showEscalatePopover, setShowEscalatePopover] = useState(false);
   const [showPrintView, setShowPrintView] = useState(false);
 
+  // ── Currency display toggle ──────────────────────────────────────────────
+  const [displayCurrency, setDisplayCurrency] = useState<'THB' | 'USD'>('THB');
+  const [liveRate, setLiveRate] = useState(35);      // THB per 1 USD
+  const [rateFetching, setRateFetching] = useState(false);
+  const rateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchLiveRate = useCallback(async () => {
+    setRateFetching(true);
+    try {
+      const res = await fetch('https://open.er-api.com/v6/latest/USD');
+      const data = await res.json();
+      if (data?.rates?.THB) setLiveRate(Math.round(data.rates.THB * 100) / 100);
+    } catch { /* keep current rate */ }
+    finally { setRateFetching(false); }
+  }, []);
+
+  // Auto-refresh while in USD mode and quotation is not yet approved
+  useEffect(() => {
+    if (rateIntervalRef.current) clearInterval(rateIntervalRef.current);
+    if (displayCurrency !== 'USD') return;
+    fetchLiveRate();
+    const locked = ['APPROVED','PO_PENDING','PO_APPROVED','PO_REJECTED','SENT','SIGNED','CANCELLED','EXPIRED'].includes(q?.status ?? '');
+    if (!locked) {
+      rateIntervalRef.current = setInterval(fetchLiveRate, 30_000);
+    }
+    return () => { if (rateIntervalRef.current) clearInterval(rateIntervalRef.current); };
+  }, [displayCurrency, q?.status, fetchLiveRate]);
+
+  // Helper: format amount in display currency
+  const fmtAmt = useCallback((v: number | string | null | undefined) => {
+    const n = Number(v) || 0;
+    const qCur = (q?.currency ?? 'THB') as string;
+    if (displayCurrency === 'USD' && qCur === 'THB') return formatMoney(n / liveRate, 'USD');
+    if (displayCurrency === 'THB' && qCur === 'USD') return formatMoney(n * liveRate, 'THB');
+    return formatMoney(n, qCur);
+  }, [q?.currency, displayCurrency, liveRate]);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -427,7 +599,7 @@ export default function QuotationDetailPage() {
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const isCeo = role?.code === 'CEO';
   const canEdit   = (['DRAFT', 'REJECTED', 'REVISED'] as string[]).includes(q.status) && isOwner;
-  const canSubmit = (['DRAFT', 'REJECTED', 'REVISED'] as string[]).includes(q.status) && isOwner;
+  const canSubmit = (['DRAFT', 'REVISED'] as string[]).includes(q.status) && isOwner;
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string) && can('quotation', 'exportPdf', 'OWN');
   const canRenew  = q.status === 'EXPIRED' && isOwner;
@@ -436,7 +608,7 @@ export default function QuotationDetailPage() {
   // The designated approver is tracked in q.currentApprover.
   // Only CEO can bypass the currentApprover check. ADMIN has no approval authority.
   const isCurrentApprover = !!(userId && q.currentApprover?.id === userId);
-  const isPendingStatus = ['PENDING', 'PENDING_ESCALATED'].includes(q.status as string);
+  const isPendingStatus = q.status === 'PENDING';
   const canApproveThis = isPendingStatus && (isCurrentApprover || isCeo);
 
   // Does the current approver's limit get exceeded by this quotation?
@@ -506,7 +678,36 @@ export default function QuotationDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* ── Currency display toggle ── */}
+          <div className="flex items-center gap-1.5 mr-1">
+            <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/60">
+              <button
+                onClick={() => setDisplayCurrency('THB')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${displayCurrency === 'THB' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                🇹🇭 THB
+              </button>
+              <button
+                onClick={() => setDisplayCurrency('USD')}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${displayCurrency === 'USD' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                🇺🇸 USD
+              </button>
+            </div>
+            {displayCurrency === 'USD' && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 whitespace-nowrap">
+                {rateFetching
+                  ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                  : <RefreshCw className="h-2.5 w-2.5 cursor-pointer hover:text-foreground" onClick={fetchLiveRate} />}
+                1 USD = {liveRate} THB
+                {!['APPROVED','PO_PENDING','PO_APPROVED','PO_REJECTED','SENT','SIGNED','CANCELLED','EXPIRED'].includes(q.status) && (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium ml-0.5">live</span>
+                )}
+              </span>
+            )}
+          </div>
+
           {canEdit && (
             <Button asChild variant="outline">
               <Link href={`/quotations/${id}/edit`}><FileText className="h-4 w-4" />{t('common.edit')}</Link>
@@ -617,12 +818,7 @@ export default function QuotationDetailPage() {
               <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <div className="font-semibold text-amber-700 dark:text-amber-400">
-                    {q.status === 'PENDING_ESCALATED' ? 'ส่งต่อขออนุมัติระดับถัดไป' : 'รออนุมัติ'}
-                  </div>
-                  {q.status === 'PENDING_ESCALATED' && (
-                    <span className="text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 rounded px-1.5 py-0.5">ESCALATED</span>
-                  )}
+                  <div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div>
                 </div>
                 <p className="text-sm mt-1">
                   ส่งเมื่อ {formatDate(q.submittedAt)} · รอ{' '}
@@ -747,9 +943,9 @@ export default function QuotationDetailPage() {
                       <td className="py-3 text-xs text-muted-foreground">{it.productSku || '-'}</td>
                       <td className="py-3"><div className="font-medium">{it.productName}</div>{it.productDescription && <div className="text-[10px] text-gray-700 mt-0.5">{it.productDescription}</div>}</td>
                       <td className="py-3 text-right">{formatNumber(it.quantity)} {it.unit}</td>
-                      <td className="py-3 text-right">{formatNumber(it.unitPrice)}</td>
-                      <td className="py-3 text-right">{Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : formatNumber(it.discount)) : '-'}</td>
-                      <td className="py-3 text-right font-semibold">{formatNumber(it.lineTotal)}</td>
+                      <td className="py-3 text-right">{fmtAmt(it.unitPrice)}</td>
+                      <td className="py-3 text-right">{Number(it.discount) > 0 ? (it.discountType === 'PERCENTAGE' ? `${formatNumber(it.discount)}%` : fmtAmt(it.discount)) : '-'}</td>
+                      <td className="py-3 text-right font-semibold">{fmtAmt(it.lineTotal)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -761,12 +957,17 @@ export default function QuotationDetailPage() {
         <Card>
           <CardContent className="pt-6 flex justify-end">
             <div className="w-full md:w-80 space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.subtotal')}</span><span>{formatNumber(q.subtotal)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.discount')}</span><span className="text-destructive">-{formatNumber(q.discountTotal)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.vat')} ({formatNumber(q.vatRate)}%)</span><span>{q.vatEnabled ? formatNumber(q.vatAmount) : 'No VAT'}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.subtotal')}</span><span>{fmtAmt(q.subtotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.discount')}</span><span className="text-destructive">-{fmtAmt(q.discountTotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('quotation.vat')} ({formatNumber(q.vatRate)}%)</span><span>{q.vatEnabled ? fmtAmt(q.vatAmount) : 'No VAT'}</span></div>
               <div className="border-t pt-2 flex justify-between items-baseline">
                 <span className="font-semibold">{t('quotation.grandTotal')}</span>
-                <span className="text-2xl font-bold text-primary">{formatMoney(q.grandTotal, q.currency)}</span>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-primary">{fmtAmt(q.grandTotal)}</div>
+                  {displayCurrency !== q.currency && (
+                    <div className="text-xs text-muted-foreground">{formatMoney(q.grandTotal, q.currency as string)}</div>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>
@@ -803,12 +1004,12 @@ export default function QuotationDetailPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                   <div className="bg-background/70 rounded-lg p-3 border border-border/40">
                     <div className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">Grand Total</div>
-                    <div className="text-base font-bold">{formatMoney(q.grandTotal, q.currency)}</div>
+                    <div className="text-base font-bold">{fmtAmt(q.grandTotal)}</div>
                   </div>
                   <div className="bg-background/70 rounded-lg p-3 border border-border/40">
                     <div className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">ส่วนลดรวม</div>
                     <div className="text-base font-bold text-orange-600">
-                      -{formatMoney(q.discountTotal, q.currency)}
+                      -{fmtAmt(q.discountTotal)}
                     </div>
                     {discountPct > 0 && (
                       <div className="text-[10px] text-muted-foreground mt-0.5">{discountPct.toFixed(1)}% ของราคาเต็ม</div>
@@ -816,7 +1017,7 @@ export default function QuotationDetailPage() {
                   </div>
                   <div className="bg-background/70 rounded-lg p-3 border border-border/40">
                     <div className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">Net Revenue</div>
-                    <div className="text-base font-bold text-emerald-600">{formatMoney(netRevenue, q.currency)}</div>
+                    <div className="text-base font-bold text-emerald-600">{fmtAmt(netRevenue)}</div>
                   </div>
                   <div className="bg-background/70 rounded-lg p-3 border border-border/40">
                     <div className="text-[10px] text-muted-foreground font-semibold uppercase mb-1">Max Discount (รายการ)</div>
@@ -844,7 +1045,7 @@ export default function QuotationDetailPage() {
                       <AlertTriangle className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
                       <div className="text-sm">
                         <span className="font-semibold text-blue-800 dark:text-blue-200">
-                          High-Value Deal — {formatMoney(q.grandTotal, q.currency)}
+                          High-Value Deal — {fmtAmt(q.grandTotal)}
                         </span>
                         <div className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">ตรวจสอบรายการสินค้าและเงื่อนไขให้ครบถ้วน</div>
                       </div>
@@ -869,7 +1070,7 @@ export default function QuotationDetailPage() {
                     <div>ขั้นตอนอนุมัติ: <span className="font-medium text-foreground">{q.currentStep}/{q.totalSteps}</span></div>
                   )}
                   {Number(q.vatRate) > 0 && (
-                    <div>VAT {formatNumber(q.vatRate)}%: <span className="font-medium text-foreground">+{formatMoney(q.vatAmount, q.currency)}</span></div>
+                    <div>VAT {formatNumber(q.vatRate)}%: <span className="font-medium text-foreground">+{fmtAmt(q.vatAmount)}</span></div>
                   )}
                 </div>
               </CardContent>

@@ -41,7 +41,6 @@ const STATUS_CFG: Record<string, { hex: string; label: string }> = {
   DRAFT:             { hex: '#94a3b8', label: 'Draft' },
   PENDING:           { hex: '#fbbf24', label: 'Pending' },
   PENDING_BACKUP:    { hex: '#f59e0b', label: 'Pending Backup' },
-  PENDING_ESCALATED: { hex: '#f43f5e', label: 'Escalated' },
   APPROVED:          { hex: '#10b981', label: 'Approved' },
   REJECTED:          { hex: '#ef4444', label: 'Rejected' },
   CANCELLED:         { hex: '#9ca3af', label: 'Cancelled' },

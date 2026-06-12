@@ -62,9 +62,9 @@ export const listQuotationsSchema = paginationSchema.extend({
 status: z
   .enum([
     'DRAFT',
+    'REVISED',
     'PENDING',
     'PENDING_BACKUP',
-    'PENDING_ESCALATED',
     'APPROVED',
     'REJECTED',
     'CANCELLED',

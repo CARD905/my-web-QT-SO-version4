@@ -281,7 +281,52 @@ export const poService = {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 5) CANCEL PO
+  // 5) UPDATE DELIVERY DATE (only when PO_REJECTED, by owner)
+  // ═══════════════════════════════════════════════════════════════════════
+  async updateDeliveryDate(
+    quotationId: string,
+    user: CurrentUser,
+    deliveryDate: string | null,
+    reason: string,
+    req?: Request,
+  ) {
+    if (!reason || reason.trim().length < 2) {
+      throw new AppError(400, 'BAD_REQUEST', 'กรุณาระบุเหตุผลในการเปลี่ยนวันจัดส่ง');
+    }
+
+    const q = await prisma.quotation.findUnique({
+      where: { id: quotationId },
+      select: { id: true, quotationNo: true, status: true, createdById: true, deletedAt: true },
+    });
+    if (!q || q.deletedAt) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
+    if (q.createdById !== user.id) throw new AppError(403, 'FORBIDDEN', 'Only owner can update delivery date');
+    if (q.status !== 'PO_REJECTED') {
+      throw new AppError(400, 'BAD_REQUEST', 'สามารถเปลี่ยนวันจัดส่งได้เฉพาะเมื่อ PO ถูกปฏิเสธ');
+    }
+
+    const updated = await prisma.quotation.update({
+      where: { id: quotationId },
+      data: {
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
+        deliveryDateChangedAt: new Date(),
+        deliveryDateChangeReason: reason.trim(),
+      },
+    });
+
+    await logActivity(prisma, {
+      userId: user.id,
+      action: 'quotation.updateDeliveryDate',
+      entityType: 'Quotation',
+      entityId: q.id,
+      description: `Updated delivery date of ${q.quotationNo}: ${deliveryDate ?? 'none'} — ${reason}`,
+      req,
+    });
+
+    return updated;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 6) CANCEL PO
   // ═══════════════════════════════════════════════════════════════════════
   async cancelPo(quotationId: string, user: CurrentUser, reason: string, req?: Request) {
     if (!isElevated(user.roleCode)) throw new AppError(403, 'FORBIDDEN', 'Only Manager+ can cancel');
@@ -349,6 +394,7 @@ export const poService = {
       select: {
         id: true, quotationNo: true, customerCompany: true, grandTotal: true,
         currency: true, status: true, approvedAt: true,
+        deliveryDate: true, deliveryDateChangedAt: true, deliveryDateChangeReason: true,
         poFileUrl: true, poFileName: true, poFileMimeType: true,
         poUploadedAt: true, poSubmittedAt: true, poApprovedAt: true,
         poRejectedAt: true, poRejectionReason: true, poNumber: true,

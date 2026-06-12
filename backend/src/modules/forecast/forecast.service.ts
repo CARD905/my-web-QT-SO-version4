@@ -5,15 +5,14 @@ import { prisma } from '../../config/prisma';
 // ─── Probability weights by quotation status ──────────────────────────────────
 export const PIPELINE_WEIGHTS: Record<string, number> = {
   PENDING:           0.25,
-  PENDING_ESCALATED: 0.25,
   PENDING_BACKUP:    0.25,
   APPROVED:          0.70,
   PO_PENDING:        0.90,
   PO_APPROVED:       0.95,
 };
 
-const ACTIVE_STATUSES: QuotationStatus[] = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'];
-const AT_RISK_STATUSES: QuotationStatus[] = ['PENDING', 'PENDING_ESCALATED', 'APPROVED'];
+const ACTIVE_STATUSES: QuotationStatus[] = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PENDING', 'PENDING_BACKUP'];
+const AT_RISK_STATUSES: QuotationStatus[] = ['PENDING', 'APPROVED'];
 const CONFIRMED_SO: SaleOrderStatus[] = ['CONFIRMED', 'COMPLETED'];
 const LOST_STATUSES: QuotationStatus[] = ['REJECTED', 'CANCELLED', 'EXPIRED'];
 // Win Rate นับเฉพาะ REJECTED = ลูกค้าปฏิเสธ, ไม่นับ CANCELLED/EXPIRED (ยกเลิกหรือหมดอายุ ≠ แพ้การขาย)
@@ -114,7 +113,7 @@ function assessRisk(q: {
   else if (value >= 50000) score += 5;
 
   // Status stall component (0–10 pts)
-  if (['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status)) {
+  if (['PENDING', 'PENDING_BACKUP'].includes(q.status)) {
     if (daysSinceUpdate > 14) score += 10;
     else if (daysSinceUpdate > 7) score += 6;
     else if (daysSinceUpdate > 3) score += 3;
@@ -387,7 +386,7 @@ export const forecastService = {
 
     // ป้องกัน double-count: quotation ที่มี SO แล้ว ต้องอยู่ใน step "Sale Order" เท่านั้น ไม่ใช่ "อนุมัติแล้ว"
     const soQuotationIdSet = new Set(confirmedSO12m.filter((o) => o.quotationId).map((o) => o.quotationId!));
-    const pendingQts = baseQts.filter((q) => ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(q.status));
+    const pendingQts = baseQts.filter((q) => ['PENDING', 'PENDING_BACKUP'].includes(q.status));
     const allApprovedQts = baseQts.filter((q) => ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'SIGNED'].includes(q.status));
     // อนุมัติแล้วแต่ยังไม่มี SO — ตัด overlap ออก
     const approvedQts = allApprovedQts.filter((q) => !soQuotationIdSet.has(q.id));

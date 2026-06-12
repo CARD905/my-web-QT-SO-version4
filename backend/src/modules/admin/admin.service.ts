@@ -256,11 +256,28 @@ export const adminService = {
       throw new AppError(409, 'TEAM_MANAGER_LEVEL_EXISTS', `${level} Manager already assigned to ${team.name}`);
     }
 
+    const levelChanged = (manager.managerLevel as string | null) !== level;
+    const [approvalSetting, discountSetting] = levelChanged
+      ? await Promise.all([
+          prisma.systemSetting.findUnique({ where: { key: `approvalLimit.default.${level}` } }),
+          prisma.systemSetting.findUnique({ where: { key: `discountLimit.default.${level}` } }),
+        ])
+      : [null, null];
+
     const updated = await prisma.$transaction(async (tx) => {
       const oldTeamId = manager.teamId;
+      const updateData: Record<string, unknown> = { teamId, managerLevel: level };
+      if (levelChanged) {
+        if (approvalSetting) {
+          updateData.approvalLimit = approvalSetting.value === 'null' ? null : Number(approvalSetting.value);
+        }
+        if (discountSetting) {
+          updateData.discountLimit = discountSetting.value === 'null' ? null : Number(discountSetting.value);
+        }
+      }
       const user = await tx.user.update({
         where: { id: managerId },
-        data: { teamId, managerLevel: level },
+        data: updateData as any,
       });
 
       await syncTeamReporting(teamId, tx);
@@ -512,6 +529,19 @@ export const adminService = {
       data: { approvalLimit: limit },
     });
 
+    await prisma.systemSetting.upsert({
+      where: { key: `approvalLimit.default.${managerLevel}` },
+      update: { value: limit === null ? 'null' : String(limit), updatedById: currentUser.id },
+      create: {
+        key: `approvalLimit.default.${managerLevel}`,
+        value: limit === null ? 'null' : String(limit),
+        type: 'number',
+        group: 'approvalLimit',
+        label: `Default Approval Limit - ${managerLevel}`,
+        updatedById: currentUser.id,
+      },
+    });
+
     await logActivity(prisma, {
       userId: currentUser.id,
       action: 'managerLevel.updateApprovalLimit',
@@ -544,6 +574,20 @@ export const adminService = {
         data: { discountLimit: limit } as any,
       });
     }
+
+    const settingKey = `discountLimit.default.${managerLevel}`;
+    await prisma.systemSetting.upsert({
+      where: { key: settingKey },
+      update: { value: limit === null ? 'null' : String(limit), updatedById: currentUser.id },
+      create: {
+        key: settingKey,
+        value: limit === null ? 'null' : String(limit),
+        type: 'number',
+        group: 'discountLimit',
+        label: `Default Discount Limit - ${managerLevel}`,
+        updatedById: currentUser.id,
+      },
+    });
 
     await logActivity(prisma, {
       userId: currentUser.id,

@@ -22,7 +22,6 @@ import { toast } from 'sonner';
 import type { ApiResponse } from '@/types/api';
 import { usePermissions } from '@/hooks/use-permissions';
 import { CurrencyProvider, useCx } from '@/lib/currency-context';
-import { CurrencyToggleBar } from '@/components/ui/currency-toggle';
 // ─── Types ────────────────────────────────────────────────────────────────────
 type DashboardFilter = 'self' | 'team' | 'all' | 'user';
 
@@ -127,7 +126,6 @@ const STATUS_CFG: Record<string, { color: string; hex: string; label: string }> 
   DRAFT:             { color: 'bg-slate-400',   hex: '#94a3b8', label: 'Draft' },
   PENDING:           { color: 'bg-amber-400',   hex: '#fbbf24', label: 'Pending' },
   PENDING_BACKUP:    { color: 'bg-amber-500',   hex: '#f59e0b', label: 'Pending Backup' },
-  PENDING_ESCALATED: { color: 'bg-rose-500',    hex: '#f43f5e', label: 'Escalated' },
   APPROVED:          { color: 'bg-emerald-500', hex: '#10b981', label: 'Approved' },
   REJECTED:          { color: 'bg-red-500',     hex: '#ef4444', label: 'Rejected' },
   CANCELLED:         { color: 'bg-gray-400',    hex: '#9ca3af', label: 'Cancelled' },
@@ -277,7 +275,6 @@ export default function ManagerDashboardPage({ initialFilter }: { initialFilter?
               {role?.nameTh && <span className="text-blue-200/60"> · {role.nameTh}</span>}
             </p>
           </div>
-          <CurrencyToggleBar className="shrink-0" />
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-blue-300 shrink-0" />
@@ -673,12 +670,12 @@ function OfficerAnalyticsView({ userId, selectedUser }: {
   const bestCustomer  = data.topCustomers?.[0]?.customerCompany ?? null;
 
   const STATUS_COLORS: Record<string, string> = {
-    DRAFT: '#94a3b8', PENDING: '#f59e0b', PENDING_ESCALATED: '#ef4444',
+    DRAFT: '#94a3b8', PENDING: '#f59e0b',
     APPROVED: '#10b981', REJECTED: '#ef4444', CANCELLED: '#6b7280',
     EXPIRED: '#9ca3af', PO_PENDING: '#8b5cf6', PO_APPROVED: '#06b6d4',
   };
   const STATUS_LABELS: Record<string, string> = {
-    DRAFT: 'Draft', PENDING: 'รออนุมัติ', PENDING_ESCALATED: 'Escalated',
+    DRAFT: 'Draft', PENDING: 'รออนุมัติ',
     APPROVED: 'อนุมัติแล้ว', REJECTED: 'ปฏิเสธ', CANCELLED: 'ยกเลิก',
     EXPIRED: 'หมดอายุ', PO_PENDING: 'รอ PO', PO_APPROVED: 'PO อนุมัติ',
   };
