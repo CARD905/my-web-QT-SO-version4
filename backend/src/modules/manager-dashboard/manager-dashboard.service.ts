@@ -66,6 +66,19 @@ async function resolveWhereFromFilter(
   return null;
 }
 
+function toNum(v: any): number {
+  return v == null ? 0 : Number(v.toString());
+}
+function toThb(value: number, currency?: string | null, rate: number = 35): number {
+  return currency === 'USD' ? value * rate : value;
+}
+async function getUsdRate(): Promise<number> {
+  try {
+    const row = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    return row ? (parseFloat(row.value) || 35) : 35;
+  } catch { return 35; }
+}
+
 // ─── Helper: group dates by month label ──────────────────────────────────────
 function groupByMonth(dates: Date[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -97,6 +110,7 @@ export const managerDashboardService = {
   async overview(currentUser: CurrentUser, options: OverviewOptions = {}) {
     const filterWhere = await resolveWhereFromFilter(currentUser, options);
     if (filterWhere === null) return emptyDashboard();
+    const usdRate = await getUsdRate();
 
     const baseWhere: Prisma.QuotationWhereInput = { deletedAt: null, ...filterWhere };
     const todayStart = startOfToday();
@@ -143,8 +157,8 @@ export const managerDashboardService = {
       // PO รอตรวจสอบ
       prisma.quotation.count({ where: { ...baseWhere, status: 'PO_PENDING' } }),
 
-      prisma.quotation.aggregate({ where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } }, _sum: { grandTotal: true } }),
-      prisma.quotation.aggregate({ where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PO_PENDING'] } }, _sum: { grandTotal: true } }),
+      prisma.quotation.findMany({ where: { ...baseWhere, status: { in: ['APPROVED', 'PO_APPROVED'] } }, select: { grandTotal: true, currency: true } }),
+      prisma.quotation.findMany({ where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PO_PENDING'] } }, select: { grandTotal: true, currency: true } }),
 
       prisma.quotation.count({ where: { deletedAt: null, approvedById: actingUserId, approvedAt: { gte: todayStart } } }),
       prisma.quotation.count({ where: { deletedAt: null, rejectedById: actingUserId, rejectedAt: { gte: todayStart } } }),
@@ -155,9 +169,9 @@ export const managerDashboardService = {
 
       prisma.quotation.count({ where: { deletedAt: null, approvedById: actingUserId } }),
       prisma.quotation.count({ where: { deletedAt: null, rejectedById: actingUserId } }),
-      prisma.quotation.aggregate({ where: { deletedAt: null, approvedById: actingUserId }, _sum: { grandTotal: true } }),
+      prisma.quotation.findMany({ where: { deletedAt: null, approvedById: actingUserId }, select: { grandTotal: true, currency: true } }),
 
-      prisma.quotation.groupBy({ by: ['createdById'], where: baseWhere, _count: { id: true }, _sum: { grandTotal: true }, orderBy: { _count: { id: 'desc' } }, take: 10 }),
+      prisma.quotation.findMany({ where: baseWhere, select: { createdById: true, grandTotal: true, currency: true } }),
       prisma.quotation.findMany({
         where: {
           ...baseWhere,
@@ -218,7 +232,7 @@ export const managerDashboardService = {
           status: { in: ['APPROVED', 'PO_APPROVED'] },
           approvedAt: { gte: sixMonthsAgo },
         },
-        select: { approvedAt: true, grandTotal: true },
+        select: { approvedAt: true, grandTotal: true, currency: true },
       }),
 
       // SO confirmed count
@@ -232,14 +246,7 @@ export const managerDashboardService = {
       }),
 
       // Customer top 10 by grandTotal
-      prisma.quotation.groupBy({
-        by: ['customerId'],
-        where: baseWhere,
-        _count: { id: true },
-        _sum: { grandTotal: true },
-        orderBy: [{ _sum: { grandTotal: 'desc' } }],
-        take: 10,
-      }),
+      prisma.quotation.findMany({ where: baseWhere, select: { customerId: true, grandTotal: true, currency: true } }),
 
       // Aging — pending QTs with submittedAt
       prisma.quotation.findMany({
@@ -248,15 +255,13 @@ export const managerDashboardService = {
           status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] },
           submittedAt: { not: null },
         },
-        select: { id: true, submittedAt: true, grandTotal: true },
+        select: { id: true, submittedAt: true, grandTotal: true, currency: true },
       }),
 
       // SO status breakdown
-      prisma.saleOrder.groupBy({
-        by: ['status'],
+      prisma.saleOrder.findMany({
         where: { deletedAt: null, quotation: { deletedAt: null, ...filterWhere } },
-        _count: { id: true },
-        _sum: { grandTotal: true },
+        select: { status: true, grandTotal: true, currency: true },
       }),
 
       // SO overdue (deadline passed, not yet completed/cancelled)
@@ -285,28 +290,23 @@ export const managerDashboardService = {
       }),
 
       // SO confirmed/completed value per salesperson (Avg Deal column)
-      prisma.quotation.groupBy({
-        by: ['createdById'],
-        where: {
-          ...baseWhere,
-          saleOrder: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] } },
-        },
-        _sum: { grandTotal: true },
-        _count: { id: true },
+      prisma.quotation.findMany({
+        where: { ...baseWhere, saleOrder: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] } } },
+        select: { createdById: true, grandTotal: true, currency: true },
       }),
 
       // ─── Pipeline detail: value aggregates per stage ──────────────────────────
-      prisma.quotation.aggregate({ where: { ...baseWhere, status: 'APPROVED' }, _sum: { grandTotal: true } }),
-      prisma.quotation.aggregate({ where: { ...baseWhere, status: 'PO_PENDING' }, _sum: { grandTotal: true } }),
-      prisma.saleOrder.aggregate({
+      prisma.quotation.findMany({ where: { ...baseWhere, status: 'APPROVED' }, select: { grandTotal: true, currency: true } }),
+      prisma.quotation.findMany({ where: { ...baseWhere, status: 'PO_PENDING' }, select: { grandTotal: true, currency: true } }),
+      prisma.saleOrder.findMany({
         where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { deletedAt: null, ...filterWhere } },
-        _sum: { grandTotal: true },
+        select: { grandTotal: true, currency: true },
       }),
 
       // Pipeline stage 1: top 5 pending QTs (with quotationNo for drilldown)
       prisma.quotation.findMany({
         where: { ...baseWhere, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] }, submittedAt: { not: null } },
-        select: { id: true, quotationNo: true, grandTotal: true, submittedAt: true, customerCompany: true },
+        select: { id: true, quotationNo: true, grandTotal: true, currency: true, submittedAt: true, customerCompany: true },
         orderBy: { grandTotal: 'desc' },
         take: 5,
       }),
@@ -314,7 +314,7 @@ export const managerDashboardService = {
       // Pipeline stage 2: top 5 approved QTs waiting for PO
       prisma.quotation.findMany({
         where: { ...baseWhere, status: 'APPROVED' },
-        select: { id: true, quotationNo: true, grandTotal: true, approvedAt: true, customerCompany: true },
+        select: { id: true, quotationNo: true, grandTotal: true, currency: true, approvedAt: true, customerCompany: true },
         orderBy: { grandTotal: 'desc' },
         take: 5,
       }),
@@ -322,7 +322,7 @@ export const managerDashboardService = {
       // Pipeline stage 3: top 5 PO pending QTs
       prisma.quotation.findMany({
         where: { ...baseWhere, status: 'PO_PENDING' },
-        select: { id: true, quotationNo: true, grandTotal: true, poUploadedAt: true, customerCompany: true },
+        select: { id: true, quotationNo: true, grandTotal: true, currency: true, poUploadedAt: true, customerCompany: true },
         orderBy: { grandTotal: 'desc' },
         take: 5,
       }),
@@ -330,7 +330,7 @@ export const managerDashboardService = {
       // Pipeline stage 4: top 5 SO confirmed
       prisma.saleOrder.findMany({
         where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { deletedAt: null, ...filterWhere } },
-        select: { id: true, saleOrderNo: true, grandTotal: true, createdAt: true, customerCompany: true },
+        select: { id: true, saleOrderNo: true, grandTotal: true, currency: true, createdAt: true, customerCompany: true },
         orderBy: { grandTotal: 'desc' },
         take: 5,
       }),
@@ -371,7 +371,7 @@ export const managerDashboardService = {
     for (const q of revenueTrendRaw) {
       for (const { start, end, label } of months) {
         if (q.approvedAt && q.approvedAt >= start && q.approvedAt < end) {
-          revenueTrendMap.set(label, (revenueTrendMap.get(label) ?? 0) + Number(q.grandTotal));
+          revenueTrendMap.set(label, (revenueTrendMap.get(label) ?? 0) + toThb(toNum(q.grandTotal), q.currency, usdRate));
         }
       }
     }
@@ -406,44 +406,65 @@ export const managerDashboardService = {
     let finalApproved = approvedCount;
     let finalRejected = rejectedCount;
     let finalTotal = totalCount;
-    let finalTotalValue = Number(totalValueAgg._sum.grandTotal ?? 0);
+    let finalTotalValue = totalValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0);
     let isApproverView = false;
 
     if (totalCount === 0 && (allTimeApprovedCount > 0 || allTimeRejectedCount > 0)) {
       finalApproved = approvalBasedApproved;
       finalRejected = approvalBasedRejected;
       finalTotal = approvalBasedApproved + approvalBasedRejected;
-      finalTotalValue = Number(approvalBasedTotalValue._sum.grandTotal ?? 0);
+      finalTotalValue = approvalBasedTotalValue.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0);
       isApproverView = true;
     }
 
     // ─── Hydrate top officers ─────────────────────────────────────────────────
-    const officerIds = topOfficersData.map((t) => t.createdById);
+    // Manual grouping of topOfficersData (was groupBy) with currency conversion
+    const officerGroupMap = new Map<string, { count: number; value: number }>();
+    for (const q of topOfficersData) {
+      const cur = officerGroupMap.get(q.createdById) ?? { count: 0, value: 0 };
+      cur.count++;
+      cur.value += toThb(toNum(q.grandTotal), q.currency, usdRate);
+      officerGroupMap.set(q.createdById, cur);
+    }
+    const topOfficerEntries = Array.from(officerGroupMap.entries())
+      .sort((a, b) => b[1].count - a[1].count).slice(0, 10);
+    const officerIds = topOfficerEntries.map(([id]) => id);
     const officers = await prisma.user.findMany({
       where: { id: { in: officerIds } },
       select: { id: true, name: true, email: true },
     });
     const officerMap = new Map(officers.map((u) => [u.id, u]));
-    const topOfficers = topOfficersData.map((t) => ({
-      userId: t.createdById,
-      userName: officerMap.get(t.createdById)?.name || '-',
-      userEmail: officerMap.get(t.createdById)?.email || '',
-      count: t._count.id,
-      value: Number(t._sum.grandTotal ?? 0),
+    const topOfficers = topOfficerEntries.map(([id, stats]) => ({
+      userId: id,
+      userName: officerMap.get(id)?.name || '-',
+      userEmail: officerMap.get(id)?.email || '',
+      count: stats.count,
+      value: stats.value,
     }));
 
     // --- Customer Insights ---
-    const customerIds = customerTopRaw.map((c) => c.customerId);
+    // Manual grouping of customerTopRaw (was groupBy) with currency conversion
+    const custGroupMap = new Map<string, { count: number; value: number }>();
+    for (const q of customerTopRaw) {
+      const key = q.customerId ?? '';
+      const cur = custGroupMap.get(key) ?? { count: 0, value: 0 };
+      cur.count++;
+      cur.value += toThb(toNum(q.grandTotal), q.currency, usdRate);
+      custGroupMap.set(key, cur);
+    }
+    const topCustEntries = Array.from(custGroupMap.entries())
+      .sort((a, b) => b[1].value - a[1].value).slice(0, 10);
+    const customerIds = topCustEntries.map(([id]) => id).filter(Boolean);
     const customerDocs = await prisma.customer.findMany({
       where: { id: { in: customerIds } },
       select: { id: true, company: true },
     });
     const customerMap = new Map(customerDocs.map((c) => [c.id, c.company]));
-    const customerInsights = customerTopRaw.map((c) => ({
-      customerId: c.customerId,
-      customerCompany: customerMap.get(c.customerId) ?? '(ไม่ระบุ)',
-      qtCount: c._count.id,
-      totalValue: Number(c._sum.grandTotal ?? 0),
+    const customerInsights = topCustEntries.map(([cid, stats]) => ({
+      customerId: cid,
+      customerCompany: cid ? (customerMap.get(cid) ?? '(ไม่ระบุ)') : '(ไม่ระบุ)',
+      qtCount: stats.count,
+      totalValue: stats.value,
     }));
 
     // --- Quotation Aging ---
@@ -457,7 +478,7 @@ export const managerDashboardService = {
     for (const q of agingRaw) {
       if (!q.submittedAt) continue;
       const hours = (now - q.submittedAt.getTime()) / (1000 * 60 * 60);
-      const val = Number(q.grandTotal);
+      const val = toThb(toNum(q.grandTotal), q.currency, usdRate);
       if (hours < 24)        { agingBuckets.lt1d.count++;  agingBuckets.lt1d.value  += val; }
       else if (hours < 72)   { agingBuckets.d1to3.count++; agingBuckets.d1to3.value += val; }
       else if (hours < 168)  { agingBuckets.d3to7.count++; agingBuckets.d3to7.value += val; }
@@ -465,18 +486,19 @@ export const managerDashboardService = {
     }
 
     // --- SO Execution ---
+    const soStatusMap = new Map<string, { count: number; value: number }>();
+    for (const s of soStatusBreakdownRaw) {
+      const cur = soStatusMap.get(s.status) ?? { count: 0, value: 0 };
+      cur.count++;
+      cur.value += toThb(toNum(s.grandTotal), s.currency, usdRate);
+      soStatusMap.set(s.status, cur);
+    }
     const soExecution = {
-      statusBreakdown: soStatusBreakdownRaw.map((s) => ({
-        status: s.status,
-        count: s._count.id,
-        value: Number(s._sum.grandTotal ?? 0),
-      })),
+      statusBreakdown: Array.from(soStatusMap.entries()).map(([status, v]) => ({ status, count: v.count, value: v.value })),
       overdueCount: soOverdueCount,
-      totalSos: soStatusBreakdownRaw.reduce((sum, s) => sum + s._count.id, 0),
-      completedValue: soStatusBreakdownRaw
-        .filter((s) => s.status === 'COMPLETED')
-        .reduce((sum, s) => sum + Number(s._sum.grandTotal ?? 0), 0),
-      completedCount: soStatusBreakdownRaw.find((s) => s.status === 'COMPLETED')?._count.id ?? 0,
+      totalSos: soStatusBreakdownRaw.length,
+      completedValue: soStatusMap.get('COMPLETED')?.value ?? 0,
+      completedCount: soStatusMap.get('COMPLETED')?.count ?? 0,
     };
 
     // --- Margin Analysis ---
@@ -497,7 +519,7 @@ export const managerDashboardService = {
     const forecast = {
       nextMonthForecast: Math.round(avgMonthlyRevenue * 1.05),
       pipelineCoverage: convRate > 0
-        ? Math.round((Number(pendingValueAgg._sum.grandTotal ?? 0) * convRate))
+        ? Math.round(pendingValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0) * convRate)
         : 0,
       avgMonthlyRevenue: Math.round(avgMonthlyRevenue),
     };
@@ -506,9 +528,14 @@ export const managerDashboardService = {
     // Value       = sum of ALL QT grandTotal for this officer (o.value)
     // avgDealSize = total QT grandTotal that converted to CONFIRMED/COMPLETED SOs
     // winRate     = avgDealSize / value * 100
-    const soConfirmedOfficerMap = new Map(
-      soConfirmedByOfficerRaw.map((s) => [s.createdById, { count: s._count.id, value: Number(s._sum.grandTotal ?? 0) }]),
-    );
+    // Manual grouping of soConfirmedByOfficerRaw (was groupBy) with currency conversion
+    const soConfirmedOfficerMap = new Map<string, { count: number; value: number }>();
+    for (const q of soConfirmedByOfficerRaw) {
+      const cur = soConfirmedOfficerMap.get(q.createdById) ?? { count: 0, value: 0 };
+      cur.count++;
+      cur.value += toThb(toNum(q.grandTotal), q.currency, usdRate);
+      soConfirmedOfficerMap.set(q.createdById, cur);
+    }
     const topOfficersEnhanced = topOfficers.map((o) => {
       const soData  = soConfirmedOfficerMap.get(o.userId);
       const soValue = soData?.value ?? 0;
@@ -526,16 +553,16 @@ export const managerDashboardService = {
       ) / 10;
     }
     const pipelineDetail = {
-      approvedOnlyValue: Number(pipelineApprovedAgg._sum.grandTotal ?? 0),
-      poPendingValue: Number(pipelinePoPendingAgg._sum.grandTotal ?? 0),
-      soConfirmedValue: Number(pipelineSoConfirmedAgg._sum.grandTotal ?? 0),
+      approvedOnlyValue: pipelineApprovedAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
+      poPendingValue: pipelinePoPendingAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
+      soConfirmedValue: pipelineSoConfirmedAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
       stage1AvgHours: avgHoursSince(pipelineStage1Raw.map((q) => ({ date: q.submittedAt }))),
       stage2AvgHours: avgHoursSince(pipelineStage2Raw.map((q) => ({ date: q.approvedAt }))),
       stage3AvgHours: avgHoursSince(pipelineStage3Raw.map((q) => ({ date: q.poUploadedAt }))),
-      stage1Top: pipelineStage1Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), submittedAt: q.submittedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
-      stage2Top: pipelineStage2Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), approvedAt: q.approvedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
-      stage3Top: pipelineStage3Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: Number(q.grandTotal), poUploadedAt: q.poUploadedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
-      stage4Top: pipelineStage4Raw.map((so) => ({ id: so.id, saleOrderNo: so.saleOrderNo, grandTotal: Number(so.grandTotal), createdAt: so.createdAt.toISOString(), customerCompany: so.customerCompany })),
+      stage1Top: pipelineStage1Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), submittedAt: q.submittedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage2Top: pipelineStage2Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), approvedAt: q.approvedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage3Top: pipelineStage3Raw.map((q) => ({ id: q.id, quotationNo: q.quotationNo, grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), poUploadedAt: q.poUploadedAt?.toISOString() ?? null, customerCompany: q.customerCompany })),
+      stage4Top: pipelineStage4Raw.map((so) => ({ id: so.id, saleOrderNo: so.saleOrderNo, grandTotal: toThb(toNum(so.grandTotal), so.currency, usdRate), createdAt: so.createdAt.toISOString(), customerCompany: so.customerCompany })),
     };
 
     return {
@@ -549,7 +576,7 @@ export const managerDashboardService = {
         approved: finalApproved,
         rejected: finalRejected,
         totalValue: finalTotalValue,
-        pendingValue: isApproverView ? 0 : Number(pendingValueAgg._sum.grandTotal ?? 0),
+        pendingValue: isApproverView ? 0 : pendingValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
         poVerificationPending: poVerificationPendingCount,
         soConfirmed: soConfirmedCount,
         soPending: soPendingCount,
@@ -676,16 +703,17 @@ export const managerDashboardService = {
       orderBy: [{ role: { level: 'desc' } }, { name: 'asc' }],
     });
     const ids = users.map((u) => u.id);
-    const statsRaw = await prisma.quotation.groupBy({
-      by: ['createdById', 'status'], where: { createdById: { in: ids }, deletedAt: null },
-      _count: { id: true }, _sum: { grandTotal: true },
+    const usdRate = await getUsdRate();
+    const statsRaw = await prisma.quotation.findMany({
+      where: { createdById: { in: ids }, deletedAt: null },
+      select: { createdById: true, status: true, grandTotal: true, currency: true },
     });
     type UserStats = { total: number; approved: number; approvedValue: number };
     const statsByUser = new Map<string, UserStats>();
     for (const s of statsRaw) {
       const cur = statsByUser.get(s.createdById) ?? { total: 0, approved: 0, approvedValue: 0 };
-      cur.total += s._count.id;
-      if (s.status === 'APPROVED') { cur.approved += s._count.id; cur.approvedValue += Number(s._sum.grandTotal ?? 0); }
+      cur.total++;
+      if (s.status === 'APPROVED') { cur.approved++; cur.approvedValue += toThb(toNum(s.grandTotal), s.currency, usdRate); }
       statsByUser.set(s.createdById, cur);
     }
     return users.map((u) => ({
@@ -698,6 +726,7 @@ export const managerDashboardService = {
   },
 
   async userDetail(userId: string, currentUser: CurrentUser) {
+    const usdRate = await getUsdRate();
     const allowed = await canViewUser(currentUser, userId);
     if (!allowed) return { user: null, totals: { quotations: 0, approvedValue: 0, thisMonth: 0, approvedCount: 0, rejectedCount: 0, soCount: 0, soValue: 0 }, byStatus: [], recent: [], recentSos: [], monthlyTrend: [] };
     const user = await prisma.user.findFirst({
@@ -738,17 +767,17 @@ export const managerDashboardService = {
       expiringRaw, customerTopRaw,
     ] = await Promise.all([
       prisma.quotation.count({ where: { createdById: userId, deletedAt: null } }),
-      prisma.quotation.aggregate({ where: { createdById: userId, status: { in: ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'] }, deletedAt: null }, _sum: { grandTotal: true }, _count: { id: true } }),
+      prisma.quotation.findMany({ where: { createdById: userId, status: { in: ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED'] }, deletedAt: null }, select: { grandTotal: true, currency: true } }),
       prisma.quotation.count({ where: { createdById: userId, createdAt: { gte: monthStart }, deletedAt: null } }),
       prisma.quotation.groupBy({ by: ['status'], where: { createdById: userId, deletedAt: null }, _count: { id: true } }),
       prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, quotationNo: true, status: true, grandTotal: true, createdAt: true, customerCompany: true } }),
       prisma.saleOrder.count({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } } }),
-      prisma.saleOrder.aggregate({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } }, _sum: { grandTotal: true } }),
+      prisma.saleOrder.findMany({ where: { deletedAt: null, status: { in: ['CONFIRMED', 'COMPLETED'] }, quotation: { createdById: userId, deletedAt: null } }, select: { grandTotal: true, currency: true } }),
       prisma.saleOrder.findMany({ where: { deletedAt: null, quotation: { createdById: userId, deletedAt: null } }, orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, saleOrderNo: true, status: true, grandTotal: true, createdAt: true, customerCompany: true } }),
       // Total value of all QTs (pipeline baseline)
-      prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null }, _sum: { grandTotal: true } }),
+      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null }, select: { grandTotal: true, currency: true } }),
       // Pending value
-      prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } }, _sum: { grandTotal: true } }),
+      prisma.quotation.findMany({ where: { createdById: userId, deletedAt: null, status: { in: ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'] } }, select: { grandTotal: true, currency: true } }),
       // Expiring in 7 days
       prisma.quotation.findMany({
         where: {
@@ -761,38 +790,44 @@ export const managerDashboardService = {
         take: 10,
       }),
       // Top 5 customers by total QT value
-      prisma.quotation.groupBy({
-        by: ['customerId'],
+      prisma.quotation.findMany({
         where: { createdById: userId, deletedAt: null },
-        _count: { id: true },
-        _sum: { grandTotal: true },
-        orderBy: [{ _sum: { grandTotal: 'desc' } }],
-        take: 5,
+        select: { customerId: true, grandTotal: true, currency: true },
       }),
     ]);
 
     // Monthly trend — parallel per bucket
     const trendRaws = await Promise.all(
       months6.map((m) =>
-        Promise.all([
-          prisma.quotation.count({ where: { createdById: userId, deletedAt: null, createdAt: { gte: m.gte, lt: m.lt } } }),
-          prisma.quotation.aggregate({ where: { createdById: userId, deletedAt: null, createdAt: { gte: m.gte, lt: m.lt } }, _sum: { grandTotal: true } }),
-        ]),
+        prisma.quotation.findMany({
+          where: { createdById: userId, deletedAt: null, createdAt: { gte: m.gte, lt: m.lt } },
+          select: { grandTotal: true, currency: true },
+        }),
       ),
     );
     const monthlyTrend = months6.map((m, i) => ({
       month: m.label,
-      count: trendRaws[i][0],
-      value: Number(trendRaws[i][1]._sum.grandTotal ?? 0),
+      count: trendRaws[i].length,
+      value: trendRaws[i].reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
     }));
 
     const rejCount = byStatusRaw.find((s) => s.status === 'REJECTED')?._count.id ?? 0;
-    const approvedCount = approvedAgg._count.id;
+    const approvedCount = approvedAgg.length;
 
-    // Hydrate customer names
-    const customerIds = customerTopRaw.map((c) => c.customerId).filter(Boolean) as string[];
-    const customerDocs = customerIds.length > 0
-      ? await prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, company: true } })
+    // Hydrate customer names — manual grouping with currency conversion
+    const custDetailGroupMap = new Map<string, { count: number; value: number }>();
+    for (const q of customerTopRaw) {
+      const key = q.customerId ?? '';
+      const cur = custDetailGroupMap.get(key) ?? { count: 0, value: 0 };
+      cur.count++;
+      cur.value += toThb(toNum(q.grandTotal), q.currency, usdRate);
+      custDetailGroupMap.set(key, cur);
+    }
+    const topCustDetailEntries = Array.from(custDetailGroupMap.entries())
+      .sort((a, b) => b[1].value - a[1].value).slice(0, 5);
+    const customerDetailIds = topCustDetailEntries.map(([id]) => id).filter(Boolean);
+    const customerDocs = customerDetailIds.length > 0
+      ? await prisma.customer.findMany({ where: { id: { in: customerDetailIds } }, select: { id: true, company: true } })
       : [];
     const customerMap = new Map(customerDocs.map((c) => [c.id, c.company ?? '(ไม่ระบุ)']));
 
@@ -816,14 +851,14 @@ export const managerDashboardService = {
       },
       totals: {
         quotations: totalCount,
-        approvedValue: Number(approvedAgg._sum.grandTotal ?? 0),
+        approvedValue: approvedAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
         thisMonth: thisMonthCount,
         approvedCount,
         rejectedCount: rejCount,
         soCount: soCountRaw,
-        soValue: Number(soAgg._sum.grandTotal ?? 0),
-        totalValue: Number(totalValueAgg._sum.grandTotal ?? 0),
-        pendingValue: Number(pendingValueAgg._sum.grandTotal ?? 0),
+        soValue: soAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
+        totalValue: totalValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
+        pendingValue: pendingValueAgg.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
         pendingCount: (byStatusRaw.find((s) => s.status === 'PENDING')?._count.id ?? 0)
           + (byStatusRaw.find((s) => s.status === 'PENDING_ESCALATED')?._count.id ?? 0)
           + (byStatusRaw.find((s) => s.status === 'PENDING_BACKUP')?._count.id ?? 0),
@@ -838,11 +873,11 @@ export const managerDashboardService = {
         id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
         grandTotal: Number(q.grandTotal), expiryDate: q.expiryDate!.toISOString(), status: q.status,
       })),
-      topCustomers: customerTopRaw.map((c) => ({
-        customerId: c.customerId ?? '',
-        customerCompany: c.customerId ? (customerMap.get(c.customerId) ?? '(ไม่ระบุ)') : '(ไม่ระบุ)',
-        qtCount: c._count.id,
-        totalValue: Number(c._sum.grandTotal ?? 0),
+      topCustomers: topCustDetailEntries.map(([cid, stats]) => ({
+        customerId: cid,
+        customerCompany: cid ? (customerMap.get(cid) ?? '(ไม่ระบุ)') : '(ไม่ระบุ)',
+        qtCount: stats.count,
+        totalValue: stats.value,
       })),
     };
   },

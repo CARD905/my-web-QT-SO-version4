@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Send, X, Check, Loader2, FileText,
   CheckCircle2, Clock, AlertTriangle, Upload, ExternalLink,
-  Printer, RefreshCw, Crown,
+  Printer, RefreshCw, Crown, XCircle, ArrowRight, MessageSquare,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -20,10 +20,10 @@ import { useT } from '@/lib/i18n';
 import { formatDate, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
 import { usePermissions } from '@/hooks/use-permissions';
 import { CommentThread } from '@/components/comments/comment-thread';
-import type { ApiResponse, CompanySettings, Quotation } from '@/types/api';
+import type { ApiResponse, CompanySettings, Quotation, QuotationApproval } from '@/types/api';
 
 const ELEVATED_ROLES = ['MANAGER', 'CEO', 'ADMIN'];
-const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING'];
+const COMMENT_ALLOWED_STATUSES = ['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP', 'PO_PENDING', 'REJECTED'];
 const PDF_ALLOWED_STATUSES = ['APPROVED', 'PO_PENDING', 'PO_APPROVED', 'PO_REJECTED', 'SENT', 'SIGNED'];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -232,6 +232,77 @@ function QuotationDocument({ q, company }: { q: Quotation; company: CompanySetti
           ))}
         </div>
         <div className="px-4 pb-3 text-[9px] text-gray-500 text-center border-t border-gray-200">เอกสารนี้ออกโดยระบบอัตโนมัติ · ใบเสนอราคามีอายุถึง {formatDate(q.expiryDate)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Approval Chain Display
+// ════════════════════════════════════════════════════════════════════════════
+function ApprovalChainStep({
+  name, role, status, comment, isCurrent,
+}: {
+  name: string; role: string; status: 'APPROVED' | 'ESCALATED' | 'REJECTED' | 'WAITING';
+  comment?: string | null; isCurrent?: boolean;
+}) {
+  const cfg = {
+    APPROVED: { icon: <CheckCircle2 className="h-4 w-4" />, ring: 'border-emerald-500', bg: 'bg-emerald-500', text: 'อนุมัติแล้ว', label: 'text-emerald-700 dark:text-emerald-400' },
+    ESCALATED: { icon: <ArrowRight className="h-4 w-4" />, ring: 'border-blue-500', bg: 'bg-blue-500', text: 'ส่งต่อแล้ว', label: 'text-blue-700 dark:text-blue-400' },
+    REJECTED:  { icon: <XCircle className="h-4 w-4" />,     ring: 'border-red-500',     bg: 'bg-red-500',     text: 'ปฏิเสธ',     label: 'text-red-700 dark:text-red-400' },
+    WAITING:   { icon: <Clock className="h-4 w-4" />,       ring: 'border-amber-500',   bg: 'bg-amber-500',   text: 'รออนุมัติ',  label: 'text-amber-700 dark:text-amber-400' },
+  }[status];
+
+  return (
+    <div className="flex flex-col items-center gap-1 min-w-[80px] max-w-[110px]">
+      <div className={`w-9 h-9 rounded-full border-2 ${cfg.ring} ${cfg.bg} text-white flex items-center justify-center shadow-sm ${isCurrent ? 'animate-pulse' : ''}`}>
+        {cfg.icon}
+      </div>
+      <div className="text-center">
+        <div className="text-[11px] font-semibold leading-tight">{name}</div>
+        <div className="text-[10px] text-muted-foreground leading-tight">{role}</div>
+        <div className={`text-[10px] font-medium mt-0.5 ${cfg.label}`}>{cfg.text}</div>
+        {comment && <div className="text-[10px] text-muted-foreground mt-0.5 italic max-w-[100px] truncate" title={comment}>"{comment}"</div>}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalChainDisplay({
+  approvals, currentApprover, isPending,
+}: {
+  approvals: QuotationApproval[];
+  currentApprover: Quotation['currentApprover'];
+  isPending: boolean;
+}) {
+  const completedSteps = approvals.filter((a) => a.status === 'APPROVED' || a.status === 'ESCALATED');
+  if (completedSteps.length === 0 && !isPending) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-amber-200/60 dark:border-amber-800/40">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground mb-2 tracking-wide">ลำดับการอนุมัติ</div>
+      <div className="flex items-start gap-1 flex-wrap">
+        {completedSteps.map((step, i) => (
+          <div key={step.id} className="flex items-center gap-1">
+            <ApprovalChainStep
+              name={step.approverName}
+              role={step.approverRoleName}
+              status={step.status as 'APPROVED' | 'ESCALATED'}
+              comment={step.comment}
+            />
+            {(i < completedSteps.length - 1 || (isPending && currentApprover)) && (
+              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mb-4" />
+            )}
+          </div>
+        ))}
+        {isPending && currentApprover && (
+          <ApprovalChainStep
+            name={currentApprover.name}
+            role={currentApprover.role?.nameTh ?? ''}
+            status="WAITING"
+            isCurrent
+          />
+        )}
       </div>
     </div>
   );
@@ -479,63 +550,65 @@ export default function QuotationDetailPage() {
         </Card>
       )}
 
-      {q.status === 'REJECTED' && q.rejectionReason && (
+      {q.status === 'REJECTED' && (
         <Card className="border-destructive/50 bg-destructive/5">
-          <CardContent className="pt-4 flex gap-3">
+          <CardContent className="pt-4 flex gap-3 items-start">
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="font-semibold text-destructive">ถูกปฏิเสธ</div>
-              <p className="text-sm mt-1">{q.rejectionReason}</p>
-              <p className="text-xs text-muted-foreground mt-2">แก้ไขแล้วส่งใหม่ได้เลย</p>
+              {q.rejectionReason && <p className="text-sm mt-1">{q.rejectionReason}</p>}
+              <p className="text-xs text-muted-foreground mt-2">
+                แก้ไขแล้วส่งใหม่ได้เลย · ดูความคิดเห็นเพิ่มเติมได้ที่กล่องข้อความด้านล่าง
+              </p>
             </div>
+            {canEdit && (
+              <Button asChild size="sm" variant="destructive" className="shrink-0">
+                <Link href={`/quotations/${id}/edit`}><FileText className="h-3.5 w-3.5" />แก้ไข</Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
-      {q.status === 'PENDING' && (
+      {isPendingStatus && (
         <Card className="border-amber-500/50 bg-amber-500/5">
-          <CardContent className="pt-4 flex gap-3 items-start">
-            <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <div className="font-semibold text-amber-700 dark:text-amber-400">รออนุมัติ</div>
-              <p className="text-sm mt-1">
-                ส่งเมื่อ {formatDate(q.submittedAt)} · รอ{' '}
-                <span className="font-semibold">{q.currentApprover?.name || 'Manager'}</span>
-                {q.currentApprover?.role?.nameTh ? ` (${q.currentApprover.role.nameTh})` : ''} ตรวจสอบ
-              </p>
-              {isCurrentApprover && (
-                <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
-                  {exceedsMoneyLimit
-                    ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : exceedsDiscountLimit
-                    ? `⚠ ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : `✓ อยู่ในสิทธิ์ของคุณ${approverLimit > 0 ? ` (วงเงิน ${formatMoney(approverLimit)})` : ''}${discountLimitPct > 0 ? ` (ส่วนลด ≤${discountLimitPct}%)` : ''} — สามารถอนุมัติได้เลย`}
+          <CardContent className="pt-4">
+            <div className="flex gap-3 items-start">
+              <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="font-semibold text-amber-700 dark:text-amber-400">
+                    {q.status === 'PENDING_ESCALATED' ? 'ส่งต่อขออนุมัติระดับถัดไป' : 'รออนุมัติ'}
+                  </div>
+                  {q.status === 'PENDING_ESCALATED' && (
+                    <span className="text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 rounded px-1.5 py-0.5">ESCALATED</span>
+                  )}
                 </div>
-              )}
-              {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {q.status === 'PENDING_ESCALATED' && (
-        <Card className="border-blue-500/50 bg-blue-500/5">
-          <CardContent className="pt-4 flex gap-3 items-start">
-            <Send className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <div className="font-semibold text-blue-700 dark:text-blue-400">ส่งต่อขออนุมัติระดับถัดไป</div>
-              <p className="text-sm mt-1">
-                รอ <span className="font-semibold">{q.currentApprover?.name || 'Manager'}</span>
-                {q.currentApprover?.role?.nameTh ? ` (${q.currentApprover.role.nameTh})` : ''} พิจารณา
-              </p>
-              {isCurrentApprover && (
-                <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
-                  {exceedsMoneyLimit
-                    ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : exceedsDiscountLimit
-                    ? `⚠ ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — กรุณาส่งต่อ ${nextLevelTitle}`
-                    : `✓ อยู่ในสิทธิ์ของคุณ${approverLimit > 0 ? ` (วงเงิน ${formatMoney(approverLimit)})` : ''}${discountLimitPct > 0 ? ` (ส่วนลด ≤${discountLimitPct}%)` : ''} — สามารถอนุมัติได้เลย`}
-                </div>
-              )}
-              {!isCurrentApprover && !isCeo && <p className="text-xs text-muted-foreground mt-2">Quotation นี้กำลังรอการพิจารณาจาก Manager ระดับสูงขึ้น</p>}
+                <p className="text-sm mt-1">
+                  ส่งเมื่อ {formatDate(q.submittedAt)} · รอ{' '}
+                  <span className="font-semibold">{q.currentApprover?.name || 'Manager'}</span>
+                  {q.currentApprover?.role?.nameTh ? ` (${q.currentApprover.role.nameTh})` : ''} ตรวจสอบ
+                </p>
+                {isCurrentApprover && (
+                  <div className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${exceedsApproverLimit ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                    {exceedsMoneyLimit
+                      ? `⚠ มูลค่า ${formatMoney(grandTotalNum, q.currency)} เกินวงเงินของคุณ (${formatMoney(approverLimit)}) — กรุณาส่งต่อ ${nextLevelTitle}`
+                      : exceedsDiscountLimit
+                      ? `⚠ ส่วนลด ${maxItemDiscountPct}% เกินสิทธิ์ของคุณ (${discountLimitPct}%) — กรุณาส่งต่อ ${nextLevelTitle}`
+                      : `✓ อยู่ในสิทธิ์ของคุณ${approverLimit > 0 ? ` (วงเงิน ${formatMoney(approverLimit)})` : ''}${discountLimitPct > 0 ? ` (ส่วนลด ≤${discountLimitPct}%)` : ''} — สามารถอนุมัติได้เลย`}
+                  </div>
+                )}
+                {!isCurrentApprover && !isCeo && isOwner && (
+                  <p className="text-xs text-muted-foreground mt-2">⚠ ไม่สามารถยกเลิกได้หลังส่งแล้ว — ติดต่อ Manager หากต้องการยกเลิก</p>
+                )}
+                {!isCurrentApprover && !isCeo && !isOwner && (
+                  <p className="text-xs text-muted-foreground mt-2">คุณได้ส่งต่อ Quotation นี้แล้ว — ดูสถานะและใช้ปุ่มข้อความด้านล่างเพื่อสื่อสาร</p>
+                )}
+                <ApprovalChainDisplay
+                  approvals={q.approvals ?? []}
+                  currentApprover={q.currentApprover}
+                  isPending={isPendingStatus}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

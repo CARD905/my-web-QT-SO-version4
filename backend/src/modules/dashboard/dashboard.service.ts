@@ -1,6 +1,16 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 
+function toThb(value: number, currency?: string | null, rate: number = 35): number {
+  return currency === 'USD' ? value * rate : value;
+}
+async function getUsdRate(): Promise<number> {
+  try {
+    const row = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    return row ? (parseFloat(row.value) || 35) : 35;
+  } catch { return 35; }
+}
+
 const HIGH_VALUE_THRESHOLD = 100000;
 const EXPIRING_SOON_DAYS = 7;
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -10,6 +20,7 @@ export const dashboardService = {
   // SALES DASHBOARD
   // ============================================================
   async getSalesStats(salesUserId: string) {
+    const usdRate = await getUsdRate();
     const baseWhere: Prisma.QuotationWhereInput = {
       createdById: salesUserId,
       deletedAt: null,
@@ -41,9 +52,9 @@ export const dashboardService = {
       prisma.quotation.count({ where: { ...baseWhere, status: 'PENDING' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'APPROVED' } }),
       prisma.quotation.count({ where: { ...baseWhere, status: 'REJECTED' } }),
-      prisma.quotation.aggregate({
+      prisma.quotation.findMany({
         where: { ...baseWhere, status: 'APPROVED' },
-        _sum: { grandTotal: true },
+        select: { grandTotal: true, currency: true },
       }),
       prisma.quotation.findMany({
         where: {
@@ -107,7 +118,7 @@ export const dashboardService = {
       totals: {
         quotations: totalQuotations,
         saleOrders: mySaleOrders,
-        approvedValue: Number(totalValueAggregate._sum.grandTotal ?? 0),
+        approvedValue: totalValueAggregate.reduce((s, q) => s + toThb(Number(q.grandTotal ?? 0), q.currency, usdRate), 0),
       },
       byStatus: {
         draft: draftCount,
@@ -131,6 +142,7 @@ export const dashboardService = {
   // APPROVER DASHBOARD
   // ============================================================
   async getApproverStats() {
+    const usdRate = await getUsdRate();
     const now = new Date();
     const expiringDate = addDays(now, EXPIRING_SOON_DAYS);
 
@@ -149,9 +161,9 @@ export const dashboardService = {
       }),
 
       // Total pending value
-      prisma.quotation.aggregate({
+      prisma.quotation.findMany({
         where: { status: 'PENDING', deletedAt: null },
-        _sum: { grandTotal: true },
+        select: { grandTotal: true, currency: true },
       }),
 
       // High-value pending
@@ -228,7 +240,7 @@ export const dashboardService = {
     return {
       pending: {
         count: pendingCount,
-        totalValue: Number(pendingValueAgg._sum.grandTotal ?? 0),
+        totalValue: pendingValueAgg.reduce((s, q) => s + toThb(Number(q.grandTotal ?? 0), q.currency, usdRate), 0),
         highValueCount: highValuePending.length,
         expiringSoonCount: expiringSoon.length,
       },

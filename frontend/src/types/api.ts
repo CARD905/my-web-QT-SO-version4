@@ -253,6 +253,7 @@ export interface Quotation {
   poUploadHistory?: unknown;
   poNumber?: string | null;
   maxDiscountPct?: number;
+  approvals?: QuotationApproval[];
 }
 
 export interface QuotationComment {

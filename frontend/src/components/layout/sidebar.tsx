@@ -251,7 +251,7 @@ const NAV_ITEMS: NavItem[] = [
   { dividerLabel: 'ANALYTICS', labelKey: '', icon: BarChart3, onlyRoles: ['MANAGER'] },
   {
     href: '/forecast',
-    labelKey: 'nav.forecast',
+    labelKey: 'nav.predictions',
     icon: BarChart3,
     onlyRoles: ['MANAGER'],
   },
@@ -364,7 +364,7 @@ const CEO_NAV_ITEMS: NavItem[] = [
   // ── GROUP 4: REPORTS ────────────────────────────────────────────────────
   // Full approval decision history across the organization
   { dividerLabel: 'REPORTS', labelKey: '', icon: BarChart3 },
-  { href: '/forecast', labelKey: 'nav.forecast', icon: BarChart3 },
+  { href: '/predictions', labelKey: 'nav.predictions', icon: BarChart3 },
   { href: '/history', labelKey: 'nav.auditTrail', icon: History },
 
   // ── GROUP 5: SETTINGS ───────────────────────────────────────────────────

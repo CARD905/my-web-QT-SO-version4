@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle, Lock, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Save, Send, Trash2, AlertTriangle, Lock, RefreshCw, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { cn, formatDateInput, formatMoney, formatNumber, getStatusClass } from '@/lib/utils';
 import type { ApiResponse, Customer, DiscountType, Product, ProductCategory, Quotation } from '@/types/api';
+import { CommentThread } from '@/components/comments/comment-thread';
 
 interface LineItem {
   id: string;
@@ -351,16 +352,20 @@ export default function EditQuotationPage() {
         </div>
       </div>
 
-      {quotation.status === 'REJECTED' && quotation.rejectionReason && (
+      {quotation.status === 'REJECTED' && (
         <Card className="border-destructive/40 bg-destructive/5">
-          <CardContent className="pt-4 flex gap-3">
+          <CardContent className="pt-4 flex gap-3 items-start">
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold text-destructive">Previous rejection</div>
-              <p className="text-sm mt-1">{quotation.rejectionReason}</p>
+            <div className="flex-1">
+              <div className="font-semibold text-destructive">ถูกปฏิเสธ — แก้ไขแล้วส่งใหม่</div>
+              {quotation.rejectionReason && <p className="text-sm mt-1 font-medium">{quotation.rejectionReason}</p>}
               <p className="text-xs text-muted-foreground mt-2">
-                Editing will create a new version snapshot. Saving will set status back to DRAFT.
+                ดูความคิดเห็นเพิ่มเติมได้ที่กล่องข้อความด้านล่างสุด · บันทึกแล้วจะกลับเป็นสถานะ DRAFT
               </p>
+            </div>
+            <div className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground">
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span>ดูคอมเมนต์ด้านล่าง</span>
             </div>
           </CardContent>
         </Card>
@@ -714,6 +719,12 @@ export default function EditQuotationPage() {
           </CardContent>
         </Card>
       </div>
+
+      {quotation.status === 'REJECTED' && (
+        <div className="mt-2">
+          <CommentThread quotationId={id} />
+        </div>
+      )}
     </div>
   );
 }

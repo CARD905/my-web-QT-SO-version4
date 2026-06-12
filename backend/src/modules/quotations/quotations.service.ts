@@ -69,6 +69,22 @@ const quotationDetailInclude = {
     orderBy: { createdAt: 'desc' as const },
     take: 50,
   },
+  approvals: {
+    select: {
+      id: true,
+      step: true,
+      approverId: true,
+      approverName: true,
+      approverRoleCode: true,
+      approverRoleName: true,
+      status: true,
+      comment: true,
+      actedAt: true,
+      escalatedToId: true,
+      exceedsLimit: true,
+    },
+    orderBy: { step: 'asc' as const },
+  },
   _count: { select: { versions: true, attachments: true } },
 } satisfies Prisma.QuotationInclude;
 
@@ -130,6 +146,7 @@ export const quotationsService = {
           { status: { notIn: ['PENDING', 'PENDING_ESCALATED'] as QuotationStatus[] } },
           { currentApproverId: currentUser.id },
           { createdById: currentUser.id },
+          { approvals: { some: { approverId: currentUser.id } } },
         ],
       };
       if (!where.AND) {
@@ -208,7 +225,10 @@ export const quotationsService = {
     if (['PENDING', 'PENDING_ESCALATED', 'PENDING_BACKUP'].includes(quotation.status)) {
       const isCeoOrAdmin = ['CEO', 'ADMIN'].includes(currentUser.roleCode);
       const isCreator = quotation.createdById === currentUser.id;
-      if (!isCeoOrAdmin && !isCurrentApprover && !isCreator) {
+      const isPreviousApprover = (quotation.approvals as Array<{ approverId: string }>).some(
+        (a) => a.approverId === currentUser.id,
+      );
+      if (!isCeoOrAdmin && !isCurrentApprover && !isCreator && !isPreviousApprover) {
         throw new AppError(403, 'FORBIDDEN', 'คุณไม่มีสิทธิ์ดู Quotation นี้ในขณะนี้');
       }
     }

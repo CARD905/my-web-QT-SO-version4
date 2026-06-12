@@ -23,6 +23,17 @@ function toNum(v: Decimal | null | undefined): number {
   return v == null ? 0 : Number(v.toString());
 }
 
+function toThb(value: number, currency?: string | null, rate: number = 35): number {
+  return currency === 'USD' ? value * rate : value;
+}
+
+async function getUsdRate(): Promise<number> {
+  try {
+    const row = await prisma.systemSetting.findUnique({ where: { key: 'currency.usdExchangeRate' } });
+    return row ? (parseFloat(row.value) || 35) : 35;
+  } catch { return 35; }
+}
+
 function lastNMonths(n: number) {
   return Array.from({ length: n }, (_, i) => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0);
@@ -69,12 +80,12 @@ async function buildBaseWhere(userId: string, roleCode: string): Promise<Prisma.
 
 // Risk Score 0–100: expiry(40) + staleness(30) + value(20) + status_stall(10)
 function assessRisk(q: {
-  expiryDate: Date | null; updatedAt: Date; grandTotal: Decimal | null; status: string; createdAt: Date;
-}): { riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number; riskScore: number } {
+  expiryDate: Date | null; updatedAt: Date; grandTotal: Decimal | null; currency?: string | null; status: string; createdAt: Date;
+}, usdRate: number = 35): { riskType: string; riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'; daysUntilExpiry: number | null; daysSinceUpdate: number; riskScore: number } {
   const now = new Date();
   const daysSinceUpdate = Math.floor((now.getTime() - new Date(q.updatedAt).getTime()) / 86400000);
   const daysUntilExpiry = q.expiryDate ? Math.floor((new Date(q.expiryDate).getTime() - now.getTime()) / 86400000) : null;
-  const value = toNum(q.grandTotal);
+  const value = toThb(toNum(q.grandTotal), q.currency, usdRate);
 
   let score = 0;
 
@@ -135,11 +146,12 @@ export const forecastService = {
   async getSummary() {
     const months = lastNMonths(12);
     const firstStart = months[0].start;
+    const usdRate = await getUsdRate();
 
-    const [confirmedOrders, targets, quotations, pipelineQuotations, customerRevenue] = await Promise.all([
+    const [confirmedOrders, targets, quotations, pipelineQuotations, customerRevenueRaw] = await Promise.all([
       prisma.saleOrder.findMany({
         where: { status: { in: CONFIRMED_SO }, deletedAt: null, issueDate: { gte: firstStart } },
-        select: { grandTotal: true, issueDate: true },
+        select: { grandTotal: true, issueDate: true, currency: true },
       }),
       prisma.forecastTarget.findMany({ where: { OR: months.map((m) => ({ year: m.year, month: m.month })) } }),
       prisma.quotation.findMany({
@@ -148,21 +160,30 @@ export const forecastService = {
       }),
       prisma.quotation.findMany({
         where: { status: { in: ACTIVE_STATUSES }, deletedAt: null },
-        select: { status: true, grandTotal: true },
+        select: { status: true, grandTotal: true, currency: true },
       }),
-      prisma.saleOrder.groupBy({
-        by: ['customerCompany'],
+      prisma.saleOrder.findMany({
         where: { status: { in: CONFIRMED_SO }, deletedAt: null, issueDate: { gte: firstStart } },
-        _sum: { grandTotal: true }, orderBy: { _sum: { grandTotal: 'desc' } }, take: 8,
+        select: { grandTotal: true, currency: true, customerCompany: true },
       }),
     ]);
+
+    // Manual grouping for top customers with currency conversion
+    const customerRevenueMap = new Map<string, number>();
+    for (const so of customerRevenueRaw) {
+      const co = so.customerCompany;
+      customerRevenueMap.set(co, (customerRevenueMap.get(co) ?? 0) + toThb(toNum(so.grandTotal), so.currency, usdRate));
+    }
+    const topCustomersSorted = Array.from(customerRevenueMap.entries())
+      .sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([company, total]) => ({ company, total }));
 
     const targetMap = new Map<string, number>();
     for (const t of targets) targetMap.set(`${t.year}-${t.month}`, toNum(t.target));
 
     const monthlyData = months.map((m) => {
       const soInMonth = confirmedOrders.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; });
-      const actual = soInMonth.reduce((s, o) => s + toNum(o.grandTotal), 0);
+      const actual = soInMonth.reduce((s, o) => s + toThb(toNum(o.grandTotal), o.currency, usdRate), 0);
       const soCount = soInMonth.length;
       const lostCount = quotations.filter((q) => { const d = new Date(q.createdAt); return d >= m.start && d < m.end; }).length;
       return { label: m.label, year: m.year, month: m.month, actual, target: targetMap.get(`${m.year}-${m.month}`) ?? null, winRate: soCount + lostCount > 0 ? Math.round((soCount / (soCount + lostCount)) * 100) : null, soCount, lostCount };
@@ -171,7 +192,7 @@ export const forecastService = {
     let pipelineWeighted = 0, pipelineTotal = 0;
     const pipelineByStage: Record<string, { count: number; value: number }> = {};
     for (const q of pipelineQuotations) {
-      const val = toNum(q.grandTotal);
+      const val = toThb(toNum(q.grandTotal), q.currency, usdRate);
       pipelineWeighted += val * (PIPELINE_WEIGHTS[q.status] ?? 0);
       pipelineTotal += val;
       if (!pipelineByStage[q.status]) pipelineByStage[q.status] = { count: 0, value: 0 };
@@ -197,7 +218,7 @@ export const forecastService = {
       winRate6m: recentSO + recentLost > 0 ? Math.round((recentSO / (recentSO + recentLost)) * 100) : null,
       movingAvg: Math.round(movingAvg),
       currentMonth: monthlyData[monthlyData.length - 1],
-      topCustomers: customerRevenue.map((c) => ({ company: c.customerCompany, total: toNum(c._sum?.grandTotal) })),
+      topCustomers: topCustomersSorted,
     };
   },
 
@@ -225,12 +246,13 @@ export const forecastService = {
     const baseWhere = await buildBaseWhere(userId, roleCode);
     const months12 = lastNMonths(12);
     const start12 = months12[0].start;
+    const usdRate = await getUsdRate();
 
     const [quotations12m, activePipeline, atRiskRaw, forecastTargets] = await Promise.all([
       prisma.quotation.findMany({
         where: { ...baseWhere, createdAt: { gte: start12 } },
         select: {
-          id: true, quotationNo: true, customerCompany: true, grandTotal: true,
+          id: true, quotationNo: true, customerCompany: true, grandTotal: true, currency: true,
           status: true, createdAt: true, updatedAt: true, expiryDate: true,
           createdById: true,
           createdBy: { select: { id: true, name: true } },
@@ -240,7 +262,7 @@ export const forecastService = {
       prisma.quotation.findMany({
         where: { ...baseWhere, status: { in: ACTIVE_STATUSES } },
         select: {
-          id: true, quotationNo: true, customerCompany: true, grandTotal: true,
+          id: true, quotationNo: true, customerCompany: true, grandTotal: true, currency: true,
           status: true, createdAt: true, updatedAt: true, expiryDate: true,
           createdById: true,
           createdBy: { select: { id: true, name: true } },
@@ -249,7 +271,7 @@ export const forecastService = {
       prisma.quotation.findMany({
         where: { ...baseWhere, status: { in: AT_RISK_STATUSES } },
         select: {
-          id: true, quotationNo: true, customerCompany: true, grandTotal: true,
+          id: true, quotationNo: true, customerCompany: true, grandTotal: true, currency: true,
           status: true, createdAt: true, updatedAt: true, expiryDate: true,
           createdById: true,
           createdBy: { select: { id: true, name: true } },
@@ -268,24 +290,34 @@ export const forecastService = {
     const prevYearStart = new Date(start12);
     prevYearStart.setFullYear(prevYearStart.getFullYear() - 1);
 
-    const [confirmedSO12m, prevYearSO, soValueAgg, customerRevenueGroupBy] = await Promise.all([
+    const [confirmedSO12m, prevYearSO, customerRevenueRaw] = await Promise.all([
       prisma.saleOrder.findMany({
         where: { ...soWhere, issueDate: { gte: start12 } },
-        select: { grandTotal: true, issueDate: true, quotationId: true },
+        select: { grandTotal: true, issueDate: true, quotationId: true, currency: true },
       }),
       prisma.saleOrder.findMany({
         where: { ...soWhere, issueDate: { gte: prevYearStart, lt: start12 } },
-        select: { grandTotal: true, issueDate: true },
+        select: { grandTotal: true, issueDate: true, currency: true },
       }),
-      prisma.saleOrder.aggregate({ where: { ...soWhere, issueDate: { gte: start12 } }, _sum: { grandTotal: true } }),
-      prisma.saleOrder.groupBy({
-        by: ['customerCompany'],
+      prisma.saleOrder.findMany({
         where: { ...soWhere, issueDate: { gte: start12 } },
-        _sum: { grandTotal: true },
-        orderBy: { _sum: { grandTotal: 'desc' } },
-        take: 10,
+        select: { grandTotal: true, currency: true, customerCompany: true },
       }),
     ]);
+
+    // Manual totals replacing aggregate/_sum and groupBy/_sum
+    const totalRev12m = confirmedSO12m.reduce((s, o) => s + toThb(toNum(o.grandTotal), o.currency, usdRate), 0);
+    const custRevMap = new Map<string, number>();
+    for (const so of customerRevenueRaw) {
+      custRevMap.set(so.customerCompany, (custRevMap.get(so.customerCompany) ?? 0) + toThb(toNum(so.grandTotal), so.currency, usdRate));
+    }
+    const customerConcentration = Array.from(custRevMap.entries())
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([company, total]) => ({
+        company,
+        total,
+        pct: totalRev12m > 0 ? Math.round((total / totalRev12m) * 100) : 0,
+      }));
 
     // Build lookup maps from quotations12m
     const qtCreatedByMap = new Map<string, { id: string; name: string }>();
@@ -300,7 +332,7 @@ export const forecastService = {
 
     // ── Monthly actual revenue ─────────────────────────────────────────────
     const movingAvgData = months12.map((m) =>
-      confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).reduce((s, o) => s + toNum(o.grandTotal), 0)
+      confirmedSO12m.filter((o) => { const d = new Date(o.issueDate!); return d >= m.start && d < m.end; }).reduce((s, o) => s + toThb(toNum(o.grandTotal), o.currency, usdRate), 0)
     );
 
     // ── Future forecast (next 3 months, moving avg of last 3 non-zero) ────
@@ -351,7 +383,7 @@ export const forecastService = {
     const cancelledExpiredQts = quotations12m.filter((q) => excludedStatuses.includes(q.status));
     const baseQts = quotations12m.filter((q) => !excludedStatuses.includes(q.status));
     const totalQts = baseQts.length;
-    const totalQtVal = baseQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
+    const totalQtVal = baseQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0);
 
     // ป้องกัน double-count: quotation ที่มี SO แล้ว ต้องอยู่ใน step "Sale Order" เท่านั้น ไม่ใช่ "อนุมัติแล้ว"
     const soQuotationIdSet = new Set(confirmedSO12m.filter((o) => o.quotationId).map((o) => o.quotationId!));
@@ -362,23 +394,23 @@ export const forecastService = {
     // Quotations ที่มี confirmed SO แล้ว (mutually exclusive กับ approvedQts)
     const soLinkedQts = baseQts.filter((q) => soQuotationIdSet.has(q.id));
     const rejectedQts = baseQts.filter((q) => q.status === 'REJECTED');
-    const soLinkedValue = soLinkedQts.reduce((s, q) => s + toNum(q.grandTotal), 0);
+    const soLinkedValue = soLinkedQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0);
 
     const conversionFunnel = [
       { label: 'Quotation', step: 1, count: totalQts, value: totalQtVal, conversionFromFirst: 100, conversionFromPrev: 100, isRejected: false, excludedCount: cancelledExpiredQts.length },
-      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false, excludedCount: 0 },
-      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((allApprovedQts.length / pendingQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'รออนุมัติ', step: 2, count: pendingQts.length, value: pendingQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0), conversionFromFirst: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((pendingQts.length / totalQts) * 100) : 0, isRejected: false, excludedCount: 0 },
+      { label: 'อนุมัติแล้ว', step: 3, count: approvedQts.length, value: approvedQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0), conversionFromFirst: totalQts > 0 ? Math.round((approvedQts.length / totalQts) * 100) : 0, conversionFromPrev: pendingQts.length > 0 ? Math.round((allApprovedQts.length / pendingQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
       { label: 'Sale Order', step: 4, count: soLinkedQts.length, value: soLinkedValue, conversionFromFirst: totalQts > 0 ? Math.round((soLinkedQts.length / totalQts) * 100) : 0, conversionFromPrev: allApprovedQts.length > 0 ? Math.round((soLinkedQts.length / allApprovedQts.length) * 100) : 0, isRejected: false, excludedCount: 0 },
-      { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toNum(q.grandTotal), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true, excludedCount: 0 },
+      { label: 'ถูกปฏิเสธ', step: 5, count: rejectedQts.length, value: rejectedQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0), conversionFromFirst: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, conversionFromPrev: totalQts > 0 ? Math.round((rejectedQts.length / totalQts) * 100) : 0, isRejected: true, excludedCount: 0 },
     ];
 
     // ── 3. Deals At Risk (sorted by riskScore desc) ───────────────────────
     const now = new Date();
     const dealsAtRisk = atRiskRaw
       .map((q) => ({
-        ...assessRisk(q),
+        ...assessRisk(q, usdRate),
         id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
-        grandTotal: toNum(q.grandTotal), status: q.status,
+        grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), status: q.status,
         expiryDate: q.expiryDate, updatedAt: q.updatedAt, createdAt: q.createdAt,
         salesName: q.createdBy.name,
         daysOpen: Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000),
@@ -424,7 +456,7 @@ export const forecastService = {
       if (!cb) continue;
       if (!perfMap.has(cb.id)) perfMap.set(cb.id, { userId: cb.id, name: cb.name, actualRevenue: 0, quotationCount: 0, pipelineCount: 0, lostCount: 0, rejectedCount: 0, pendingCount: 0, saleOrderCount: 0, soValues: [] });
       const e = perfMap.get(cb.id)!;
-      const val = toNum(so.grandTotal);
+      const val = toThb(toNum(so.grandTotal), so.currency, usdRate);
       e.actualRevenue += val;
       e.saleOrderCount++;
       if (val > 0) e.soValues.push(val);
@@ -444,7 +476,7 @@ export const forecastService = {
     for (const so of prevYearSO) {
       const d = new Date(so.issueDate!);
       const key = `${d.getFullYear() + 1}-${d.getMonth() + 1}`;
-      prevYearMap.set(key, (prevYearMap.get(key) ?? 0) + toNum(so.grandTotal));
+      prevYearMap.set(key, (prevYearMap.get(key) ?? 0) + toThb(toNum(so.grandTotal), so.currency, usdRate));
     }
     const revenueTrend = movingAvgData.map((actual, i) => {
       const m = months12[i];
@@ -464,7 +496,7 @@ export const forecastService = {
     const byCustomerMap = new Map<string, { company: string; count: number; value: number }>();
 
     for (const q of activePipeline) {
-      const val = toNum(q.grandTotal);
+      const val = toThb(toNum(q.grandTotal), q.currency, usdRate);
       const prob = PIPELINE_WEIGHTS[q.status] ?? 0;
       const wv = val * prob;
       pipeTotal += val; pipeWeighted += wv;
@@ -498,9 +530,9 @@ export const forecastService = {
     const topOpportunities = activePipeline
       .map((q) => {
         const prob = PIPELINE_WEIGHTS[q.status] ?? 0;
-        const val = toNum(q.grandTotal);
+        const val = toThb(toNum(q.grandTotal), q.currency, usdRate);
         const daysOpen = Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000);
-        const risk = assessRisk(q);
+        const risk = assessRisk(q, usdRate);
         return {
           id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
           grandTotal: val, status: q.status, probability: Math.round(prob * 100),
@@ -513,7 +545,7 @@ export const forecastService = {
     // ── 9. Aging Pipeline ─────────────────────────────────────────────────
     const agingItems = activePipeline.map((q) => ({
       id: q.id, quotationNo: q.quotationNo, customerCompany: q.customerCompany,
-      grandTotal: toNum(q.grandTotal), status: q.status,
+      grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), status: q.status,
       ageDays: Math.floor((now.getTime() - new Date(q.createdAt).getTime()) / 86400000),
       salesName: q.createdBy.name,
     }));
@@ -557,9 +589,9 @@ export const forecastService = {
       : null;
 
     // Avg Deal Size
-    const allSoVals = confirmedSO12m.map((o) => toNum(o.grandTotal)).filter((v) => v > 0);
+    const allSoVals = confirmedSO12m.map((o) => toThb(toNum(o.grandTotal), o.currency, usdRate)).filter((v) => v > 0);
     const avgDealSizeSO = allSoVals.length > 0 ? Math.round(allSoVals.reduce((a, b) => a + b, 0) / allSoVals.length) : 0;
-    const activePipelineVals = activePipeline.map((q) => toNum(q.grandTotal)).filter((v) => v > 0);
+    const activePipelineVals = activePipeline.map((q) => toThb(toNum(q.grandTotal), q.currency, usdRate)).filter((v) => v > 0);
     const avgDealSizePipeline = activePipelineVals.length > 0 ? Math.round(activePipelineVals.reduce((a, b) => a + b, 0) / activePipelineVals.length) : 0;
 
     // Sales Cycle: avg days from quotation createdAt → SO issueDate
@@ -581,28 +613,22 @@ export const forecastService = {
     const lost6m = quotations12m.filter((q) => WIN_LOST_STATUSES.includes(q.status as QuotationStatus) && new Date(q.updatedAt) >= last6mStart2).length;
     const winRate6m = won6m + lost6m > 0 ? Math.round((won6m / (won6m + lost6m)) * 100) : null;
 
-    // Customer concentration
-    const totalRev12m = toNum(soValueAgg._sum?.grandTotal);
-    const customerConcentration = customerRevenueGroupBy.map((c) => ({
-      company: c.customerCompany,
-      total: toNum(c._sum?.grandTotal),
-      pct: totalRev12m > 0 ? Math.round((toNum(c._sum?.grandTotal) / totalRev12m) * 100) : 0,
-    }));
+    // Customer concentration — already computed above from customerRevenueRaw with currency conversion
     const top5Pct = customerConcentration.slice(0, 5).reduce((s, c) => s + c.pct, 0);
 
     const kpiSummary = {
       forecastGap, forecastGapPct,
-      expectedClosingThisMonth: expectedClosingDeals.reduce((s, q) => s + toNum(q.grandTotal), 0),
+      expectedClosingThisMonth: expectedClosingDeals.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0),
       expectedClosingCount: expectedClosingDeals.length,
       avgDealSizeSO, avgDealSizePipeline,
       avgSalesCycle, winRate6m,
       top5CustomerPct: customerConcentration.length > 0 ? top5Pct : null,
-      totalRevenue12m: totalRev12m,
+      totalRevenue12m: Math.round(totalRev12m),
     };
 
     // ── 12. Revenue At Risk (aggregate from full atRiskRaw, not capped list) ─
     const allAtRiskFull = atRiskRaw
-      .map((q) => ({ ...assessRisk(q), grandTotal: toNum(q.grandTotal), status: q.status }))
+      .map((q) => ({ ...assessRisk(q, usdRate), grandTotal: toThb(toNum(q.grandTotal), q.currency, usdRate), status: q.status }))
       .filter((r) => r.riskLevel !== 'LOW');
     const rarByLevel: Record<string, { count: number; value: number; weighted: number }> = {};
     for (const r of allAtRiskFull) {
@@ -629,7 +655,7 @@ export const forecastService = {
       return {
         label: m.label, month: m.month, year: m.year,
         count: newQts.length,
-        value: Math.round(newQts.reduce((s, q) => s + toNum(q.grandTotal), 0)),
+        value: Math.round(newQts.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0)),
         activeCount: newQts.filter((q) => ACTIVE_STATUSES.includes(q.status as QuotationStatus)).length,
       };
     });
@@ -645,10 +671,10 @@ export const forecastService = {
     ] as const;
     const totalPipeCount = activePipeline.length;
     const dealSizeBuckets = SIZE_BRACKETS.map((b) => {
-      const items = activePipeline.filter((q) => { const v = toNum(q.grandTotal); return v >= b.min && v < b.max; });
+      const items = activePipeline.filter((q) => { const v = toThb(toNum(q.grandTotal), q.currency, usdRate); return v >= b.min && v < b.max; });
       return {
         label: b.label, count: items.length,
-        value: Math.round(items.reduce((s, q) => s + toNum(q.grandTotal), 0)),
+        value: Math.round(items.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate), 0)),
         pct: totalPipeCount > 0 ? Math.round((items.length / totalPipeCount) * 100) : 0,
       };
     });
@@ -722,7 +748,7 @@ export const forecastService = {
       (q) => q.expiryDate && new Date(q.expiryDate) >= nextScenM.start && new Date(q.expiryDate) < nextScenM.end
     );
     const nextMonthPipeWeighted = Math.round(
-      nextMonthPipeDeals.reduce((s, q) => s + toNum(q.grandTotal) * (PIPELINE_WEIGHTS[q.status] ?? 0), 0)
+      nextMonthPipeDeals.reduce((s, q) => s + toThb(toNum(q.grandTotal), q.currency, usdRate) * (PIPELINE_WEIGHTS[q.status] ?? 0), 0)
     );
     const scenNmt = nextMonthTarget ?? null;
     const conservativeS = forecastAvg;
