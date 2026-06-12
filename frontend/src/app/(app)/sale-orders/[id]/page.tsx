@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
   ArrowLeft, Printer, FileText, Send, CheckCircle2,
   XCircle, Loader2, Clock, AlertTriangle, Download, Calendar,
-  ZoomIn, ZoomOut, RotateCcw, Maximize2, X as XIcon, ExternalLink,
+  ZoomIn, ZoomOut, RotateCcw, RotateCw, Maximize2, Minimize2, X as XIcon, ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -314,12 +314,164 @@ function POFilePreview({
 }: {
   url: string; mimeType?: string | null; fileName?: string | null; so: SaleOrder;
 }) {
-  const [zoom, setZoom] = useState(1);
-  const [lightbox, setLightbox] = useState(false);
-  const fileType = detectFileType(mimeType, url);
+  const [scale, setScale]       = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [lightbox, setLightbox]     = useState(false);
+  const fileType  = detectFileType(mimeType, url);
+  const isImage   = fileType === 'image';
+  const isPdf     = fileType === 'pdf';
+
+  const viewerRef   = useRef<HTMLDivElement>(null);
+  const fsViewerRef = useRef<HTMLDivElement>(null);
+  const dragRef     = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+
+  const reset = useCallback(() => {
+    setScale(1); setRotation(0); setPosition({ x: 0, y: 0 });
+  }, []);
+
+  // Non-passive wheel zoom
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    setScale(s => Math.min(10, Math.max(0.1, s * (e.deltaY < 0 ? 1.1 : 0.9))));
+  }, []);
+
+  useEffect(() => {
+    if (fullscreen) return;
+    const el = viewerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [handleWheel, fullscreen]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const el = fsViewerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [handleWheel, fullscreen]);
+
+  // Escape to close fullscreen
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
+  // Drag-to-pan
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setIsDragging(true);
+    dragRef.current = { mx: e.clientX, my: e.clientY, px: position.x, py: position.y };
+  }, [position]);
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: dragRef.current.px + (e.clientX - dragRef.current.mx),
+      y: dragRef.current.py + (e.clientY - dragRef.current.my),
+    });
+  }, [isDragging]);
+
+  const stopDrag = useCallback(() => setIsDragging(false), []);
+
+  const imgStyle: React.CSSProperties = {
+    display: 'block',
+    maxWidth: '90%', maxHeight: '90%', objectFit: 'contain',
+    transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+    transformOrigin: 'center center',
+    transition: isDragging ? 'none' : 'transform 0.06s ease-out',
+    userSelect: 'none', pointerEvents: 'none',
+  };
+
+  const viewerEvents = {
+    onMouseDown, onMouseMove, onMouseUp: stopDrag,
+    onMouseLeave: stopDrag, onDoubleClick: reset,
+  };
+
+  // Small toolbar button
+  const TB = ({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) => (
+    <button onClick={onClick} title={title}
+      className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground transition-colors">
+      {children}
+    </button>
+  );
+
+  if (fileType === 'other') {
+    return (
+      <Button asChild variant="outline" size="sm" className="w-full">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
+        </a>
+      </Button>
+    );
+  }
 
   return (
     <>
+      {/* ── Fullscreen overlay ── */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-black/96 flex flex-col">
+          <div className="flex items-center justify-between gap-2 px-4 py-2 bg-black/60 border-b border-white/10 shrink-0">
+            <span className="text-sm text-white/50 font-mono truncate max-w-[40%]">{fileName}</span>
+            <div className="flex items-center gap-1">
+              {isImage && (
+                <>
+                  <button onClick={() => setScale(s => Math.max(0.1, s * 0.8))} title="ซูมออก"
+                    className="h-7 w-7 flex items-center justify-center rounded text-white/70 hover:bg-white/10 transition-colors">
+                    <ZoomOut className="h-3.5 w-3.5" />
+                  </button>
+                  <input type="range" min={10} max={1000} step={5} value={Math.round(scale * 100)}
+                    onChange={e => setScale(Number(e.target.value) / 100)}
+                    className="w-24 h-1 accent-primary cursor-pointer" />
+                  <button onClick={() => setScale(s => Math.min(10, s * 1.25))} title="ซูมเข้า"
+                    className="h-7 w-7 flex items-center justify-center rounded text-white/70 hover:bg-white/10 transition-colors">
+                    <ZoomIn className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={reset}
+                    className="min-w-[44px] h-6 px-1.5 rounded text-[11px] tabular-nums font-mono text-white/50 hover:bg-white/10 transition-colors">
+                    {Math.round(scale * 100)}%
+                  </button>
+                  <div className="w-px h-4 bg-white/20 mx-1" />
+                  <button onClick={() => setRotation(r => (r - 90 + 360) % 360)} title="หมุนทวนเข็ม"
+                    className="h-7 w-7 flex items-center justify-center rounded text-white/70 hover:bg-white/10 transition-colors">
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => setRotation(r => (r + 90) % 360)} title="หมุนตามเข็ม"
+                    className="h-7 w-7 flex items-center justify-center rounded text-white/70 hover:bg-white/10 transition-colors">
+                    <RotateCw className="h-3.5 w-3.5" />
+                  </button>
+                  <div className="w-px h-4 bg-white/20 mx-1" />
+                </>
+              )}
+              <button onClick={() => setLightbox(true)}
+                className="h-7 px-2 flex items-center gap-1.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] transition-colors">
+                <FileText className="h-3.5 w-3.5" />เปรียบเทียบ SO
+              </button>
+              <div className="w-px h-4 bg-white/20 mx-1" />
+              <button onClick={() => setFullscreen(false)}
+                className="h-7 w-7 flex items-center justify-center rounded text-white/60 hover:bg-white/10 transition-colors" title="ออก (Esc)">
+                <Minimize2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div ref={fsViewerRef} className="flex-1 overflow-hidden flex items-center justify-center"
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            {...viewerEvents}>
+            {isImage && <img src={url} alt="PO" draggable={false} style={imgStyle} />}
+            {isPdf && <iframe src={url} title="PO PDF" className="w-full" style={{ height: 'calc(100vh - 52px)' }} />}
+          </div>
+          <p className="text-[10px] text-white/25 text-center py-1.5 shrink-0">
+            ลากเพื่อเลื่อน · เลื่อนเมาส์เพื่อซูม · ดับเบิลคลิกเพื่อรีเซ็ต · Esc ออก
+          </p>
+        </div>
+      )}
+
+      {/* ── Lightbox (comparison) ── */}
       {lightbox && (
         <POComparisonLightbox
           url={url} mimeType={mimeType} fileName={fileName}
@@ -327,92 +479,88 @@ function POFilePreview({
         />
       )}
 
-      <div className="space-y-2.5">
-        {fileType === 'other' ? (
-          <Button asChild variant="outline" size="sm" className="w-full">
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              <Download className="h-3.5 w-3.5" />ดู/ดาวน์โหลด PO
-            </a>
-          </Button>
-        ) : (
-          <>
-            {/* ── Toolbar ── */}
-            <div className="flex items-center justify-between gap-2">
-              {fileType === 'image' ? (
-                <div className="flex items-center gap-0.5">
-                  <button onClick={() => setZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
-                    disabled={zoom <= 0.25}
-                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted disabled:opacity-30 transition-colors">
-                    <ZoomOut className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-[11px] text-muted-foreground tabular-nums w-10 text-center">{Math.round(zoom * 100)}%</span>
-                  <button onClick={() => setZoom(1)}
-                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted transition-colors">
-                    <RotateCcw className="h-3 w-3" />
-                  </button>
-                  <button onClick={() => setZoom(z => Math.min(4, parseFloat((z + 0.25).toFixed(2))))}
-                    disabled={zoom >= 4}
-                    className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-muted disabled:opacity-30 transition-colors">
-                    <ZoomIn className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">PDF</span>
-              )}
-              <button onClick={() => setLightbox(true)}
-                className="h-7 px-2.5 flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors text-[11px] font-semibold"
-                title="เปิดเต็มจอเพื่อตรวจสอบ">
-                <Maximize2 className="h-3.5 w-3.5" />เต็มจอ + เปรียบเทียบ
-              </button>
-            </div>
-
-            {/* ── Preview box ── */}
-            <div
-              className="relative rounded-xl border bg-muted/20 overflow-auto cursor-zoom-in hover:border-primary/40 transition-colors group"
-              style={{ height: fileType === 'pdf' ? 520 : 420 }}
-              onClick={() => setLightbox(true)}
-            >
-              {fileType === 'image' && (
-                <div className="flex justify-center items-start min-h-full p-2">
-                  <img src={url} alt={fileName ?? 'PO'}
-                    style={{
-                      width: `${zoom * 100}%`, flexShrink: 0, display: 'block',
-                      borderRadius: 6, transition: 'width 0.2s ease',
-                    }} />
-                </div>
-              )}
-              {fileType === 'pdf' && (
-                <iframe src={url} title="PO PDF" className="w-full h-full"
-                  style={{ minHeight: 520 }}
-                  onClick={e => e.stopPropagation()} />
-              )}
-              {/* Hover overlay hint */}
-              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors rounded-xl pointer-events-none">
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 text-white text-xs font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5">
-                  <Maximize2 className="h-3 w-3" />คลิกเพื่อเปิดเต็มจอ
-                </div>
-              </div>
-            </div>
-
-            {/* ── File name ── */}
-            {fileName && (
-              <p className="text-[11px] text-muted-foreground truncate px-0.5" title={fileName}>{fileName}</p>
+      <div className="space-y-2">
+        {/* Toolbar */}
+        <div className="flex items-center justify-between gap-1 px-2 py-1.5 bg-muted/40 rounded-lg border border-border/50">
+          <div className="flex items-center gap-0.5">
+            {isImage && (
+              <>
+                <TB onClick={() => setScale(s => Math.max(0.1, s * 0.8))} title="ซูมออก">
+                  <ZoomOut className="h-3.5 w-3.5" />
+                </TB>
+                <input type="range" min={10} max={1000} step={5} value={Math.round(scale * 100)}
+                  onChange={e => setScale(Number(e.target.value) / 100)}
+                  className="w-20 h-1 accent-primary cursor-pointer" title="ซูม" />
+                <TB onClick={() => setScale(s => Math.min(10, s * 1.25))} title="ซูมเข้า">
+                  <ZoomIn className="h-3.5 w-3.5" />
+                </TB>
+                <button onClick={reset}
+                  className="min-w-[40px] h-6 px-1.5 rounded text-[11px] tabular-nums font-mono text-muted-foreground hover:bg-background hover:text-foreground transition-colors"
+                  title="รีเซ็ต">
+                  {Math.round(scale * 100)}%
+                </button>
+                <div className="w-px h-4 bg-border mx-0.5" />
+                <TB onClick={() => setRotation(r => (r - 90 + 360) % 360)} title="หมุนทวนเข็ม">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </TB>
+                <TB onClick={() => setRotation(r => (r + 90) % 360)} title="หมุนตามเข็ม">
+                  <RotateCw className="h-3.5 w-3.5" />
+                </TB>
+              </>
             )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground transition-colors" title="เปิดในแท็บใหม่">
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a href={url} download={fileName}
+              className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground transition-colors" title="ดาวน์โหลด">
+              <Download className="h-3.5 w-3.5" />
+            </a>
+            <TB onClick={() => setFullscreen(true)} title="เต็มจอ">
+              <Maximize2 className="h-3.5 w-3.5" />
+            </TB>
+          </div>
+        </div>
 
-            {/* ── Action buttons ── */}
-            <div className="flex gap-2">
-              <Button asChild variant="outline" size="sm" className="flex-1 text-xs">
-                <a href={url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-3.5 w-3.5" />เปิดในแท็บใหม่
-                </a>
-              </Button>
-              <Button asChild variant="outline" size="sm" className="flex-1 text-xs">
-                <a href={url} download={fileName ?? 'PO'}>
-                  <Download className="h-3.5 w-3.5" />ดาวน์โหลด
-                </a>
-              </Button>
+        {/* Viewer */}
+        {isImage && (
+          <div ref={viewerRef}
+            className={cn(
+              'relative rounded-lg border overflow-hidden select-none',
+              '[background-image:repeating-conic-gradient(#e5e7eb_0%_25%,white_0%_50%)] [background-size:20px_20px]',
+              'dark:[background-image:repeating-conic-gradient(#2d2d2d_0%_25%,#1a1a1a_0%_50%)] dark:[background-size:20px_20px]',
+              isDragging ? 'cursor-grabbing' : 'cursor-grab',
+            )}
+            style={{ height: 'calc(100vh - 340px)', minHeight: 360 }}
+            {...viewerEvents}>
+            <div className="absolute inset-0 flex items-center justify-center overflow-visible">
+              <img src={url} alt="PO" draggable={false} style={imgStyle} />
             </div>
-          </>
+          </div>
+        )}
+        {isPdf && (
+          <div className="rounded-lg border overflow-hidden" style={{ height: 'calc(100vh - 340px)', minHeight: 360 }}>
+            <iframe src={url} title="PO PDF" className="w-full h-full" />
+          </div>
+        )}
+
+        {/* File name + compare button */}
+        <div className="flex items-center justify-between gap-2">
+          {fileName && (
+            <p className="text-[11px] text-muted-foreground truncate" title={fileName}>{fileName}</p>
+          )}
+          <button onClick={() => setLightbox(true)}
+            className="h-7 px-2.5 flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary transition-colors text-[11px] font-semibold shrink-0">
+            <Maximize2 className="h-3.5 w-3.5" />เต็มจอ + เปรียบเทียบ
+          </button>
+        </div>
+
+        {isImage && (
+          <p className="text-[10px] text-center text-muted-foreground">
+            ลากเพื่อเลื่อน · เลื่อนเมาส์เพื่อซูม · ดับเบิลคลิกเพื่อรีเซ็ต
+          </p>
         )}
       </div>
     </>
@@ -601,7 +749,7 @@ export default function SaleOrderDetailPage() {
       )}
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* LEFT */}
         <div className="space-y-5 min-w-0">
           <Card>
@@ -689,7 +837,7 @@ export default function SaleOrderDetailPage() {
         </div>
 
         {/* RIGHT */}
-        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start min-w-0">
           <Card>
             <CardContent className="pt-5">
               <h2 className="font-semibold mb-4 text-sm">ข้อมูล PO</h2>
