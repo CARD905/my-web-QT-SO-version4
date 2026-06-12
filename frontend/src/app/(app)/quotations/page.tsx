@@ -101,13 +101,8 @@ export default function QuotationsPage() {
   };
 
   const approvableList = list.filter((q) => {
-    const isPending    = q.status === 'PENDING';
-    const isEscalated  = q.status === 'PENDING_ESCALATED';
-    return (
-      canApprove &&
-      ((isPending && (canApproveAll || role?.code === 'MANAGER')) ||
-        (isEscalated && canApproveAll))
-    );
+    const isPending = q.status === 'PENDING' || q.status === 'PENDING_ESCALATED';
+    return canApprove && isPending && (canApproveAll || role?.code === 'MANAGER');
   });
 
   const allSelected =
@@ -151,7 +146,7 @@ export default function QuotationsPage() {
   };
 
   const statuses = [
-    '', 'DRAFT', 'PENDING', 'PENDING_ESCALATED',
+    '', 'DRAFT', 'REVISED', 'PENDING',
     'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED',
   ];
 
@@ -287,11 +282,10 @@ export default function QuotationsPage() {
       ) : (
         <div className="grid gap-3 animate-stagger">
           {list.map((q) => {
-            const isEscalated  = q.status === 'PENDING_ESCALATED';
             const isApprovable =
               canApprove &&
-              ((q.status === 'PENDING' && (canApproveAll || role?.code === 'MANAGER')) ||
-                (isEscalated && canApproveAll));
+              (q.status === 'PENDING' || q.status === 'PENDING_ESCALATED') &&
+              (canApproveAll || role?.code === 'MANAGER');
             const isChecked = selected.has(q.id);
 
             return (
@@ -340,7 +334,7 @@ export default function QuotationsPage() {
                           {q.version > 1 && (
                             <span className="text-xs text-muted-foreground">v{q.version}</span>
                           )}
-                          {isEscalated && q.currentApprover && q.currentApprover.id !== user?.id && (
+                          {(q.status === 'PENDING' || q.status === 'PENDING_ESCALATED') && q.currentApprover && q.currentApprover.id !== user?.id && (
                             <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">
                               <Lock className="h-2.5 w-2.5 mr-1" />
                               รอ {q.currentApprover.name} อนุมัติ

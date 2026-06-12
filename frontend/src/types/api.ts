@@ -8,6 +8,7 @@ export type PermissionScope = 'OWN' | 'TEAM' | 'DEPARTMENT' | 'ALL';
 
 export type QuotationStatus =
   | 'DRAFT'
+  | 'REVISED'
   | 'PENDING'
   | 'PENDING_BACKUP'
   | 'PENDING_ESCALATED'
@@ -254,6 +255,7 @@ export interface Quotation {
   poNumber?: string | null;
   maxDiscountPct?: number;
   approvals?: QuotationApproval[];
+  projectedFutureApprovers?: Array<{ id: string; name: string; roleName: string; roleCode: string }>;
 }
 
 export interface QuotationComment {

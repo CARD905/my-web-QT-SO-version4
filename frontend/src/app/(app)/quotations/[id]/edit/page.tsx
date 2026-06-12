@@ -88,7 +88,7 @@ export default function EditQuotationPage() {
           router.push('/quotations');
           return;
         }
-        if (!['DRAFT', 'REJECTED'].includes(q.status)) {
+        if (!['DRAFT', 'REJECTED', 'REVISED'].includes(q.status)) {
           toast.error(`Cannot edit quotation with status ${q.status}`);
           router.push(`/quotations/${id}`);
           return;
@@ -360,12 +360,25 @@ export default function EditQuotationPage() {
               <div className="font-semibold text-destructive">ถูกปฏิเสธ — แก้ไขแล้วส่งใหม่</div>
               {quotation.rejectionReason && <p className="text-sm mt-1 font-medium">{quotation.rejectionReason}</p>}
               <p className="text-xs text-muted-foreground mt-2">
-                ดูความคิดเห็นเพิ่มเติมได้ที่กล่องข้อความด้านล่างสุด · บันทึกแล้วจะกลับเป็นสถานะ DRAFT
+                ดูความคิดเห็นเพิ่มเติมได้ที่กล่องข้อความด้านล่างสุด · บันทึกแล้วจะกลายเป็นสถานะ REVISED
               </p>
             </div>
             <div className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground">
               <MessageSquare className="h-3.5 w-3.5" />
               <span>ดูคอมเมนต์ด้านล่าง</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {quotation.status === 'REVISED' && (
+        <Card className="border-violet-400/40 bg-violet-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <RefreshCw className="h-5 w-5 text-violet-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="font-semibold text-violet-700 dark:text-violet-400">แก้ไขแล้ว — สามารถแก้ไขต่อได้</div>
+              <p className="text-xs text-muted-foreground mt-2">
+                บันทึกจะคงสถานะ REVISED ไว้ · กลับไปหน้าหลักแล้วกด "ส่งอนุมัติ" เมื่อพร้อม
+              </p>
             </div>
           </CardContent>
         </Card>

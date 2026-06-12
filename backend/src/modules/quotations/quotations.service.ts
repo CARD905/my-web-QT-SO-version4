@@ -9,6 +9,7 @@ import { generateDocumentNumber } from '../../utils/number-generator';
 import { calcQuotation } from '../../utils/calc';
 import { buildScopeFilter, canActOnEntity } from '../../utils/scope-filter';
 import { findNextApprover, findEscalationTarget } from '../../utils/approval-chain';
+import { getUsdRate } from '../../utils/currency';
 
 import {
   AddCommentInput,
@@ -23,6 +24,66 @@ import {
 
 const HIGH_VALUE_THRESHOLD = 100000;
 const EXPIRING_SOON_DAYS = 7;
+
+interface ProjectedApprover {
+  id: string;
+  name: string;
+  roleName: string;
+  roleCode: string;
+}
+
+async function buildProjectedChain(
+  currentApproverId: string,
+  grandTotalTHB: number,
+): Promise<ProjectedApprover[]> {
+  const chain: ProjectedApprover[] = [];
+  let checkId = currentApproverId;
+  const visited = new Set<string>();
+
+  for (let i = 0; i < 6; i++) {
+    if (visited.has(checkId)) break;
+    visited.add(checkId);
+
+    const user = await prisma.user.findUnique({
+      where: { id: checkId },
+      select: {
+        approvalLimit: true,
+        role: { select: { code: true } },
+        reportsTo: {
+          select: {
+            id: true, name: true, approvalLimit: true,
+            role: { select: { code: true, nameTh: true } },
+          },
+        },
+      },
+    });
+    if (!user) break;
+
+    const limit = Number(user.approvalLimit ?? 0);
+    const canApprove = user.role.code === 'CEO' || limit === 0 || limit >= grandTotalTHB;
+    if (canApprove) break;
+
+    if (user.reportsTo) {
+      chain.push({
+        id: user.reportsTo.id,
+        name: user.reportsTo.name,
+        roleName: user.reportsTo.role.nameTh ?? user.reportsTo.role.code,
+        roleCode: user.reportsTo.role.code,
+      });
+      checkId = user.reportsTo.id;
+    } else {
+      const ceo = await prisma.user.findFirst({
+        where: { role: { code: 'CEO' }, isActive: true, deletedAt: null },
+        select: { id: true, name: true, role: { select: { code: true, nameTh: true } } },
+      });
+      if (ceo) {
+        chain.push({ id: ceo.id, name: ceo.name, roleName: ceo.role.nameTh ?? 'CEO', roleCode: 'CEO' });
+      }
+      break;
+    }
+  }
+  return chain;
+}
 
 export interface CurrentUser {
   id: string;
@@ -237,14 +298,27 @@ export const quotationsService = {
       (quotation.status === 'DRAFT' || quotation.status === 'PENDING') &&
       new Date(quotation.expiryDate) < new Date()
     ) {
-      return prisma.quotation.update({
+      const expired = await prisma.quotation.update({
         where: { id },
         data: { status: 'EXPIRED' },
         include: quotationDetailInclude,
       });
+      return { ...expired, projectedFutureApprovers: [] };
     }
 
-    return quotation;
+    // Build projected future approvers for PENDING statuses so the frontend
+    // can show the full chain (current + future) instead of just the next person.
+    let projectedFutureApprovers: ProjectedApprover[] = [];
+    if (['PENDING', 'PENDING_ESCALATED'].includes(quotation.status) && quotation.currentApproverId) {
+      const usdRate = await getUsdRate();
+      const grandTotalTHB =
+        (quotation.currency as string) === 'USD'
+          ? Number(quotation.grandTotal) * usdRate
+          : Number(quotation.grandTotal);
+      projectedFutureApprovers = await buildProjectedChain(quotation.currentApproverId, grandTotalTHB);
+    }
+
+    return { ...quotation, projectedFutureApprovers };
   },
 
   // ============================================================
@@ -322,7 +396,7 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only edit your own quotations');
-    if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
+    if (!['DRAFT', 'REJECTED', 'REVISED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot edit quotation with status ${existing.status}`);
     }
     const customer = await prisma.customer.findFirst({ where: { id: input.customerId, deletedAt: null } });
@@ -344,7 +418,7 @@ export const quotationsService = {
       });
       await tx.quotationItem.deleteMany({ where: { quotationId: id } });
 
-      const newStatus: QuotationStatus = existing.status === 'REJECTED' ? 'DRAFT' : existing.status;
+      const newStatus: QuotationStatus = existing.status === 'REJECTED' ? 'REVISED' : existing.status;
 
       return tx.quotation.update({
         where: { id },
@@ -393,7 +467,7 @@ export const quotationsService = {
     });
     if (!existing) throw new AppError(404, 'NOT_FOUND', 'Quotation not found');
     if (existing.createdById !== userId) throw new AppError(403, 'FORBIDDEN', 'You can only submit your own quotations');
-    if (!['DRAFT', 'REJECTED'].includes(existing.status)) {
+    if (!['DRAFT', 'REJECTED', 'REVISED'].includes(existing.status)) {
       throw new AppError(409, 'INVALID_STATUS', `Cannot submit quotation with status ${existing.status}`);
     }
     if (new Date(existing.expiryDate) < new Date()) {

@@ -81,6 +81,7 @@ export function getStatusClass(status: string): string {
   const map: Record<string, string> = {
     // ── Quotation statuses ──
     DRAFT:             'status-draft',
+    REVISED:           'status-revised',
     PENDING:           'status-pending',
     PENDING_BACKUP:    'status-pending',
     PENDING_ESCALATED: 'status-pending',

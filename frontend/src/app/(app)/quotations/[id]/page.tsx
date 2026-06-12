@@ -269,14 +269,16 @@ function ApprovalChainStep({
 }
 
 function ApprovalChainDisplay({
-  approvals, currentApprover, isPending,
+  approvals, currentApprover, isPending, projected,
 }: {
   approvals: QuotationApproval[];
   currentApprover: Quotation['currentApprover'];
   isPending: boolean;
+  projected?: Array<{ id: string; name: string; roleName: string; roleCode: string }>;
 }) {
   const completedSteps = approvals.filter((a) => a.status === 'APPROVED' || a.status === 'ESCALATED');
-  if (completedSteps.length === 0 && !isPending) return null;
+  const hasAnything = completedSteps.length > 0 || (isPending && currentApprover) || (projected && projected.length > 0);
+  if (!hasAnything) return null;
 
   return (
     <div className="mt-3 pt-3 border-t border-amber-200/60 dark:border-amber-800/40">
@@ -290,20 +292,38 @@ function ApprovalChainDisplay({
               status={step.status as 'APPROVED' | 'ESCALATED'}
               comment={step.comment}
             />
-            {(i < completedSteps.length - 1 || (isPending && currentApprover)) && (
+            {(i < completedSteps.length - 1 || isPending || (projected && projected.length > 0)) && (
               <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mb-4" />
             )}
           </div>
         ))}
         {isPending && currentApprover && (
-          <ApprovalChainStep
-            name={currentApprover.name}
-            role={currentApprover.role?.nameTh ?? ''}
-            status="WAITING"
-            isCurrent
-          />
+          <div className="flex items-center gap-1">
+            <ApprovalChainStep
+              name={currentApprover.name}
+              role={currentApprover.role?.nameTh ?? ''}
+              status="WAITING"
+              isCurrent
+            />
+            {projected && projected.length > 0 && (
+              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mb-4" />
+            )}
+          </div>
         )}
+        {projected?.map((p, i) => (
+          <div key={p.id} className="flex items-center gap-1 opacity-40">
+            <ApprovalChainStep name={p.name} role={p.roleName} status="WAITING" />
+            {i < projected.length - 1 && (
+              <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mb-4" />
+            )}
+          </div>
+        ))}
       </div>
+      {projected && projected.length > 0 && (
+        <p className="text-[10px] text-muted-foreground mt-1.5">
+          * ขั้นตอนที่จางลงคือผู้อนุมัติที่จะรับต่อหากเกินวงเงิน
+        </p>
+      )}
     </div>
   );
 }
@@ -406,8 +426,8 @@ export default function QuotationDetailPage() {
   const isOwner = !!(userId && q.createdById === userId);
   const isElevated = !!(role?.code && ELEVATED_ROLES.includes(role.code));
   const isCeo = role?.code === 'CEO';
-  const canEdit   = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
-  const canSubmit = (q.status === 'DRAFT' || q.status === 'REJECTED') && isOwner;
+  const canEdit   = (['DRAFT', 'REJECTED', 'REVISED'] as string[]).includes(q.status) && isOwner;
+  const canSubmit = (['DRAFT', 'REJECTED', 'REVISED'] as string[]).includes(q.status) && isOwner;
   const canCancel = q.status === 'DRAFT' && (isOwner || isElevated);
   const canPdf    = PDF_ALLOWED_STATUSES.includes(q.status as string) && can('quotation', 'exportPdf', 'OWN');
   const canRenew  = q.status === 'EXPIRED' && isOwner;
@@ -569,6 +589,27 @@ export default function QuotationDetailPage() {
           </CardContent>
         </Card>
       )}
+      {q.status === 'REVISED' && (
+        <Card className="border-violet-500/50 bg-violet-500/5">
+          <CardContent className="pt-4 flex gap-3 items-start">
+            <RefreshCw className="h-5 w-5 text-violet-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-violet-700 dark:text-violet-400">แก้ไขแล้ว — พร้อมส่งอนุมัติ</div>
+              <p className="text-sm mt-1 text-muted-foreground">
+                คุณได้แก้ไขใบเสนอราคาที่ถูกปฏิเสธแล้ว กด "ส่งอนุมัติ" เพื่อส่งให้ Manager พิจารณาใหม่
+              </p>
+            </div>
+            {canSubmit && (
+              <Button size="sm" onClick={submit} disabled={acting !== null}
+                className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white">
+                {acting === 'submit' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                ส่งอนุมัติ
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {isPendingStatus && (
         <Card className="border-amber-500/50 bg-amber-500/5">
           <CardContent className="pt-4">
@@ -607,6 +648,7 @@ export default function QuotationDetailPage() {
                   approvals={q.approvals ?? []}
                   currentApprover={q.currentApprover}
                   isPending={isPendingStatus}
+                  projected={q.projectedFutureApprovers}
                 />
               </div>
             </div>

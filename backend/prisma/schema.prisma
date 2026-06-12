@@ -739,6 +739,7 @@ enum PermissionScope {
 
 enum QuotationStatus {
   DRAFT
+  REVISED
   PENDING
   PENDING_BACKUP
   PENDING_ESCALATED
